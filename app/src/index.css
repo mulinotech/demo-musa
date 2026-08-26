@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  
+  --color-primary: #75553b;
+  --color-primary-light: #ad886a;
+  --color-secondary: #c8b5a7;
+  --color-tertiary: #f9f7f5;
+  --color-neutral: #29180e;
+  --color-neutral-muted: #634c40;
+  --color-bg-luxe: #fff8f6;
+  --color-surface-dim: #f4d3c4;
+  --color-surface-low: #fff1eb;
+  --color-surface-container: #ffeae0;
+  --color-surface-high: #ffe2d5;
+  --color-linen: #efebe7;
+  --color-gold-accent: #d4af37;
+  
+  --color-gold-50: #fff8f6;
+  --color-gold-100: #fff1eb;
+  --color-gold-200: #ffeae0;
+  --color-gold-300: #ffe2d5;
+  --color-gold-400: #ad886a;
+  --color-gold-500: #75553b;
+  --color-gold-600: #634c40;
+  --color-gold-700: #523c2a;
+  --color-gold-800: #402c21;
+  --color-gold-900: #29180e;
+  
+  --color-luxury-black: #fff8f6;
+  --color-luxury-dark: #fff1eb;
+  --color-luxury-gray: #ffeae0;
+  --color-luxury-light: #ffe2d5;
+
+  /* Mapeamento de Cores para o CRM */
+  --color-brand-gold: #A89684;
+  --color-brand-beige: #F4EFEA;
+  --color-brand-brown: #4A3C35;
+  --color-brand-cream: #FFFFFF;
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-luxe);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-secondary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* Luxury transitions and styles */
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg-luxe);
+  color: var(--color-neutral);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+h1, h2, h3, h4, .font-serif-lux {
+  font-family: var(--font-serif);
+}
+
+.text-gold-gradient {
+  background: linear-gradient(135deg, #ad886a 0%, #75553b 50%, #29180e 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #efebe7 0%, #ad886a 50%, #75553b 100%);
+}
+
+.border-gold-gradient {
+  border-image: linear-gradient(135deg, #fff8f6, #ad886a, #75553b) 1;
+}
+
+/* Custom pulse and glow */
+@keyframes gold-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(117, 85, 59, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(117, 85, 59, 0.5);
+  }
+}
+
+.animate-gold-glow {
+  animation: gold-glow 3s infinite ease-in-out;
+}
