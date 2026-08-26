@@ -2134,7 +2134,21 @@ app.post('/api/reports/generate', async function(req, res) {
 
 // Rota curinga para o React SPA (deve ficar DEPOIS das rotas /api)
 if (fs.existsSync(distPath)) {
-  app.get('*', function(req, res) {
+  // ---- ROTA TEMPORARIA DE MIGRATION - remover depois da T0.4 ----
+app.post('/api/_migrate', async function (req, res) {
+  const conn = await pool.getConnection();
+  try {
+    const run = require('./db/run-migrations');
+    const r = await run(conn, { statusOnly: req.query.status === '1' });
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e.sqlMessage || e.message });
+  } finally {
+    conn.release();
+  }
+});
+
+app.get('*', function(req, res) {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
