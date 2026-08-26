@@ -1,3 +1,4 @@
+import { salvarToken, limparToken } from "../lib/api";
 import React, { useState, useEffect, useMemo, FormEvent } from "react";
 import { X, Lock, Sparkles, ShieldCheck, FileText, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -28,6 +29,7 @@ export default function CrmDashboard({
   onDeleteLead,
 }: CrmDashboardProps) {
   const [password, setPassword] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem("musa_crm_auth") === "true";
   });
@@ -237,10 +239,11 @@ export default function CrmDashboard({
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ email, password })
       });
       const data = await response.json();
       if (response.ok) {
+        salvarToken(data.token || "");
         setIsAuthenticated(true);
         setAuthError("");
         localStorage.setItem("userRole", data.role);
@@ -266,6 +269,8 @@ export default function CrmDashboard({
   const handleClose = () => {
     setIsAuthenticated(false);
     setPassword("");
+    setEmail("");
+    limparToken();
     localStorage.removeItem("musa_crm_auth");
     localStorage.removeItem("userRole");
     localStorage.removeItem("salespersonId");
@@ -822,19 +827,29 @@ export default function CrmDashboard({
             <div className="space-y-2 max-w-md">
               <h4 className="text-xs font-bold text-brand-brown uppercase tracking-widest">Acesso de Altíssima Segurança</h4>
               <p className="text-[11px] text-brand-brown/70 font-light leading-relaxed">
-                Insira a chave de acesso comercial para acessar os prontuários, fichas anamnese e logs do CRM.
+                Entre com seu e-mail e senha para acessar os prontuários, fichas anamnese e logs do CRM.
               </p>
             </div>
 
             <form onSubmit={handleLogin} className="w-full max-w-xs space-y-3.5">
               <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Seu e-mail"
+                autoComplete="username"
+                className="w-full bg-white border border-brand-gold/30 rounded px-4 py-2.5 text-center text-xs text-brand-brown focus:outline-none focus:border-brand-brown transition-colors"
+                autoFocus
+              />
+              <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Senha de Acesso Comercial"
+                placeholder="Sua senha"
                 className="w-full bg-white border border-brand-gold/30 rounded px-4 py-2.5 text-center text-xs text-brand-brown focus:outline-none focus:border-brand-brown transition-colors"
-                autoFocus
+                autoComplete="current-password"
               />
               {authError && <p className="text-[10px] text-red-650 font-semibold">{authError}</p>}
               <button
