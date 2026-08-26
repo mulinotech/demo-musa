@@ -1,0 +1,26 @@
+# Dependências
+node_modules/
+
+# Segredos — NUNCA versionar
+.env
+.env.local
+.env.development
+.env.production
+!.env.example
+
+# Builds e temporários
+dist/
+dist-ssr/
+*.local
+*.log
+
+# Backups locais
+*.bak
+*.bak-*
+*.pre-sync*
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
