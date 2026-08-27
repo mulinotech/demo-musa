@@ -24,3 +24,7 @@ dist-ssr/
 Thumbs.db
 .vscode/
 .idea/
+
+# Backups de refatoracao
+*.pre-*
+*.bak-*
