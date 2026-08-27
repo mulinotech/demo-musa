@@ -1,3 +1,4 @@
+import { papelDoToken } from '../lib/api';
 import React from 'react';
 import { MessageSquare, Users, Calendar, Settings, LayoutDashboard, X, MessageCircle, ShieldCheck } from 'lucide-react';
 import logoMusa from '../assets/logo-musa-crm.png';
@@ -47,8 +48,8 @@ export default function Navbar({ activeTab, setActiveTab, isAiConfigured, onClos
           <div className="w-full md:w-auto md:flex-1 pb-2 md:pb-0 mt-2 md:mt-0">
             <nav className="flex flex-wrap items-center justify-center gap-2 w-full">
             {(() => {
-              const userRole = localStorage.getItem('userRole');
-              const isSalesperson = userRole === 'salesperson';
+              const userRole = papelDoToken();
+              const isSalesperson = userRole === 'vendedor';
 
               const allTabs = [
                 { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },

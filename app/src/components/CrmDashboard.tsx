@@ -1,4 +1,4 @@
-import { salvarToken, limparToken } from "../lib/api";
+import { salvarToken, limparToken, papelDoToken } from "../lib/api";
 import React, { useState, useEffect, useMemo, FormEvent } from "react";
 import { X, Lock, Sparkles, ShieldCheck, FileText, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -982,12 +982,12 @@ export default function CrmDashboard({
                               O antigo <iframe> do Evolution Manager era cross-origin: os botões
                               de nova conversa e de envio não funcionavam dentro do frame. Agora o
                               gerenciador é nativo e fala com a Evolution API pelo nosso backend. */}
-                          <div className={`w-full h-full ${(!isManagerAuth && localStorage.getItem('userRole') !== 'admin') ? 'filter blur-md pointer-events-none select-none' : ''}`}>
+                          <div className={`w-full h-full ${(!['admin', 'gerente'].includes(papelDoToken())) ? 'filter blur-md pointer-events-none select-none' : ''}`}>
                             <WhatsAppManager onMessageSent={() => fetchCrmData(true)} />
                           </div>
 
                           {/* Tela de Bloqueio e Senha caso não seja admin */}
-                          {!isManagerAuth && localStorage.getItem('userRole') !== 'admin' && (
+                          {!['admin', 'gerente'].includes(papelDoToken()) && (
                             <div className="absolute inset-0 bg-brand-brown/30 backdrop-blur-md flex items-center justify-center p-4 z-20">
                               <motion.div 
                                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1005,48 +1005,9 @@ export default function CrmDashboard({
                                     O Gerenciador de WhatsApp é de acesso exclusivo para a Direção/Administração. Digite a senha master para desbloquear.
                                   </p>
                                 </div>
-                                <form 
-                                  onSubmit={(e) => {
-                                    e.preventDefault();
-                                    if (managerPassword === 'MusaElite2026!Vx7Q' || managerPassword === 'MusaEquipe2026!Rb4T') {
-                                      setIsManagerAuth(true);
-                                      sessionStorage.setItem('evolution_admin_auth', 'true');
-                                      setManagerAuthError('');
-                                    } else {
-                                      setManagerAuthError('Senha incorreta! Acesso negado.');
-                                      setManagerPassword('');
-                                    }
-                                  }} 
-                                  className="w-full space-y-3"
-                                >
-                                  <div className="relative">
-                                    <input
-                                      type={showManagerPass ? "text" : "password"}
-                                      value={managerPassword}
-                                      onChange={(e) => setManagerPassword(e.target.value)}
-                                      placeholder="Digite a senha master..."
-                                      className="w-full px-4 py-2.5 rounded-xl border border-red-200 bg-red-50/20 text-xs focus:outline-none focus:ring-2 focus:ring-red-500 text-brand-brown text-center font-mono"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowManagerPass(!showManagerPass)}
-                                      className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-brown/50 hover:text-brand-brown text-[10px] font-bold uppercase cursor-pointer"
-                                    >
-                                      {showManagerPass ? "Ocultar" : "Mostrar"}
-                                    </button>
-                                  </div>
-                                  {managerAuthError && (
-                                    <p className="text-xxs font-semibold text-red-600 bg-red-50 py-1.5 px-3 rounded-lg border border-red-150">
-                                      {managerAuthError}
-                                    </p>
-                                  )}
-                                  <button
-                                    type="submit"
-                                    className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider font-serif shadow-md transition-all cursor-pointer"
-                                  >
-                                    Desbloquear Gerenciador
-                                  </button>
-                                </form>
+<p className="text-[11px] text-brand-brown/70 font-light leading-relaxed">
+                                  Peca a um administrador para liberar o seu acesso.
+                                </p>
                               </motion.div>
                             </div>
                           )}

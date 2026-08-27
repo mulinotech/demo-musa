@@ -1,3 +1,4 @@
+import { papelDoToken } from '../lib/api';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -29,7 +30,7 @@ interface EvolutionHubProps {
 
 export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('evolution_admin_auth') === 'true';
+    return ['admin', 'gerente'].includes(papelDoToken()) || sessionStorage.getItem('evolution_admin_auth') === 'true';
   });
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -37,7 +38,7 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
 
   const handleVerifyPassword = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'MusaElite2026!Vx7Q' || password === 'MusaEquipe2026!Rb4T') {
+    if (['admin', 'gerente'].includes(papelDoToken())) {
       setIsAuthenticated(true);
       sessionStorage.setItem('evolution_admin_auth', 'true');
       setErrorMsg('');

@@ -1,3 +1,4 @@
+import { papelDoToken } from '../lib/api';
 import { useState, useMemo, FormEvent } from "react";
 import { Lead } from "../data";
 import { X, Lock, Users, Calendar, Trash2, Check, Download, ShieldCheck } from "lucide-react";
@@ -26,8 +27,7 @@ export default function LeadDashboard({
 
   const handleLogin = (e: FormEvent) => {
     e.preventDefault();
-    const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || "MusaElite2026!Vx7Q";
-    if (password === adminPassword) {
+    if (['admin', 'gerente'].includes(papelDoToken())) {
       setIsAuthenticated(true);
       setAuthError("");
     } else {

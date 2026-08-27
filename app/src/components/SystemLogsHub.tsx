@@ -1,3 +1,4 @@
+import { papelDoToken } from '../lib/api';
 import React, { useState, useEffect } from 'react';
 import { SystemLog } from '../types';
 import { 
@@ -18,7 +19,7 @@ import { motion } from 'motion/react';
 
 export default function SystemLogsHub() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('logs_admin_auth') === 'true';
+    return ['admin', 'gerente'].includes(papelDoToken()) || sessionStorage.getItem('logs_admin_auth') === 'true';
   });
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -33,10 +34,9 @@ export default function SystemLogsHub() {
 
   const handleVerifyPassword = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'MusaElite2026!Vx7Q' || password === 'MusaEquipe2026!Rb4T') {
+    if (['admin', 'gerente'].includes(papelDoToken())) {
       setIsAuthenticated(true);
       sessionStorage.setItem('logs_admin_auth', 'true');
-      sessionStorage.setItem('logs_admin_pass', password);
       setErrorMsg('');
     } else {
       setErrorMsg('Senha incorreta! Acesso negado.');
@@ -46,13 +46,8 @@ export default function SystemLogsHub() {
 
   const fetchLogs = async () => {
     setLoading(true);
-    const activePass = sessionStorage.getItem('logs_admin_pass') || 'MusaElite2026!Vx7Q';
     try {
-      const response = await fetch('/api/logs', {
-        headers: {
-          'x-admin-password': activePass
-        }
-      });
+      const response = await fetch('/api/logs');
       if (response.ok) {
         const data = await response.json();
         setLogs(data);
