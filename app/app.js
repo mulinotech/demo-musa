@@ -20,6 +20,7 @@ const app = express();
 // ---- TRAVA EMERGENCIAL 26/08/2026 - remover quando o JWT (T0.3) entrar ----
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const auth = require('./auth');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: 'https://demo-musa.mulinotech.com' }));
 app.use('/api', rateLimit({ windowMs: 60000, max: 120, standardHeaders: true, legacyHeaders: false }));
@@ -30,16 +31,64 @@ const ROTAS_PUBLICAS = [
   { method: 'POST', path: '/api/webhook/whatsapp' }
 ];
 app.use('/api', function (req, res, next) {
-  res.set('X-Trava-Musa', 'v2');
+  res.set('X-Trava-Musa', 'v3');
   const caminho = req.originalUrl.split('?')[0];
   if (ROTAS_PUBLICAS.some(function (r) { return r.method === req.method && caminho === r.path; })) return next();
-  const header = req.headers.authorization || '';
-  const partes = Buffer.from(header.replace(/^Basic /i, ''), 'base64').toString().split(':');
-  if (process.env.API_PASS && partes[0] === process.env.API_USER && partes[1] === process.env.API_PASS) return next();
-  res.set('WWW-Authenticate', 'Basic realm="Musa CRM"');
-  return res.status(401).json({ error: 'Nao autorizado.' });
+  const tokenUser = auth.usuarioDaRequisicao(req);
+  if (tokenUser) { req.usuario = tokenUser; return next(); }
+  return res.status(401).json({ error: 'Sessao nao autenticada ou expirada.' });
 });
-// ---- FIM DA TRAVA EMERGENCIAL ----
+// ---- AUTORIZACAO POR PAPEL (T0.3 etapa 3) ----
+const REGRAS_DE_PAPEL = [
+  { metodo: '*',      prefixo: '/api/_migrate',          papeis: ['admin'] },
+  { metodo: '*',      prefixo: '/api/logs',              papeis: ['admin', 'gerente'] },
+  { metodo: 'POST',   prefixo: '/api/salespeople',       papeis: ['admin', 'gerente'] },
+  { metodo: 'PATCH',  prefixo: '/api/salespeople',       papeis: ['admin', 'gerente'] },
+  { metodo: 'DELETE', prefixo: '/api/salespeople',       papeis: ['admin', 'gerente'] },
+  { metodo: 'POST',   prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
+  { metodo: 'PATCH',  prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
+  { metodo: 'DELETE', prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
+  { metodo: 'DELETE', prefixo: '/api/clients',           papeis: ['admin', 'gerente'] },
+  { metodo: '*',      prefixo: '/api/users',             papeis: ['admin'] }
+];
+
+app.use('/api', function (req, res, next) {
+  const caminho = req.originalUrl.split('?')[0];
+  const regra = REGRAS_DE_PAPEL.find(function (r) {
+    return (r.metodo === '*' || r.metodo === req.method) && caminho.indexOf(r.prefixo) === 0;
+  });
+  if (!regra) return next();
+  if (!req.usuario || regra.papeis.indexOf(req.usuario.papel) === -1) {
+    return res.status(403).json({ error: 'Sem permissao para esta area.' });
+  }
+  next();
+});
+// ---- FIM DA AUTENTICACAO E AUTORIZACAO ----
+
+// ---- LOGIN COM JWT (T0.3 etapa 1) - aceita e-mail+senha e o formato antigo ----
+app.post('/api/auth/login', express.json({ limit: '1mb' }), async function (req, res) {
+  const bcrypt = require('bcryptjs');
+  const email = (req.body && req.body.email || '').trim().toLowerCase();
+  const senha = req.body && req.body.password || '';
+  if (!senha) return res.status(400).json({ error: 'Senha e obrigatoria.' });
+
+  try {
+    if (email) {
+      const [r] = await pool.query("SELECT * FROM users WHERE email = ? AND status = 'active'", [email]);
+      if (!r.length || !bcrypt.compareSync(senha, r[0].password_hash)) {
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      }
+      const u = r[0];
+      await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [u.id]);
+      return res.json({ token: auth.gerarToken(u), role: u.role, salespersonName: u.name, salespersonId: u.salesperson_id });
+    }
+
+    return res.status(401).json({ error: 'Informe e-mail e senha.' });
+  } catch (e) {
+    return res.status(500).json({ error: 'Falha no login.' });
+  }
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -2145,6 +2194,61 @@ app.post('/api/_migrate', async function (req, res) {
     res.status(500).json({ error: e.sqlMessage || e.message });
   } finally {
     conn.release();
+  }
+});
+
+// ---- GESTAO DE USUARIOS (T0.3) - somente admin, ver REGRAS_DE_PAPEL ----
+const PAPEIS_VALIDOS = ['admin', 'gerente', 'profissional', 'vendedor'];
+
+app.get('/api/users', async function (req, res) {
+  try {
+    const [r] = await pool.query(
+      'SELECT id, name, email, role, status, last_login_at, created_at FROM users ORDER BY name'
+    );
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: 'Falha ao listar usuarios.' });
+  }
+});
+
+app.post('/api/users', express.json({ limit: '1mb' }), async function (req, res) {
+  const bcrypt = require('bcryptjs');
+  const b = req.body || {};
+  const nome = (b.name || '').trim();
+  const email = (b.email || '').trim().toLowerCase();
+  const senha = b.password || '';
+  const papel = PAPEIS_VALIDOS.indexOf(b.role) !== -1 ? b.role : 'vendedor';
+  if (!nome || !email || !senha) return res.status(400).json({ error: 'Nome, e-mail e senha sao obrigatorios.' });
+  if (String(senha).length < 10) return res.status(400).json({ error: 'A senha precisa ter ao menos 10 caracteres.' });
+  try {
+    const id = 'u_' + Math.random().toString(36).slice(2, 10);
+    await pool.query('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
+      [id, nome, email, bcrypt.hashSync(String(senha), 10), papel]);
+    res.status(201).json({ id: id, name: nome, email: email, role: papel });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ja existe usuario com esse e-mail.' });
+    res.status(500).json({ error: 'Falha ao criar usuario.' });
+  }
+});
+
+app.patch('/api/users/:id', express.json({ limit: '1mb' }), async function (req, res) {
+  const bcrypt = require('bcryptjs');
+  const b = req.body || {};
+  const campos = [], valores = [];
+  if (b.name) { campos.push('name = ?'); valores.push(String(b.name).trim()); }
+  if (b.role && PAPEIS_VALIDOS.indexOf(b.role) !== -1) { campos.push('role = ?'); valores.push(b.role); }
+  if (b.status === 'active' || b.status === 'inactive') { campos.push('status = ?'); valores.push(b.status); }
+  if (b.password) {
+    if (String(b.password).length < 10) return res.status(400).json({ error: 'A senha precisa ter ao menos 10 caracteres.' });
+    campos.push('password_hash = ?'); valores.push(bcrypt.hashSync(String(b.password), 10));
+  }
+  if (!campos.length) return res.status(400).json({ error: 'Nada para atualizar.' });
+  try {
+    valores.push(req.params.id);
+    await pool.query('UPDATE users SET ' + campos.join(', ') + ' WHERE id = ?', valores);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Falha ao atualizar usuario.' });
   }
 });
 
