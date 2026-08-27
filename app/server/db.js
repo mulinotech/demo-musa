@@ -16,11 +16,13 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
-// O esquema do banco e responsabilidade das migrations em db/migrations.
-// Aqui so verificamos que a conexao sobe, para o erro aparecer no log no boot.
-pool.getConnection()
-  .then(function (c) { console.log('Conexao com o MySQL estabelecida.'); c.release(); })
-  .catch(function (e) { console.error('Falha na conexao com o MySQL:', e.message); });
+/** O esquema e responsabilidade das migrations em db/migrations.
+ *  Esta checagem existe so para o erro aparecer no log no boot — e e chamada
+ *  pelo index.js, nunca no carregamento, para os testes nao tentarem conectar. */
+function verificarConexao() {
+  return pool.getConnection()
+    .then(function (c) { console.log('Conexao com o MySQL estabelecida.'); c.release(); })
+    .catch(function (e) { console.error('Falha na conexao com o MySQL:', e.message); });
+}
 
-
-module.exports = { pool: pool, dbConfig: dbConfig };
+module.exports = { pool: pool, dbConfig: dbConfig, verificarConexao: verificarConexao };

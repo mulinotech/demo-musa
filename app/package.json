@@ -8,7 +8,8 @@
     "build": "vite build",
     "server": "node app.js",
     "start": "node app.js",
-    "migrate": "node db/migrate.js"
+    "migrate": "node db/migrate.js",
+    "test": "node --test \"tests/*.test.js\""
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -17,6 +18,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.1",
     "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "mysql2": "^3.9.7",
