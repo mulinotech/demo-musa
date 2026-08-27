@@ -8,7 +8,7 @@ function segredo() {
   return s;
 }
 function gerarToken(u) {
-  return jwt.sign({ sub: u.id, nome: u.name, papel: u.role }, segredo(), { expiresIn: EXPIRACAO });
+  return jwt.sign({ sub: u.id, nome: u.name, papel: u.role, vendedorId: u.salesperson_id || null }, segredo(), { expiresIn: EXPIRACAO });
 }
 function usuarioDaRequisicao(req) {
   const h = req.headers.authorization || '';
