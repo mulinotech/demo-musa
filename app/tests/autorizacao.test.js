@@ -52,3 +52,12 @@ test('prefixo de precificacao nao contamina caminho parecido', function () {
   assert.strictEqual(regraPara('GET', '/api/pricing-publico'), null);
   assert.strictEqual(regraPara('GET', '/api/fixed-costs-resumo'), null);
 });
+
+test('financeiro e de admin e gerente: profissional nao ve o caixa da clinica', function () {
+  ['GET', 'POST', 'PATCH', 'DELETE'].forEach(function (m) {
+    assert.deepStrictEqual(regraPara(m, '/api/finance/entries').papeis, ['admin', 'gerente'], m);
+    assert.deepStrictEqual(regraPara(m, '/api/recurring-expenses').papeis, ['admin', 'gerente'], m);
+  });
+  assert.deepStrictEqual(regraPara('GET', '/api/finance/summary').papeis, ['admin', 'gerente']);
+  assert.deepStrictEqual(regraPara('PATCH', '/api/finance/entries/ce_1/pay').papeis, ['admin', 'gerente']);
+});

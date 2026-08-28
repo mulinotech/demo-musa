@@ -1,11 +1,11 @@
 /**
  * Verificacao de navegacao do front.
  *
- * Confere, num navegador de verdade e sobre o dist compilado, o que teste de
- * unidade nao pega: se o site publico deixou mesmo de baixar o console, se cada
- * aba abre sem erro, se quem nao tem token cai no login, se o vendedor nao ve o
- * que nao deve, se a sessao expirada avisa, e se a calculadora mostra na tela o
- * mesmo 237,62 que o teste de referencia exige do motor.
+ * Roda um navegador de verdade sobre o dist compilado e confere o que teste de
+ * unidade nao pega: se o site publico deixou de baixar o console, se cada aba
+ * abre sem erro, se quem nao tem token cai no login, se vendedor e profissional
+ * nao veem preco nem financeiro, se a calculadora mostra os 237,62 do caso de
+ * referencia, e se competencia e caixa aparecem como numeros DIFERENTES.
  *
  * Nao e dependencia do projeto. Para rodar:
  *   npm run build
@@ -13,9 +13,11 @@
  *   npm i --no-save playwright && npx playwright install chromium
  *   node scripts/verificar-navegacao.mjs
  *
+ * As telas conversam com a API real; para rodar contra dados de fixture, use o
+ * servidor de simulacao do ambiente de desenvolvimento.
+ *
  * O token usado aqui e falso de proposito: papelDoToken() so decodifica o
- * payload no navegador. O servidor continua validando assinatura - isto nao
- * abre porta nenhuma.
+ * payload no navegador. O servidor continua validando assinatura.
  */
 import { chromium } from 'playwright';
 
@@ -50,6 +52,9 @@ async function novaAba(papel) {
   return pg;
 }
 
+// Atencao ao comparar dinheiro: toLocaleString('pt-BR', {style:'currency'})
+// separa "R$" do numero com espaco NAO-QUEBRAVEL (U+00A0). Comparar com
+// 'R$ 400,00' digitado no teclado falha em silencio - use /R\$\s*400,00/.
 const kb = (pg) => pg.baixados.reduce((a, b) => a + b.kb, 0);
 let falhas = 0;
 function conferir(rotulo, ok, detalhe) {
@@ -89,7 +94,7 @@ console.log('\n[C] Sessao de admin');
   await pg.waitForTimeout(1200);
   conferir('fica em /crm', pg.url().endsWith('/crm'), pg.url());
   const abas = await pg.locator('header nav a').allInnerTexts();
-  conferir('barra com as abas de admin', abas.length === 9, abas.length + ': ' + abas.join(' | '));
+  conferir('barra com as abas de admin', abas.length === 10, abas.length + ': ' + abas.join(' | '));
   conferir('botao Sair presente', (await pg.locator('button:has-text("Sair")').count()) > 0);
 
   const rotas = [
@@ -240,6 +245,81 @@ console.log('\n[J] Vendedor nao ve precificacao');
   conferir('e devolvido para /crm', pg.url().endsWith('/crm'), pg.url());
   const abas = await pg.locator('header nav a').allInnerTexts();
   conferir('aba nao aparece para vendedor', !abas.join('|').includes('Precifica'), abas.join(' | '));
+  await pg.context().close();
+}
+
+// ----------------------------------------------------------- financeiro
+console.log('\n[K] Financeiro: competencia x caixa');
+{
+  const pg = await novaAba('admin');
+  await pg.goto(BASE + '/crm/financeiro', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(1500);
+  conferir('rota abre', pg.url().endsWith('/crm/financeiro'), pg.url());
+
+  // Periodo do cenario conferido a mao: marco/2026.
+  await pg.locator('input[type="date"]').first().fill('2026-03-01');
+  await pg.locator('input[type="date"]').nth(1).fill('2026-03-31');
+  await pg.waitForTimeout(1400);
+
+  const comp = await pg.locator('body').innerText();
+  conferir('competencia: receita 1.500,00', comp.includes('1.500,00'));
+  conferir('competencia: despesa 1.100,00', comp.includes('1.100,00'));
+  conferir('competencia: resultado 400,00', /R\$\s*400,00/.test(comp));
+  conferir('rotula a base na tela', /por compet/i.test(comp));
+  conferir('contas a pagar em destaque', comp.includes('1.000,00') && /vencido/i.test(comp));
+  conferir('sem erro de pagina', pg.erros.length === 0, pg.erros.join(' | '));
+
+  // A mesma tela, o outro criterio: numeros diferentes, os dois certos.
+  await pg.locator('button:has-text("Caixa")').first().click();
+  await pg.waitForTimeout(1400);
+  const caixa = await pg.locator('body').innerText();
+  conferir('caixa: receita 1.000,00', caixa.includes('1.000,00'));
+  conferir('caixa: resultado 700,00', /R\$\s*700,00/.test(caixa));
+  conferir('caixa NAO repete o resultado da competencia', !/R\$\s*400,00/.test(caixa));
+  conferir('rotula a base trocada', /por caixa/i.test(caixa));
+
+  await pg.context().close();
+}
+
+console.log('\n[L] Financeiro: lancamentos e recorrentes');
+{
+  const pg = await novaAba('admin');
+  await pg.goto(BASE + '/crm/financeiro', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(1300);
+  await pg.locator('input[type="date"]').first().fill('2026-03-01');
+  await pg.locator('input[type="date"]').nth(1).fill('2026-03-31');
+  await pg.waitForTimeout(900);
+
+  await pg.locator('button:has-text("Lançamentos")').first().click();
+  await pg.waitForTimeout(1200);
+  const linhas = await pg.locator('tbody tr').count();
+  // Marco por competencia tem 4: duas receitas e duas despesas. A quinta linha
+  // do razao e de fevereiro e nao pode aparecer aqui.
+  conferir('lista os 4 lancamentos de marco', linhas === 4, String(linhas));
+  const semFevereiro = !(await pg.locator('body').innerText()).includes('Luvas e descartaveis');
+  conferir('nao vaza lancamento de fora do periodo', semFevereiro);
+  const texto = await pg.locator('body').innerText();
+  conferir('receita com sinal de mais', /\+\s*R\$\s*1\.000,00/.test(texto));
+  conferir('despesa com sinal de menos', /−\s*R\$\s*300,00/.test(texto));
+  conferir('marca o que esta em aberto', /em aberto/i.test(texto));
+
+  await pg.locator('button:has-text("Recorrentes")').first().click();
+  await pg.waitForTimeout(1000);
+  const rec = await pg.locator('body').innerText();
+  conferir('recorrente aparece com o dia do mes', /todo dia 10/.test(rec), rec.slice(0, 0) || 'ver texto');
+  conferir('avisa que gerar duas vezes nao duplica', /n.o duplica/i.test(rec));
+  conferir('sem erro de pagina', pg.erros.length === 0, pg.erros.join(' | '));
+  await pg.context().close();
+}
+
+console.log('\n[M] Vendedor nao ve financeiro');
+{
+  const pg = await novaAba('vendedor');
+  await pg.goto(BASE + '/crm/financeiro', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(900);
+  conferir('e devolvido para /crm', pg.url().endsWith('/crm'), pg.url());
+  const abas = await pg.locator('header nav a').allInnerTexts();
+  conferir('aba nao aparece para vendedor', !abas.join('|').includes('Financeiro'), abas.join(' | '));
   await pg.context().close();
 }
 

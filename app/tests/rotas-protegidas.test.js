@@ -75,3 +75,12 @@ test('simular preco sem token e 401, nao 400', async function () {
   const r = await chamar(ctx, 'POST', '/api/pricing/simulate');
   assert.strictEqual(r.status, 401);
 });
+
+test('vendedor e profissional nao acessam o financeiro', async function () {
+  for (const papel of ['vendedor', 'profissional']) {
+    for (const caminho of ['/api/finance/summary', '/api/finance/entries', '/api/recurring-expenses']) {
+      const r = await chamar(ctx, 'GET', caminho, tokenPara(papel));
+      assert.strictEqual(r.status, 403, papel + ' nao deveria abrir ' + caminho);
+    }
+  }
+});

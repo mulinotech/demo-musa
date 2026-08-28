@@ -26,6 +26,7 @@ const Cadastros = lazy(() => import("./paginas/crm/Cadastros"));
 const Logs = lazy(() => import("./paginas/crm/Logs"));
 const Usuarios = lazy(() => import("./paginas/crm/Usuarios"));
 const Precificacao = lazy(() => import("./paginas/crm/Precificacao"));
+const Financeiro = lazy(() => import("./paginas/crm/Financeiro"));
 
 function CarregandoConsole() {
   return (
@@ -84,6 +85,14 @@ export default function App() {
           <Route path="atendimento" element={<Atendimento />} />
           <Route path="whatsapp" element={<IntegracaoWhatsApp />} />
           <Route path="cadastros" element={<Cadastros />} />
+          <Route
+            path="financeiro"
+            element={
+              <RotaProtegida papeis={["admin", "gerente"]}>
+                <Financeiro />
+              </RotaProtegida>
+            }
+          />
           <Route
             path="precificacao"
             element={
