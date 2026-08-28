@@ -56,3 +56,22 @@ test('toda resposta da API carrega o marcador de versao', async function () {
   assert.ok(marcador, 'a resposta deveria trazer x-trava-musa');
   assert.match(marcador, /^v\d+$/, 'formato esperado: v seguido de numero, veio: ' + marcador);
 });
+
+test('vendedor nao ve preco: a area de precificacao devolve 403', async function () {
+  // Preco e informacao sensivel de negocio. Testado pela API, nao pela tela -
+  // esconder o menu no front nao e controle de acesso.
+  for (const caminho of ['/api/pricing/settings', '/api/fixed-costs', '/api/pricing/simulations']) {
+    const r = await chamar(ctx, 'GET', caminho, tokenPara('vendedor'));
+    assert.strictEqual(r.status, 403, caminho + ' deveria negar vendedor');
+  }
+});
+
+test('profissional tambem nao ve preco', async function () {
+  const r = await chamar(ctx, 'GET', '/api/fixed-costs', tokenPara('profissional'));
+  assert.strictEqual(r.status, 403);
+});
+
+test('simular preco sem token e 401, nao 400', async function () {
+  const r = await chamar(ctx, 'POST', '/api/pricing/simulate');
+  assert.strictEqual(r.status, 401);
+});

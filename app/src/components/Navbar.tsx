@@ -12,7 +12,7 @@ import { NavLink } from "react-router-dom";
 import { papelDoToken } from "../lib/api";
 import {
   MessageSquare, Users, Calendar, Settings, LayoutDashboard,
-  LogOut, MessageCircle, ShieldCheck, UserCog,
+  LogOut, MessageCircle, ShieldCheck, UserCog, Calculator,
 } from "lucide-react";
 import logoMusa from "../assets/logo-musa-crm.png";
 
@@ -28,6 +28,7 @@ const TODAS_AS_ABAS = [
   { to: "/crm/atendimento", fim: false, label: "Atendimento",         icon: MessageSquare,   papeis: [] },
   { to: "/crm/whatsapp",    fim: false, label: "Integração WhatsApp", icon: MessageCircle,   papeis: ["admin", "gerente", "profissional"] },
   { to: "/crm/cadastros",   fim: false, label: "Cadastros",           icon: Settings,        papeis: ["admin", "gerente", "profissional"] },
+  { to: "/crm/precificacao",fim: false, label: "Precificação",        icon: Calculator,      papeis: ["admin", "gerente"] },
   { to: "/crm/usuarios",    fim: false, label: "Usuários",            icon: UserCog,         papeis: ["admin"] },
   { to: "/crm/logs",        fim: false, label: "Logs do Sistema",     icon: ShieldCheck,     papeis: ["admin", "gerente", "profissional"] },
 ];

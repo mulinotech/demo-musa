@@ -9,7 +9,7 @@
     "server": "node app.js",
     "start": "node app.js",
     "migrate": "node db/migrate.js",
-    "test": "node --test tests/autorizacao.test.js tests/rotas-protegidas.test.js tests/token.test.js tests/usuarios.test.js"
+    "test": "node --test tests/autorizacao.test.js tests/precificacao.test.js tests/rotas-protegidas.test.js tests/token.test.js tests/usuarios.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -24,7 +24,6 @@
     "mysql2": "^3.9.7",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "react-router-dom": "^7.18.2",
     "recharts": "^3.9.1"
   },
   "devDependencies": {

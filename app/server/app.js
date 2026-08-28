@@ -52,6 +52,7 @@ app.use(require('./routes/gemini'));
 app.use(require('./routes/evolution'));
 app.use(require('./routes/reports'));
 app.use(require('./routes/users'));
+app.use(require('./routes/pricing'));
 app.use(require('./routes/migrate'));
 
 // Rota curinga do SPA React: precisa ficar DEPOIS de todas as rotas /api.

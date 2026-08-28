@@ -1,10 +1,11 @@
 /**
- * Verificacao de navegacao do front (T0.5).
+ * Verificacao de navegacao do front.
  *
  * Confere, num navegador de verdade e sobre o dist compilado, o que teste de
  * unidade nao pega: se o site publico deixou mesmo de baixar o console, se cada
  * aba abre sem erro, se quem nao tem token cai no login, se o vendedor nao ve o
- * que nao deve e se a sessao expirada avisa.
+ * que nao deve, se a sessao expirada avisa, e se a calculadora mostra na tela o
+ * mesmo 237,62 que o teste de referencia exige do motor.
  *
  * Nao e dependencia do projeto. Para rodar:
  *   npm run build
@@ -88,7 +89,7 @@ console.log('\n[C] Sessao de admin');
   await pg.waitForTimeout(1200);
   conferir('fica em /crm', pg.url().endsWith('/crm'), pg.url());
   const abas = await pg.locator('header nav a').allInnerTexts();
-  conferir('barra com as abas de admin', abas.length >= 7, abas.length + ': ' + abas.join(' | '));
+  conferir('barra com as abas de admin', abas.length === 9, abas.length + ': ' + abas.join(' | '));
   conferir('botao Sair presente', (await pg.locator('button:has-text("Sair")').count()) > 0);
 
   const rotas = [
@@ -174,6 +175,71 @@ console.log('\n[G] Vendedor tentando /crm/usuarios pela URL');
   await pg.goto(BASE + '/crm/usuarios', { waitUntil: 'networkidle' });
   await pg.waitForTimeout(900);
   conferir('e devolvido para /crm', pg.url().endsWith('/crm'), pg.url());
+  await pg.context().close();
+}
+
+// ---------------------------------------------------------- precificacao
+console.log('\n[H] Calculadora de preco');
+{
+  const pg = await novaAba('admin');
+  await pg.goto(BASE + '/crm/precificacao', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(1500);
+  conferir('rota abre', pg.url().endsWith('/crm/precificacao'), pg.url());
+
+  // O caso de referencia, ponta a ponta: escolher o servico de 60 min com
+  // R$ 45 de insumo tem de mostrar 237,62 na tela.
+  await pg.selectOption('select', { label: 'Limpeza de Pele Premium' });
+  await pg.waitForTimeout(1400);
+  const corpo = await pg.locator('body').innerText();
+
+  conferir('preco sugerido 237,62 na tela', corpo.includes('237,62'), corpo.match(/R\$\s*[\d.,]+/g)?.slice(0, 6).join(' | '));
+  conferir('lucro liquido 71,29', corpo.includes('71,29'));
+  conferir('custo por hora 75,00', corpo.includes('75,00'));
+  conferir('texto do dinheiro na mesa', /deixando/i.test(corpo) && corpo.includes('57,62'));
+  conferir('sem erro de pagina', pg.erros.length === 0, pg.erros.join(' | '));
+
+  // Margem maior tem de subir o preco - e a prova de que recalcula ao vivo.
+  // Localizar pelo rotulo, nao por indice: nth() muda de significado quando o
+  // formulario ganha um campo, e o teste passa a medir outra coisa em silencio.
+  const margem = pg.locator('label:text-is("Margem (%)") + input');
+  await margem.fill('50');
+  await pg.waitForTimeout(1300);
+  const depois = await pg.locator('body').innerText();
+  // 120 / (1 - 0,695) = 393,44
+  conferir('mudar a margem recalcula sozinho', !depois.includes('237,62') && depois.includes('393,44'),
+    depois.match(/R\$\s*[\d.,]+/g)?.slice(0, 4).join(' | '));
+
+  // Guarda: soma dos percentuais em 100% nao pode mostrar preco.
+  await margem.fill('90');
+  await pg.waitForTimeout(1200);
+  const estourado = await pg.locator('body').innerText();
+  conferir('percentuais acima de 100% viram aviso, nao preco',
+    /menor que 100%/.test(estourado), estourado.slice(0, 0) || 'ver aviso');
+
+  await pg.context().close();
+}
+
+console.log('\n[I] Duracao ambigua no catalogo');
+{
+  const pg = await novaAba('admin');
+  await pg.goto(BASE + '/crm/precificacao', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(1400);
+  await pg.selectOption('select', { label: 'Ultraformer MPT' });
+  await pg.waitForTimeout(1200);
+  const corpo = await pg.locator('body').innerText();
+  conferir('pede a duracao em vez de chutar', /cadastrada como texto/.test(corpo));
+  conferir('nao inventa preco sem duracao', !/Pre.o sugerido[\s\S]{0,40}R\$\s*\d/.test(corpo) || /Informe a dura/.test(corpo));
+  await pg.context().close();
+}
+
+console.log('\n[J] Vendedor nao ve precificacao');
+{
+  const pg = await novaAba('vendedor');
+  await pg.goto(BASE + '/crm/precificacao', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(900);
+  conferir('e devolvido para /crm', pg.url().endsWith('/crm'), pg.url());
+  const abas = await pg.locator('header nav a').allInnerTexts();
+  conferir('aba nao aparece para vendedor', !abas.join('|').includes('Precifica'), abas.join(' | '));
   await pg.context().close();
 }
 

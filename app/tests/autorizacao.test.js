@@ -38,3 +38,17 @@ test('gestao de usuarios e exclusiva de admin', function () {
     assert.deepStrictEqual(regraPara(m, '/api/users').papeis, ['admin'], m + ' deveria exigir admin');
   });
 });
+
+test('precificacao e de admin e gerente, nunca de quem atende', function () {
+  ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].forEach(function (m) {
+    assert.deepStrictEqual(regraPara(m, '/api/pricing/settings').papeis, ['admin', 'gerente'], m);
+    assert.deepStrictEqual(regraPara(m, '/api/fixed-costs').papeis, ['admin', 'gerente'], m);
+  });
+  assert.deepStrictEqual(regraPara('POST', '/api/pricing/simulate').papeis, ['admin', 'gerente']);
+  assert.deepStrictEqual(regraPara('DELETE', '/api/fixed-costs/fc_123').papeis, ['admin', 'gerente']);
+});
+
+test('prefixo de precificacao nao contamina caminho parecido', function () {
+  assert.strictEqual(regraPara('GET', '/api/pricing-publico'), null);
+  assert.strictEqual(regraPara('GET', '/api/fixed-costs-resumo'), null);
+});

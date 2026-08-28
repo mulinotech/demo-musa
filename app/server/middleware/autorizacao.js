@@ -15,7 +15,10 @@ const REGRAS_DE_PAPEL = [
   { metodo: 'PATCH',  prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
   { metodo: 'DELETE', prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
   { metodo: 'DELETE', prefixo: '/api/clients',           papeis: ['admin', 'gerente'] },
-  { metodo: '*',      prefixo: '/api/users',             papeis: ['admin'] }
+  { metodo: '*',      prefixo: '/api/users',             papeis: ['admin'] },
+  // Preco e informacao sensivel de negocio: profissional e vendedor nao veem.
+  { metodo: '*',      prefixo: '/api/pricing',           papeis: ['admin', 'gerente'] },
+  { metodo: '*',      prefixo: '/api/fixed-costs',       papeis: ['admin', 'gerente'] }
 ];
 
 /** O prefixo casa com o caminho exato ou com um filho dele.
