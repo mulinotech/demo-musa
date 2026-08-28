@@ -20,7 +20,7 @@ function ehRotaPublica(metodo, caminho) {
 }
 
 function porteiro(req, res, next) {
-  res.set('X-Trava-Musa', 'v3');
+  res.set('X-Trava-Musa', 'v4');
   const caminho = req.originalUrl.split('?')[0];
   if (ehRotaPublica(req.method, caminho)) return next();
   const usuario = auth.usuarioDaRequisicao(req);

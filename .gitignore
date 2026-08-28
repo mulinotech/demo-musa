@@ -28,3 +28,8 @@ Thumbs.db
 # Backups de refatoracao
 *.pre-*
 *.bak-*
+
+# Transferencias e descartes locais (o assistente nao apaga arquivo na maquina)
+_to_delete/
+*.tgz
+*.zip

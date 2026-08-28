@@ -1,45 +1,47 @@
-import { salvarToken, limparToken, papelDoToken } from "../lib/api";
-import React, { useState, useEffect, useMemo, FormEvent } from "react";
-import { X, Lock, Sparkles, ShieldCheck, FileText, Pencil } from "lucide-react";
+import { limparToken } from "../lib/api";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { X, Sparkles, ShieldCheck, FileText, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Navbar from "./Navbar";
-import PipelineKanban from "./PipelineKanban";
-import ClientDirectory from "./ClientDirectory";
-import ChatConsole from "./ChatConsole";
-import EvolutionHub from "./EvolutionHub";
-import WhatsAppManager from "./WhatsAppManager";
-import DashboardOverview from "./DashboardOverview";
-import CrmSettings from "./CrmSettings";
-import SystemLogsHub from "./SystemLogsHub";
+import { ContextoCrm } from "../paginas/crm/contexto";
 import { Client, Lead, Interaction, Treatment, TreatmentCatalog, TreatmentPlan, TreatmentSession } from "../types";
 
+/**
+ * Da T0.5 em diante este arquivo e o *layout* do console: barra de navegacao,
+ * carga dos dados, gaveta do lead e o botao de relatorio. As telas vivem em
+ * src/paginas/crm/ e chegam aqui pelo <Outlet />. Tela nova de modulo entra la,
+ * nunca mais aqui dentro.
+ */
+
+/** Rota -> nome de aba que a rota /api/reports/generate ja conhece. */
+const ABA_DO_RELATORIO: Record<string, { aba: string; titulo: string }> = {
+  "/crm": { aba: "dashboard", titulo: "Painel de Visao Geral" },
+  "/crm/funil": { aba: "pipeline", titulo: "Funil & Gestao de Leads" },
+  "/crm/pacientes": { aba: "clients", titulo: "Diretorio de Pacientes" },
+  "/crm/atendimento": { aba: "chat", titulo: "Central de Atendimento" },
+};
+
+/**
+ * Desde a T0.5 este componente e montado pela rota /crm, sem pai que passe
+ * dados. As props sobreviventes sao opcionais: `onClose` para voltar ao site e
+ * `onUpdateLeadStatus` para o caso de alguem ainda querer espelhar o estado.
+ * `leads` e `onDeleteLead` eram props mortas - nunca foram lidas aqui dentro.
+ */
 interface CrmDashboardProps {
-  isOpen: boolean;
-  onClose: () => void;
-  leads: Lead[];
-  onUpdateLeadStatus: (leadId: string, newStatus: Lead["status"], phone?: string, email?: string) => void;
-  onDeleteLead: (leadId: string) => void;
+  isOpen?: boolean;
+  onClose?: () => void;
+  onUpdateLeadStatus?: (leadId: string, newStatus: Lead["status"], phone?: string, email?: string) => void;
 }
 
 export default function CrmDashboard({
-  isOpen,
+  isOpen = true,
   onClose,
-  leads: parentLeads,
   onUpdateLeadStatus: parentUpdateStatus,
-  onDeleteLead,
 }: CrmDashboardProps) {
-  const [password, setPassword] = useState<string>("");
-  const [email, setEmail] = useState<string>("");
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem("musa_crm_auth") === "true";
-  });
-  const [authError, setAuthError] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
-
-  // Keep localStorage synced when auth state changes
-  useEffect(() => {
-    localStorage.setItem("musa_crm_auth", String(isAuthenticated));
-  }, [isAuthenticated]);
+  const navigate = useNavigate();
+  const local = useLocation();
+  const relatorioDaRota = ABA_DO_RELATORIO[local.pathname.replace(/\/$/, "") || "/crm"];
 
   // CRM State variables
   const [clients, setClients] = useState<Client[]>([]);
@@ -55,14 +57,6 @@ export default function CrmDashboard({
   // Active Lead Details Drawer inside CRM
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [chatView, setChatView] = useState<'crm' | 'evolution'>('crm');
-
-  // Manager WhatsApp Lock States inside Atendimento
-  const [isManagerAuth, setIsManagerAuth] = useState<boolean>(() => {
-    return sessionStorage.getItem('evolution_admin_auth') === 'true';
-  });
-  const [managerPassword, setManagerPassword] = useState('');
-  const [managerAuthError, setManagerAuthError] = useState('');
-  const [showManagerPass, setShowManagerPass] = useState(false);
 
   // Aviso não bloqueante (substitui os window.alert que travavam o envio)
   const [toast, setToast] = useState<{ type: 'ok' | 'err' | 'warn'; text: string } | null>(null);
@@ -213,7 +207,7 @@ export default function CrmDashboard({
           }
         }
         await fetchCrmData();
-        parentUpdateStatus(id, status, phone, email);
+        if (parentUpdateStatus) parentUpdateStatus(id, status, phone, email);
         return true;
       } else {
         const errBody = await response.json().catch(() => ({}));
@@ -227,55 +221,41 @@ export default function CrmDashboard({
     }
   };
 
+  // O layout so monta atras de RotaProtegida, entao aqui ja existe token.
   useEffect(() => {
-    if (isAuthenticated && isOpen) {
-      fetchCrmData();
-    }
-  }, [isAuthenticated, isOpen]);
+    if (isOpen) fetchCrmData();
+  }, [isOpen]);
 
-  const handleLogin = async (e: FormEvent) => {
-    e.preventDefault();
-    try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await response.json();
-      if (response.ok) {
-        salvarToken(data.token || "");
-        setIsAuthenticated(true);
-        setAuthError("");
-        localStorage.setItem("userRole", data.role);
-        if (data.salespersonName) {
-          localStorage.setItem("salespersonName", data.salespersonName);
-        } else if (data.role === 'admin') {
-          localStorage.setItem("salespersonName", "Dra. Musa (Proprietária)");
-        }
-        if (data.salespersonId) {
-          localStorage.setItem("salespersonId", data.salespersonId);
-        } else {
-          localStorage.removeItem("salespersonId");
-        }
-        await fetchCrmData();
-      } else {
-        setAuthError(data.error || "Senha incorreta. Por favor, tente novamente.");
-      }
-    } catch (err) {
-      setAuthError("Erro ao conectar com o servidor.");
-    }
-  };
-
-  const handleClose = () => {
-    setIsAuthenticated(false);
-    setPassword("");
-    setEmail("");
+  const sair = () => {
     limparToken();
-    localStorage.removeItem("musa_crm_auth");
     localStorage.removeItem("userRole");
     localStorage.removeItem("salespersonId");
     localStorage.removeItem("salespersonName");
-    onClose();
+    if (onClose) onClose();
+    else navigate("/", { replace: true });
+  };
+
+  const handleAddLead = async (data: any) => {
+    const mapaStatus: Record<string, string> = {
+      new: "novo",
+      contacted: "contatado",
+      proposal_sent: "agendado",
+      converted: "arquivado",
+    };
+    await fetch("/api/leads", {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        name: data.name,
+        whatsapp: data.phone,
+        email: data.email,
+        treatment: data.interest,
+        status: mapaStatus[data.status] || data.status || "novo",
+        source: data.source || "site",
+        message: "Paciente inserido manualmente pelo Kanban comercial.",
+      }),
+    });
+    await fetchCrmData();
   };
 
   const handleAddClient = async (clientData: Omit<Client, "id" | "createdAt" | "updatedAt">) => {
@@ -814,224 +794,79 @@ export default function CrmDashboard({
 
   if (!isOpen) return null;
 
+  const contexto: ContextoCrm = {
+    clients,
+    treatments,
+    treatmentPlans,
+    interactions,
+    leads: localLeads,
+    treatmentCatalog,
+    isAiConfigured,
+    atualizar: fetchCrmData,
+    onAddClient: handleAddClient,
+    onUpdateClient: handleUpdateClient,
+    onDeleteClient: handleDeleteClient,
+    onAddTreatment: handleAddTreatment,
+    onUpdateTreatment: handleUpdateTreatment,
+    onAddTreatmentPlan: handleAddTreatmentPlan,
+    onUpdateTreatmentPlan: handleUpdateTreatmentPlan,
+    onDeleteTreatmentPlan: handleDeleteTreatmentPlan,
+    onUpdateTreatmentSession: handleUpdateTreatmentSession,
+    onAddLead: handleAddLead,
+    onUpdateLeadStatus: handleUpdateLeadStatus,
+    onDeleteLead: handleDeleteLead,
+    onSelectLead: setSelectedLead,
+    onSendMessage: handleSendMessage,
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex bg-brand-beige animate-fade-in">
       <div className="relative w-full h-full overflow-hidden flex flex-col justify-between bg-brand-beige">
-        
 
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Navbar isAiConfigured={isAiConfigured} onSair={sair} />
 
-        {/* Security barrier screen */}
-        {!isAuthenticated ? (
-          <div className="p-10 flex flex-col items-center justify-center space-y-6 text-center flex-1 my-12">
-            <Lock className="w-10 h-10 text-brand-brown animate-pulse" />
-            <div className="space-y-2 max-w-md">
-              <h4 className="text-xs font-bold text-brand-brown uppercase tracking-widest">Acesso de Altíssima Segurança</h4>
-              <p className="text-[11px] text-brand-brown/70 font-light leading-relaxed">
-                Entre com seu e-mail e senha para acessar os prontuários, fichas anamnese e logs do CRM.
-              </p>
-            </div>
-
-            <form onSubmit={handleLogin} className="w-full max-w-xs space-y-3.5">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Seu e-mail"
-                autoComplete="username"
-                className="w-full bg-white border border-brand-gold/30 rounded px-4 py-2.5 text-center text-xs text-brand-brown focus:outline-none focus:border-brand-brown transition-colors"
-                autoFocus
-              />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Sua senha"
-                className="w-full bg-white border border-brand-gold/30 rounded px-4 py-2.5 text-center text-xs text-brand-brown focus:outline-none focus:border-brand-brown transition-colors"
-                autoComplete="current-password"
-              />
-              {authError && <p className="text-[10px] text-red-650 font-semibold">{authError}</p>}
-              <button
-                type="submit"
-                className="w-full bg-brand-brown hover:bg-brand-brown/90 text-brand-beige font-extrabold uppercase text-[10px] tracking-widest py-2.5 rounded cursor-pointer transition-colors"
-              >
-                Desbloquear Painel
-              </button>
-            </form>
-          </div>
-        ) : (
-          /* CRM Dashboard content area */
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Navbar activeTab={activeTab} setActiveTab={setActiveTab} isAiConfigured={isAiConfigured} onClose={handleClose} />
-            
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-brand-beige/50">
-              {/* PDF Report generation banner */}
-              {['dashboard', 'pipeline', 'clients', 'chat'].includes(activeTab) && (
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 bg-white border border-brand-gold/15 p-4 rounded-2xl shadow-xs">
-                  <div className="space-y-0.5">
-                    <h3 className="text-xs font-serif font-bold text-brand-brown uppercase tracking-wider">
-                      {activeTab === 'dashboard' ? 'Painel de Visão Geral' :
-                       activeTab === 'pipeline' ? 'Funil & Gestão de Leads' :
-                       activeTab === 'clients' ? 'Diretório de Pacientes' : 'Central de Atendimento'}
-                    </h3>
-                    <p className="text-[10px] text-brand-brown/65">Análise e consolidação de métricas do mês atual</p>
-                  </div>
-                  <button
-                    onClick={() => handleGenerateReport(activeTab)}
-                    className="flex items-center space-x-1.5 bg-brand-brown hover:bg-brand-brown/95 text-brand-beige px-4 py-2 rounded-xl text-xxs font-bold transition-all shadow-sm font-serif border border-brand-gold/20"
-                  >
-                    <FileText className="h-3.5 w-3.5 text-brand-gold" />
-                    <span>Gerar Relatório PDF</span>
-                  </button>
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-brand-beige/50">
+            {/* Faixa de relatorio - so nas telas que o servidor sabe consolidar */}
+            {relatorioDaRota && (
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 bg-white border border-brand-gold/15 p-4 rounded-2xl shadow-xs">
+                <div className="space-y-0.5">
+                  <h3 className="text-xs font-serif font-bold text-brand-brown uppercase tracking-wider">
+                    {relatorioDaRota.titulo}
+                  </h3>
+                  <p className="text-[10px] text-brand-brown/65">Analise e consolidacao de metricas do mes atual</p>
                 </div>
-              )}
+                <button
+                  onClick={() => handleGenerateReport(relatorioDaRota.aba)}
+                  className="flex items-center space-x-1.5 bg-brand-brown hover:bg-brand-brown/95 text-brand-beige px-4 py-2 rounded-xl text-xxs font-bold transition-all shadow-sm font-serif border border-brand-gold/20"
+                >
+                  <FileText className="h-3.5 w-3.5 text-brand-gold" />
+                  <span>Gerar Relatorio PDF</span>
+                </button>
+              </div>
+            )}
 
-              {loadingData ? (
-                <div className="flex flex-col items-center justify-center h-full py-16">
-                  <Sparkles className="h-8 w-8 text-brand-gold animate-spin mb-2" />
-                  <p className="text-[11px] font-mono text-brand-brown tracking-widest uppercase">Atualizando base CRM...</p>
-                </div>
-              ) : (
-                <div className="h-full">
-                  {activeTab === 'dashboard' && (
-                    <DashboardOverview leads={localLeads} clients={clients} treatments={treatments} treatmentCatalog={treatmentCatalog} />
-                  )}
-
-                  {activeTab === 'pipeline' && (
-                    <PipelineKanban 
-                      leads={localLeads} 
-                      onAddLead={async (data) => {
-                        const statusMapping: Record<string, string> = {
-                          "new": "novo",
-                          "contacted": "contatado",
-                          "proposal_sent": "agendado",
-                          "converted": "arquivado"
-                        };
-                        const mappedStatus = statusMapping[data.status] || data.status || "novo";
-
-                        await fetch("/api/leads", {
-                          method: "POST",
-                          headers: getAuthHeaders(),
-                          body: JSON.stringify({
-                            name: data.name,
-                            whatsapp: data.phone,
-                            email: data.email,
-                            treatment: data.interest,
-                            status: mappedStatus,
-                            source: data.source || "site",
-                            message: "Paciente inserido manualmente pelo Kanban comercial."
-                          })
-                        });
-                        await fetchCrmData();
-                      }} 
-                      onUpdateLeadStatus={handleUpdateLeadStatus}
-                      onSelectLead={(lead) => setSelectedLead(lead)}
-                    />
-                  )}
-
-                  {activeTab === 'clients' && (
-                    <ClientDirectory 
-                      clients={clients} 
-                      treatments={treatments} 
-                      onAddClient={handleAddClient}
-                      onAddTreatment={handleAddTreatment}
-                      isAiConfigured={isAiConfigured}
-                      onUpdateClientData={() => fetchCrmData(true)}
-                      treatmentCatalog={treatmentCatalog}
-                      onUpdateClient={handleUpdateClient}
-                      onDeleteClient={handleDeleteClient}
-                      treatmentPlans={treatmentPlans}
-                      onAddTreatmentPlan={handleAddTreatmentPlan}
-                      onUpdateTreatmentPlan={handleUpdateTreatmentPlan}
-                      onDeleteTreatmentPlan={handleDeleteTreatmentPlan}
-                      onUpdateTreatmentSession={handleUpdateTreatmentSession}
-                    />
-                  )}
-
-                  {activeTab === 'chat' && (
-                    <div className="flex flex-col h-full space-y-4">
-                      <div className="flex justify-end space-x-2">
-                        <button 
-                          onClick={() => setChatView('crm')}
-                          className={`px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all duration-300 ${chatView === 'crm' ? 'bg-brand-brown text-brand-beige shadow-sm scale-102 font-bold' : 'bg-brand-brown/5 text-brand-brown/85 hover:bg-brand-beige hover:text-brand-brown'}`}
-                        >
-                          Atendimento CRM
-                        </button>
-                        <button 
-                          onClick={() => setChatView('evolution')}
-                          className={`px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all duration-300 ${chatView === 'evolution' ? 'bg-brand-brown text-brand-beige shadow-sm scale-102 font-bold' : 'bg-brand-brown/5 text-brand-brown/85 hover:bg-brand-beige hover:text-brand-brown'}`}
-                        >
-                          Gerenciador WhatsApp
-                        </button>
-                      </div>
-                      
-                      {chatView === 'crm' ? (
-                        <ChatConsole 
-                          clients={clients} 
-                          leads={localLeads} 
-                          interactions={interactions}
-                          onSendMessage={handleSendMessage}
-                          isAiConfigured={isAiConfigured}
-                          onDeleteLead={handleDeleteLead}
-                          onRefreshData={() => fetchCrmData(true)}
-                        />
-                      ) : (
-                        <div className="relative flex-1 h-[calc(100vh-200px)] overflow-hidden">
-                          {/* Conteúdo com Blur para não-admins.
-                              O antigo <iframe> do Evolution Manager era cross-origin: os botões
-                              de nova conversa e de envio não funcionavam dentro do frame. Agora o
-                              gerenciador é nativo e fala com a Evolution API pelo nosso backend. */}
-                          <div className={`w-full h-full ${(!['admin', 'gerente'].includes(papelDoToken())) ? 'filter blur-md pointer-events-none select-none' : ''}`}>
-                            <WhatsAppManager onMessageSent={() => fetchCrmData(true)} />
-                          </div>
-
-                          {/* Tela de Bloqueio e Senha caso não seja admin */}
-                          {!['admin', 'gerente'].includes(papelDoToken()) && (
-                            <div className="absolute inset-0 bg-brand-brown/30 backdrop-blur-md flex items-center justify-center p-4 z-20">
-                              <motion.div 
-                                initial={{ opacity: 0, scale: 0.95 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="w-full max-w-md bg-white border border-red-200 shadow-2xl rounded-2xl p-6 md:p-8 text-center flex flex-col items-center justify-center space-y-5"
-                              >
-                                <div className="bg-red-50 text-red-600 p-3.5 rounded-full flex items-center justify-center shadow-inner">
-                                  <Lock className="h-7 w-7 text-red-600 animate-pulse" />
-                                </div>
-                                <div className="space-y-2">
-                                  <h3 className="text-lg font-serif font-black text-red-600 tracking-wide uppercase">
-                                    ACESSO RESTRITO AO ADMINISTRADOR
-                                  </h3>
-                                  <p className="text-xs text-brand-brown/70 leading-relaxed font-sans">
-                                    O Gerenciador de WhatsApp é de acesso exclusivo para a Direção/Administração. Digite a senha master para desbloquear.
-                                  </p>
-                                </div>
-<p className="text-[11px] text-brand-brown/70 font-light leading-relaxed">
-                                  Peca a um administrador para liberar o seu acesso.
-                                </p>
-                              </motion.div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center h-full py-16">
+                <Sparkles className="h-8 w-8 text-brand-gold animate-spin mb-2" />
+                <p className="text-[11px] font-mono text-brand-brown tracking-widest uppercase">Atualizando base CRM...</p>
+              </div>
+            ) : (
+              <div className="h-full">
+                <Suspense
+                  fallback={
+                    <div className="flex flex-col items-center justify-center h-full py-16">
+                      <Sparkles className="h-8 w-8 text-brand-gold animate-spin mb-2" />
+                      <p className="text-[11px] font-mono text-brand-brown tracking-widest uppercase">Carregando a tela...</p>
                     </div>
-                  )}
-
-                  {activeTab === 'evolution' && (
-                    <EvolutionHub onWebhookTriggered={fetchCrmData} />
-                  )}
-
-                  {activeTab === 'settings' && (
-                    <CrmSettings />
-                  )}
-
-                  {activeTab === 'logs' && (
-                    <SystemLogsHub />
-                  )}
-                </div>
-              )}
-            </div>
+                  }
+                >
+                  <Outlet context={contexto} />
+                </Suspense>
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
       </div>
 

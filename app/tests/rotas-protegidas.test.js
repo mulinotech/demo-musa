@@ -47,6 +47,12 @@ test('token invalido e tratado como ausente', async function () {
 });
 
 test('toda resposta da API carrega o marcador de versao', async function () {
+  // Nao fixe o numero aqui. O marcador e incrementado a cada publicacao para
+  // sabermos qual codigo esta no ar (OPERACOES.md, secao 3); travar o valor
+  // faz a suite quebrar em todo deploy e ensina a ignorar teste vermelho.
+  // O que interessa e que o porteiro rodou e assinou a resposta.
   const r = await chamar(ctx, 'GET', '/api/config');
-  assert.strictEqual(r.headers.get('x-trava-musa'), 'v3');
+  const marcador = r.headers.get('x-trava-musa');
+  assert.ok(marcador, 'a resposta deveria trazer x-trava-musa');
+  assert.match(marcador, /^v\d+$/, 'formato esperado: v seguido de numero, veio: ' + marcador);
 });

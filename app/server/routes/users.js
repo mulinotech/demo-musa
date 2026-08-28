@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
+const { verificarAlteracao } = require('../services/usuarios');
 
 const PAPEIS_VALIDOS = ['admin', 'gerente', 'profissional', 'vendedor'];
 
@@ -51,6 +52,20 @@ router.patch('/api/users/:id', express.json({ limit: '1mb' }), async function (r
   }
   if (!campos.length) return res.status(400).json({ error: 'Nada para atualizar.' });
   try {
+    // Guarda contra os dois cliques que trancam todo mundo do lado de fora.
+    const [alvos] = await pool.query('SELECT id, name, role, status FROM users WHERE id = ?', [req.params.id]);
+    if (!alvos.length) return res.status(404).json({ error: 'Usuario nao encontrado.' });
+    const [contagem] = await pool.query(
+      "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active'"
+    );
+    const impedimento = verificarAlteracao({
+      solicitanteId: req.usuario && req.usuario.sub,
+      alvo: alvos[0],
+      mudanca: b,
+      adminsAtivos: Number(contagem[0].n)
+    });
+    if (impedimento) return res.status(impedimento.status).json({ error: impedimento.error });
+
     valores.push(req.params.id);
     await pool.query('UPDATE users SET ' + campos.join(', ') + ' WHERE id = ?', valores);
     res.json({ ok: true });
