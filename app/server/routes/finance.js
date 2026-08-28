@@ -353,20 +353,28 @@ router.patch('/api/recurring-expenses/:id', async function (req, res) {
   }
 });
 
-/** Gera os lançamentos das recorrências até hoje.
+/** Gera os lançamentos das recorrências.
  *
  *  Enquanto não existe o worker diário (entra junto com o `node-cron` da
  *  agenda, T1.5), esta rota é o gatilho manual. A idempotência é a mesma que o
  *  worker vai usar: source RECURRING + '<id>:<AAAA-MM>' na chave única, então
- *  rodar dez vezes no mesmo mês cria um lançamento só. */
+ *  rodar dez vezes no mesmo mês cria um lançamento só.
+ *
+ *  O PADRÃO É SÓ O MÊS CORRENTE, de propósito. Uma recorrência cadastrada com
+ *  data de início retroativa geraria, num único clique, meses inteiros de conta
+ *  em aberto e vencida — o painel abre acusando uma dívida que nunca existiu.
+ *  Foi o que aconteceu na primeira vez que isto rodou. Para preencher o
+ *  passado, mande `de` explicitamente e vá marcar as baixas depois. */
 router.post('/api/finance/recurring/run', async function (req, res) {
   try {
-    const ate = dataValida((req.body || {}).ate) || fin.dia(new Date());
+    const b = req.body || {};
     const [recorrencias] = await pool.query('SELECT * FROM recurring_expenses WHERE active = 1');
     let criados = 0, jaExistiam = 0;
+    let janela = null;
 
     for (const r of recorrencias) {
-      const datas = fin.ocorrencias(r, fin.dia(r.start_date), ate);
+      janela = fin.janelaDeGeracao({ de: b.de, ate: b.ate, inicioRecorrencia: r.start_date });
+      const datas = fin.ocorrencias(r, janela.de, janela.ate);
       for (const data of datas) {
         const chave = fin.chaveRecorrencia(r.id, data);
         try {
@@ -385,7 +393,7 @@ router.post('/api/finance/recurring/run', async function (req, res) {
     }
 
     if (criados) await logSystemEvent('FINANCEIRO', criados + ' despesa(s) recorrente(s) lancada(s).', autor(req));
-    res.json({ criados, jaExistiam });
+    res.json({ criados, jaExistiam, periodo: janela || fin.janelaDeGeracao({ de: b.de, ate: b.ate }) });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao gerar as despesas recorrentes.' });
   }

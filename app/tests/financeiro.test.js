@@ -190,3 +190,31 @@ test('a chave de idempotencia da recorrencia e uma por mes', function () {
   );
   assert.notStrictEqual(fin.chaveRecorrencia('r1', '2026-03-10'), fin.chaveRecorrencia('r1', '2026-04-10'));
 });
+
+/* --------------------------------------------------- janela de geracao */
+
+test('sem pedido explicito, a recorrencia so gera o mes corrente', function () {
+  // A regra existe por um erro real: em 28/08/2026 uma recorrencia cadastrada
+  // com inicio em abril gerou cinco meses de conta em aberto de uma vez, e o
+  // painel abriu acusando R$ 32.800 de divida vencida que nunca existiu.
+  const j = fin.janelaDeGeracao({ hoje: '2026-08-28', inicioRecorrencia: '2026-04-01' });
+  assert.strictEqual(j.de, '2026-08-01');
+  assert.strictEqual(j.ate, '2026-08-28');
+  assert.deepStrictEqual(
+    fin.ocorrencias({ id: 'r', day_of_month: 10, start_date: '2026-04-01', end_date: null, active: 1 }, j.de, j.ate),
+    ['2026-08-10'],
+    'uma ocorrencia, nao cinco'
+  );
+});
+
+test('preencher o passado exige pedir a data explicitamente', function () {
+  const j = fin.janelaDeGeracao({ hoje: '2026-08-28', de: '2026-04-01', inicioRecorrencia: '2026-04-01' });
+  assert.strictEqual(j.de, '2026-04-01');
+  const o = fin.ocorrencias({ id: 'r', day_of_month: 10, start_date: '2026-04-01', end_date: null, active: 1 }, j.de, j.ate);
+  assert.strictEqual(o.length, 5);
+});
+
+test('a janela nunca comeca antes do inicio da propria recorrencia', function () {
+  const j = fin.janelaDeGeracao({ hoje: '2026-08-28', de: '2026-01-01', inicioRecorrencia: '2026-06-15' });
+  assert.strictEqual(j.de, '2026-06-15', 'pedir janeiro nao inventa recorrencia antes de existir');
+});

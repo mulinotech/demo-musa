@@ -240,8 +240,28 @@ function ocorrencias(recorrencia, de, ate) {
   return saida;
 }
 
+/** Janela de geracao das despesas recorrentes.
+ *
+ *  O padrao e SO O MES CORRENTE. Uma recorrencia cadastrada com inicio
+ *  retroativo geraria, num clique, meses inteiros de conta em aberto e vencida
+ *  - o painel abre acusando uma divida que nunca existiu. Aconteceu na primeira
+ *  vez que a rota rodou em producao, em 28/08/2026.
+ *
+ *  Preencher o passado passa a ser um ato deliberado: mandar `de` explicito.
+ *  E nunca antes do inicio da propria recorrencia.
+ */
+function janelaDeGeracao(p) {
+  p = p || {};
+  const hoje = dia(p.hoje) || dia(new Date());
+  const ate = dia(p.ate) || hoje;
+  const pedido = dia(p.de) || hoje.slice(0, 7) + '-01';
+  const inicio = dia(p.inicioRecorrencia);
+  return { de: inicio && inicio > pedido ? inicio : pedido, ate: ate };
+}
+
 module.exports = {
   resumo,
+  janelaDeGeracao,
   comparativo,
   variacaoPct,
   fluxo,
