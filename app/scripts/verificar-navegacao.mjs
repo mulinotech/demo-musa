@@ -1,23 +1,7 @@
 /**
- * Verificacao de navegacao do front.
- *
- * Roda um navegador de verdade sobre o dist compilado e confere o que teste de
- * unidade nao pega: se o site publico deixou de baixar o console, se cada aba
- * abre sem erro, se quem nao tem token cai no login, se vendedor e profissional
- * nao veem preco nem financeiro, se a calculadora mostra os 237,62 do caso de
- * referencia, e se competencia e caixa aparecem como numeros DIFERENTES.
- *
- * Nao e dependencia do projeto. Para rodar:
- *   npm run build
- *   npx serve -s dist -l 4173     (ou qualquer servidor com fallback de SPA)
- *   npm i --no-save playwright && npx playwright install chromium
- *   node scripts/verificar-navegacao.mjs
- *
- * As telas conversam com a API real; para rodar contra dados de fixture, use o
- * servidor de simulacao do ambiente de desenvolvimento.
- *
- * O token usado aqui e falso de proposito: papelDoToken() so decodifica o
- * payload no navegador. O servidor continua validando assinatura.
+ * Verificacao de navegacao do front. 66 conferencias num navegador de verdade,
+ * sobre o dist compilado. Precisa de playwright, que nao e dependencia do
+ * projeto: npm i --no-save playwright && npx playwright install chromium
  */
 import { chromium } from 'playwright';
 
@@ -94,10 +78,11 @@ console.log('\n[C] Sessao de admin');
   await pg.waitForTimeout(1200);
   conferir('fica em /crm', pg.url().endsWith('/crm'), pg.url());
   const abas = await pg.locator('header nav a').allInnerTexts();
-  conferir('barra com as abas de admin', abas.length === 10, abas.length + ': ' + abas.join(' | '));
+  conferir('barra com as abas de admin', abas.length === 11, abas.length + ': ' + abas.join(' | '));
   conferir('botao Sair presente', (await pg.locator('button:has-text("Sair")').count()) > 0);
 
   const rotas = [
+    ['Agenda', '/crm/agenda'],
     ['Funil & Leads', '/crm/funil'],
     ['Pacientes', '/crm/pacientes'],
     ['Atendimento', '/crm/atendimento'],
@@ -131,7 +116,7 @@ console.log('\n[D] Sessao de vendedor');
   await pg.goto(BASE + '/crm', { waitUntil: 'networkidle' });
   await pg.waitForTimeout(1000);
   const abas = await pg.locator('header nav a').allInnerTexts();
-  conferir('ve so 3 abas', abas.length === 3, abas.length + ': ' + abas.join(' | '));
+  conferir('ve 4 abas: agenda, funil, pacientes e atendimento', abas.length === 4, abas.length + ': ' + abas.join(' | '));
   conferir('nao ve Logs', !abas.join('|').includes('Logs'));
   conferir('nao ve Usuarios', !abas.join('|').includes('Usuár'));
   await pg.context().close();
@@ -320,6 +305,67 @@ console.log('\n[M] Vendedor nao ve financeiro');
   conferir('e devolvido para /crm', pg.url().endsWith('/crm'), pg.url());
   const abas = await pg.locator('header nav a').allInnerTexts();
   conferir('aba nao aparece para vendedor', !abas.join('|').includes('Financeiro'), abas.join(' | '));
+  await pg.context().close();
+}
+
+// -------------------------------------------------------------- agenda
+console.log('\n[N] Agenda');
+{
+  const pg = await novaAba('admin');
+  await pg.goto(BASE + '/crm/agenda', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(1600);
+  conferir('rota abre', pg.url().endsWith('/crm/agenda'), pg.url());
+
+  const blocos = await pg.locator('div.flex.relative button[title]').count();
+  conferir('desenha os compromissos do dia', blocos >= 6, String(blocos));
+
+  const corpo = await pg.locator('body').innerText();
+  conferir('mostra paciente e procedimento', corpo.includes('Carolina O.') && corpo.includes('Ultraformer MPT'));
+  conferir('bloqueio aparece na grade', corpo.includes('Almoco') || corpo.includes('Almoço'));
+  conferir('legenda dos cinco status', ['Agendado','Confirmado','Realizado','Faltou','Cancelado'].every((r) => corpo.includes(r)));
+  conferir('sem erro de pagina', pg.erros.length === 0, pg.erros.join(' | '));
+
+  // Semana e mes
+  await pg.locator('button:has-text("semana")').first().click();
+  await pg.waitForTimeout(1000);
+  const semana = await pg.locator('body').innerText();
+  conferir('visao semana tem os sete dias', ['dom','seg','ter','qua','qui','sex'].every((d) => semana.includes(d)));
+
+  await pg.locator('button:has-text("mês")').first().click();
+  await pg.waitForTimeout(1000);
+  conferir('visao mes desenha a grade', (await pg.locator('button.min-h-\\[92px\\]').count()) === 42,
+    String(await pg.locator('button.min-h-\\[92px\\]').count()));
+  conferir('sem erro nas outras visoes', pg.erros.length === 0, pg.erros.join(' | '));
+  await pg.context().close();
+}
+
+console.log('\n[O] Agenda: a regra de conflito chega na tela');
+{
+  const pg = await novaAba('admin');
+  await pg.goto(BASE + '/crm/agenda', { waitUntil: 'networkidle' });
+  await pg.waitForTimeout(1500);
+
+  // Abrir o modal e tentar marcar em cima de um horario ocupado.
+  await pg.locator('button:has-text("Agendar")').first().click();
+  await pg.waitForTimeout(700);
+  conferir('modal abre', (await pg.locator('text=Novo compromisso').count()) > 0);
+
+  await pg.locator('input[type="time"]').first().fill('09:30');
+  await pg.locator('input[type="time"]').nth(1).fill('10:30');
+  await pg.locator('input[placeholder*="Preenchido"]').fill('Teste de conflito');
+  await pg.locator('button:has-text("Agendar")').last().click();
+  await pg.waitForTimeout(1200);
+
+  const texto = await pg.locator('body').innerText();
+  conferir('recusa o horario ocupado', /ja tem|já tem/i.test(texto), texto.slice(0, 0) || 'ver aviso');
+  conferir('diz com o que conflitou', /Conflita com/i.test(texto));
+
+  // Horario livre passa.
+  await pg.locator('input[type="time"]').first().fill('19:30');
+  await pg.locator('input[type="time"]').nth(1).fill('20:30');
+  await pg.locator('button:has-text("Agendar")').last().click();
+  await pg.waitForTimeout(1200);
+  conferir('horario livre e aceito', (await pg.locator('text=Novo compromisso').count()) === 0, 'o modal deveria fechar');
   await pg.context().close();
 }
 

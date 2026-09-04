@@ -403,33 +403,40 @@ router.post('/api/finance/recurring/run', async function (req, res) {
 
 /** Importa como receita as sessões já realizadas.
  *
- *  O plano previa que a receita nascesse do evento "atendimento realizado" da
- *  agenda (T2.5). A agenda ainda não existe, mas as sessões realizadas existem
- *  e são o atendimento de verdade de hoje — o relatório atual já soma
- *  `treatment_sessions` com status REALIZADA.
+ *  Daqui para a frente a receita nasce sozinha, no serviço de conclusão de
+ *  atendimento (contexto 02). Esta rota é o BACKFILL: importa o que já estava
+ *  realizado antes de o evento existir. Rodar de novo não duplica nada — a
+ *  chave é a mesma que o serviço usa, (APPOINTMENT, id do compromisso).
  *
- *  A chave de idempotência é a definitiva: source APPOINTMENT + id da origem.
- *  Quando a agenda chegar, ela pendura no mesmo formato e nada aqui é jogado
- *  fora nem duplicado. */
+ *  Uma diferença proposital em relação ao evento: aqui o lançamento nasce
+ *  PAGO. É histórico — o atendimento aconteceu meses atrás e o dinheiro já
+ *  entrou. Um atendimento concluído hoje nasce a receber, porque concluir não
+ *  é receber. */
 router.post('/api/finance/sync-atendimentos', async function (req, res) {
   try {
-    const [sessoes] = await pool.query(`
-      SELECT s.id, s.session_type, s.session_date, s.price, p.client_id, c.name AS client_name
-        FROM treatment_sessions s
-        LEFT JOIN treatment_plans p ON p.id = s.plan_id
-        LEFT JOIN clients c ON c.id = p.client_id
-       WHERE s.status = 'REALIZADA' AND s.price > 0 AND s.session_date IS NOT NULL
+    // A origem agora e o COMPROMISSO, nao a sessao clinica -- a migration 011
+    // reapontou o que ja tinha sido lancado com a chave antiga. Duas chaves
+    // para o mesmo fato e o comeco de uma divergencia de saldo.
+    const [feitos] = await pool.query(`
+      SELECT a.id, a.title, a.price, a.client_id, a.professional_id,
+             DATE_FORMAT(a.starts_at, '%Y-%m-%d') AS dia,
+             c.name AS client_name
+        FROM appointments a
+        LEFT JOIN clients c ON c.id = a.client_id
+       WHERE a.status = 'REALIZADO' AND a.kind = 'ATENDIMENTO' AND a.price > 0
     `);
 
     let criados = 0, jaExistiam = 0;
-    for (const s of sessoes) {
-      const descricao = (s.session_type || 'Atendimento') + (s.client_name ? ' - ' + s.client_name : '');
+    for (const a of feitos) {
+      const descricao = (a.title || 'Atendimento') + (a.client_name ? ' - ' + a.client_name : '');
       try {
         await pool.query(
           `INSERT INTO cash_entries
-            (id, type, category_id, description, amount, entry_date, paid_at, source, source_id, client_id)
-           VALUES (?, 'RECEITA', 'cat_procedimentos', ?, ?, ?, ?, 'APPOINTMENT', ?, ?)`,
-          [novoId('ce'), descricao.slice(0, 255), s.price, fin.dia(s.session_date), fin.dia(s.session_date), s.id, s.client_id]
+            (id, type, category_id, description, amount, entry_date, due_date, paid_at,
+             source, source_id, client_id, professional_id)
+           VALUES (?, 'RECEITA', 'cat_procedimentos', ?, ?, ?, ?, ?, 'APPOINTMENT', ?, ?, ?)`,
+          [novoId('ce'), descricao.slice(0, 255), a.price, a.dia, a.dia, a.dia,
+           a.id, a.client_id, a.professional_id]
         );
         criados += 1;
       } catch (e) {
@@ -439,7 +446,7 @@ router.post('/api/finance/sync-atendimentos', async function (req, res) {
     }
 
     if (criados) await logSystemEvent('FINANCEIRO', criados + ' atendimento(s) importado(s) como receita.', autor(req));
-    res.json({ criados, jaExistiam, sessoesRealizadas: sessoes.length });
+    res.json({ criados, jaExistiam, atendimentosRealizados: feitos.length });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao importar a receita dos atendimentos.' });
   }

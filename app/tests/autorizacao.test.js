@@ -61,3 +61,27 @@ test('financeiro e de admin e gerente: profissional nao ve o caixa da clinica', 
   assert.deepStrictEqual(regraPara('GET', '/api/finance/summary').papeis, ['admin', 'gerente']);
   assert.deepStrictEqual(regraPara('PATCH', '/api/finance/entries/ce_1/pay').papeis, ['admin', 'gerente']);
 });
+
+test('agenda nao entra em REGRAS_DE_PAPEL: o recorte e por dono, nao por papel', function () {
+  // Todo mundo autenticado abre a agenda. Quem e `profissional` so enxerga a
+  // propria, e isso a rota decide comparando o dono do registro - uma linha
+  // nesta tabela nao daria conta, porque ela so conhece papel e caminho.
+  ['GET', 'POST', 'PATCH', 'DELETE'].forEach(function (m) {
+    assert.strictEqual(regraPara(m, '/api/appointments'), null, m);
+    assert.strictEqual(regraPara(m, '/api/appointments/ap_1'), null, m);
+  });
+  assert.strictEqual(regraPara('GET', '/api/availability'), null);
+});
+
+test('estoque: profissional LE, mas nao mexe no saldo', function () {
+  // A ordem das linhas na tabela importa: a regra de GET vem antes da regra
+  // curinga. Se alguem reordenar, o profissional perde a consulta de saldo em
+  // silencio -- e vai aplicar produto sem saber a validade.
+  const ler = (c) => (regraPara('GET', c) || {}).papeis || [];
+  const escrever = (m, c) => (regraPara(m, c) || {}).papeis || [];
+  assert.ok(ler('/api/stock/balance').includes('profissional'), 'saldo e consultavel');
+  assert.ok(ler('/api/products').includes('profissional'), 'produtos sao consultaveis');
+  assert.ok(!escrever('POST', '/api/stock/entry').includes('profissional'), 'entrada nao');
+  assert.ok(!escrever('POST', '/api/products').includes('profissional'), 'cadastro nao');
+  assert.ok(!escrever('PUT', '/api/services/cat_1/supplies').includes('profissional'), 'ficha tecnica nao');
+});

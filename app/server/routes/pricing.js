@@ -13,11 +13,39 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
 const { calcularPreco, compararComPraticado } = require('../services/precificacao');
+const est = require('../services/estoque');
 const { logSystemEvent } = require('../services/logs');
 
 const novoId = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
 const autor = (req) => (req.usuario && req.usuario.nome) || 'Sistema';
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+
+/** Custo variavel do servico — T3.4.
+ *
+ *  Sai da ficha tecnica quando ela existe: soma de (quantidade x custo medio do
+ *  insumo). Sem ficha, cai no valor digitado em `treatment_catalog`.
+ *
+ *  A ORIGEM VOLTA JUNTO E A TELA MOSTRA. Custo variavel de R$ 120 pode ser a
+ *  soma real dos insumos de hoje ou um numero que alguem digitou ha um ano; os
+ *  dois aparecem igual na conta e levam a decisoes muito diferentes. Sem dizer
+ *  qual dos dois e, o sistema faz um chute antigo parecer calculo. */
+async function custoVariavelDoServico(catalogId, custoDigitado) {
+  if (!catalogId) return { valor: est.centavos(custoDigitado), origem: 'MANUAL', itens: 0 };
+  try {
+    const [itens] = await pool.query(`
+      SELECT s.product_id, s.quantity, p.name, p.unit, p.unit_cost
+        FROM service_supplies s
+        JOIN products p ON p.id = s.product_id
+       WHERE s.catalog_id = ? AND p.active = 1
+    `, [catalogId]);
+    return est.custoVariavelDaFicha(itens, custoDigitado);
+  } catch (e) {
+    // Estoque ainda nao migrado: a precificacao continua funcionando com o
+    // valor digitado. Modulo novo nao pode derrubar modulo antigo.
+    if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    return { valor: est.centavos(custoDigitado), origem: 'MANUAL', itens: 0 };
+  }
+}
 
 /** Parametros globais, sempre a linha 'default'. Cria na leitura se nao existir,
  *  para a tela nunca ver 404 num banco que ainda nao rodou a migration inteira. */
@@ -196,19 +224,25 @@ router.post('/api/pricing/simulate', async function (req, res) {
 
     let precoAtual = num(b.currentPrice);
     let nome = String(b.serviceName || '').trim();
+    let custo = { valor: 0, origem: 'MANUAL', itens: 0 };
 
     if (b.catalogId) {
       const [c] = await pool.query('SELECT * FROM treatment_catalog WHERE id = ?', [b.catalogId]);
       if (!c.length) return res.status(404).json({ error: 'Servico nao encontrado no catalogo.' });
       if (precoAtual === null) precoAtual = Number(c[0].price);
       if (!nome) nome = c[0].name;
+      custo = await custoVariavelDoServico(b.catalogId, c[0].variable_cost);
     }
 
+    // Se a pessoa digitou um custo na tela, o que ela digitou vale — mas a
+    // resposta continua dizendo o que a ficha tecnica diria, para a diferenca
+    // ficar visivel em vez de silenciosa.
+    const informado = b.variableCost !== undefined;
     const entrada = {
       durationMin: num(b.durationMin),
       totalFixedMonthly: totalFixo,
       monthlyWorkingHours: Number(p.monthly_working_hours),
-      variableCost: b.variableCost === undefined ? 0 : num(b.variableCost),
+      variableCost: informado ? num(b.variableCost) : custo.valor,
       marginPct: b.marginPct === undefined ? Number(p.target_margin_pct) : num(b.marginPct),
       commissionPct: b.commissionPct === undefined ? Number(p.default_commission_pct) : num(b.commissionPct),
       cardFeePct: b.cardFeePct === undefined ? Number(p.card_fee_pct) : num(b.cardFeePct),
@@ -222,7 +256,13 @@ router.post('/api/pricing/simulate', async function (req, res) {
       entrada: entrada,
       serviceName: nome || 'Simulacao avulsa',
       resultado: r,
-      comparacao: compararComPraticado(r.precoSugerido, precoAtual)
+      comparacao: compararComPraticado(r.precoSugerido, precoAtual),
+      custoVariavel: {
+        origem: informado ? 'INFORMADO_NA_TELA' : custo.origem,
+        daFicha: custo.origem === 'FICHA_TECNICA' ? custo.valor : null,
+        itensDaFicha: custo.itens || 0,
+        detalhe: custo.detalhe || null
+      }
     });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao simular o preco.' });

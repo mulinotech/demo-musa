@@ -1,0 +1,803 @@
+<title>Andamento do Musa CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground: #F7F3EC;
+    --surface: #FFFFFF;
+    --surface-sunk: #F1EADD;
+    --line: #E0D5C2;
+    --line-soft: #EDE5D6;
+    --ink: #3A2517;
+    --ink-soft: #6B5443;
+    --ink-mute: #8E7B69;
+    --gold: #9A7C22;
+    --gold-soft: #C9A94A;
+    --feito: #3E6B4F;
+    --feito-bg: #E6EFE7;
+    --andando: #9A7C22;
+    --andando-bg: #F6EED8;
+    --fila: #8E7B69;
+    --fila-bg: #EFE9DF;
+    --alerta: #9E3B28;
+    --alerta-bg: #F7E7E2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #17120E;
+      --surface: #201A15;
+      --surface-sunk: #1B1611;
+      --line: #35291F;
+      --line-soft: #2A2118;
+      --ink: #F0E7D8;
+      --ink-soft: #C4B3A0;
+      --ink-mute: #94826F;
+      --gold: #D9B85C;
+      --gold-soft: #B39440;
+      --feito: #7FB894;
+      --feito-bg: #1D2A21;
+      --andando: #D9B85C;
+      --andando-bg: #2B2314;
+      --fila: #94826F;
+      --fila-bg: #241D16;
+      --alerta: #E08C77;
+      --alerta-bg: #2E1C17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #17120E;
+    --surface: #201A15;
+    --surface-sunk: #1B1611;
+    --line: #35291F;
+    --line-soft: #2A2118;
+    --ink: #F0E7D8;
+    --ink-soft: #C4B3A0;
+    --ink-mute: #94826F;
+    --gold: #D9B85C;
+    --gold-soft: #B39440;
+    --feito: #7FB894;
+    --feito-bg: #1D2A21;
+    --andando: #D9B85C;
+    --andando-bg: #2B2314;
+    --fila: #94826F;
+    --fila-bg: #241D16;
+    --alerta: #E08C77;
+    --alerta-bg: #2E1C17;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Karla", "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.5rem;
+  }
+
+  /* ---------- cabeçalho ---------- */
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    margin: 0 0 0.85rem;
+    text-wrap: balance;
+  }
+  .lede {
+    font-size: 1.05rem;
+    color: var(--ink-soft);
+    max-width: 40rem;
+    margin: 0;
+  }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- faixa de números ---------- */
+  .band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .cell {
+    background: var(--surface);
+    padding: 1.15rem 1.25rem 1.25rem;
+  }
+  .cell dt {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin: 0 0 0.5rem;
+  }
+  .cell dd {
+    margin: 0;
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 1.7rem;
+    font-weight: 600;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+  }
+  .cell dd span {
+    font-family: "Karla", sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--ink-mute);
+    display: block;
+    margin-top: 0.3rem;
+    line-height: 1.4;
+  }
+
+  /* ---------- seções ---------- */
+  section { display: flex; flex-direction: column; gap: 1.4rem; }
+  h2 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
+    margin: 0;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h2 .conta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--ink-mute);
+    float: right;
+    padding-top: 0.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+  p { margin: 0; max-width: 42rem; color: var(--ink-soft); }
+
+  /* ---------- lista de tarefas ---------- */
+  .tarefas { display: flex; flex-direction: column; gap: 1px; background: var(--line-soft); border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+  .t {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 3.6rem 1fr auto;
+    gap: 1rem;
+    align-items: baseline;
+    padding: 0.9rem 1rem 0.9rem 0.75rem;
+    border-left: 3px solid transparent;
+  }
+  .t.feito   { border-left-color: var(--feito); }
+  .t.andando { border-left-color: var(--andando); }
+  .t.fila    { border-left-color: var(--line); }
+
+  .cod {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink-mute);
+    letter-spacing: 0.02em;
+  }
+  .t.feito .cod { color: var(--feito); }
+  .t.andando .cod { color: var(--andando); }
+
+  .desc { font-size: 0.95rem; }
+  .desc em {
+    display: block;
+    font-style: normal;
+    font-size: 0.83rem;
+    color: var(--ink-mute);
+    margin-top: 0.2rem;
+  }
+
+  .chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.22rem 0.55rem;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .chip.feito   { color: var(--feito);   background: var(--feito-bg); }
+  .chip.andando { color: var(--andando); background: var(--andando-bg); }
+  .chip.fila    { color: var(--fila);    background: var(--fila-bg); }
+
+  /* ---------- fases seguintes ---------- */
+  .fases { display: flex; flex-direction: column; gap: 1px; background: var(--line-soft); border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+  .f {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 1.6rem 1fr 5.5rem 8rem;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.95rem 1rem;
+  }
+  .f .num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.9rem;
+    color: var(--gold);
+    font-weight: 500;
+  }
+  .f .nome { font-size: 0.95rem; font-weight: 500; }
+  .f .nome em { display: block; font-style: normal; font-size: 0.82rem; color: var(--ink-mute); font-weight: 400; margin-top: 0.15rem; }
+  .f .qtd, .f .dias {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--ink-mute);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .medidor { height: 4px; background: var(--surface-sunk); border-radius: 2px; overflow: hidden; }
+  .medidor i { display: block; height: 100%; background: var(--feito); }
+
+  /* ---------- extras ---------- */
+  .extras { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.5rem 2rem; }
+  .x { display: flex; flex-direction: column; gap: 0.35rem; }
+  .x h3 {
+    font-family: "Karla", sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--gold-soft);
+  }
+  .x p { font-size: 0.88rem; padding-left: 0.75rem; }
+
+  .nota {
+    background: var(--surface-sunk);
+    border-left: 3px solid var(--gold);
+    padding: 1.15rem 1.35rem;
+    border-radius: 0 3px 3px 0;
+  }
+  .nota p { font-size: 0.93rem; max-width: 44rem; }
+  .nota p + p { margin-top: 0.7rem; }
+  .nota strong { color: var(--ink); font-weight: 600; }
+
+  .alerta-box {
+    background: var(--alerta-bg);
+    border-left: 3px solid var(--alerta);
+    padding: 1.15rem 1.35rem;
+    border-radius: 0 3px 3px 0;
+  }
+  .alerta-box h3 {
+    font-family: "Karla", sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--alerta);
+    margin: 0 0 0.4rem;
+    letter-spacing: 0.01em;
+  }
+  .alerta-box p { font-size: 0.9rem; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 1.5rem;
+    font-size: 0.82rem;
+    color: var(--ink-mute);
+  }
+  footer code { font-family: "IBM Plex Mono", monospace; font-size: 0.95em; }
+
+  @media (max-width: 34rem) {
+    .t { grid-template-columns: 3.2rem 1fr; }
+    .t .chip { grid-column: 2; justify-self: start; margin-top: 0.35rem; }
+    .f { grid-template-columns: 1.5rem 1fr; }
+    .f .qtd, .f .dias { grid-column: 2; text-align: left; }
+    h2 .conta { float: none; display: block; padding-top: 0.3rem; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Mulino Tech · 31 de agosto de 2026</p>
+    <h1>Andamento do Musa CRM</h1>
+    <p class="lede">Plano de <strong>32 tarefas em 6 fases</strong> para levar ao Musa os módulos operacionais que o BeautyPRO tem: agenda, precificação, financeiro, documentos e anamnese, estoque e fidelização. Quatro dias de trabalho, e <strong>os seis módulos estão entregues</strong>: agenda, precificação, financeiro, estoque, fidelização, documentos e anamnese. Restou uma tarefa das 32 — a comissão por profissional, opcional desde o plano original.</p>
+  </header>
+
+  <dl class="band">
+    <div class="cell">
+      <dt>Tarefas</dt>
+      <dd>31<span>concluídas · 1 na fila</span></dd>
+    </div>
+    <div class="cell">
+      <dt>Esforço entregue</dt>
+      <dd>≈105<span>de ~115 dev-days planejados (91%)</span></dd>
+    </div>
+    <div class="cell">
+      <dt>Módulos entregues</dt>
+      <dd>6<span>de 6 · todos no ar</span></dd>
+    </div>
+    <div class="cell">
+      <dt>Restante</dt>
+      <dd>4 a 6<span>dev-days · só a comissão, que era opcional</span></dd>
+    </div>
+  </dl>
+
+  <section>
+    <h2>Fase 0 — Fundação <span class="conta">concluída · 21 dev-days reais</span></h2>
+    <p>Estimada em 18,5 a 28 dev-days, custou 21. Cerca de quatro deles foram consumidos por dois incidentes de segurança que não estavam no plano. Não entrega tela nova — é o que faz as fases seguintes custarem o que foram estimadas.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">T0.0</span>
+        <span class="desc">Fechar a API exposta
+          <em>helmet, CORS por origem, rate-limit e trava provisória de acesso</em></span>
+        <span class="chip feito">Feito 26/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T0.1</span>
+        <span class="desc">Repositório e higiene
+          <em>publicado em github.com/mulinotech/demo-musa, sem segredos no commit</em></span>
+        <span class="chip feito">Feito 26/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T0.2</span>
+        <span class="desc">Migrations e esquema versionado
+          <em>runner próprio, 6 migrations aplicadas, 11 índices que faltavam</em></span>
+        <span class="chip feito">Feito 26/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T0.3</span>
+        <span class="desc">Autenticação e autorização reais
+          <em>e-mail e senha com bcrypt, JWT de 12h, permissão verificada no servidor</em></span>
+        <span class="chip feito">Feito 27/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T0.4</span>
+        <span class="desc">Modularizar o <code>app.js</code>
+          <em>três fatias: código morto removido, camada de serviço extraída, 46 rotas em 14 arquivos</em></span>
+        <span class="chip feito">Feito 27/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T0.6</span>
+        <span class="desc">Harness de teste automatizado
+          <em>21 casos com <code>node:test</code> e <code>fetch</code> nativo, sem dependência nova</em></span>
+        <span class="chip feito">Feito 27/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T0.5</span>
+        <span class="desc">Roteamento e code splitting no front
+          <em>CRM em rotas de verdade, tela de usuários, aviso de sessão expirada</em></span>
+        <span class="chip feito">Feito 28/08</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>O que a T0.4 rendeu:</strong> o backend saiu de um arquivo de 2280 linhas para 20 arquivos com fronteira clara. O <code>app.js</code> hoje tem 4 linhas — só o ponto de entrada que o LiteSpeed executa. Foram 274 linhas de código morto removidas, a camada de serviço isolada em <code>server/services/</code>, e 46 rotas distribuídas em 14 arquivos, um por recurso.</p>
+      <p><strong>Duas correções vieram de brinde:</strong> <code>/api/users</code> e <code>/api/_migrate</code> estavam presos dentro de um <code>if (fs.existsSync(distPath))</code> — só existiam porque a pasta de build existe no servidor. E a comparação de prefixo da tabela de papéis usava <code>indexOf === 0</code>, o que faria <code>/api/logs-publicos</code> herdar a regra de <code>/api/logs</code>. Há um teste travando esse comportamento agora.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>O que a T0.5 rendeu, em um número:</strong> a página do site caiu de <strong>1.005 kB para 331 kB</strong> de JavaScript. O console inteiro estava sendo baixado por quem só queria ler a página de captação — inclusive o Recharts, que só serve ao painel de gráficos. Agora cada tela é um pacote próprio, carregado quando alguém a abre.</p>
+      <p><strong>E o que rendeu em estrutura:</strong> <code>/crm/pacientes</code> virou endereço de verdade — dá para mandar um link, recarregar a página e usar o botão de voltar. A gestão de usuários saiu do terminal e virou tela. E o <code>CrmDashboard.tsx</code> deixou de ser onde as telas moram: agora é só o layout, e módulo novo entra como arquivo próprio mais uma linha de rota. Era esse o gargalo real das cinco fases seguintes.</p>
+      <p><strong>Publicada e conferida em 28/08:</strong> 31 de 31 testes passando no servidor, e o smoke test das 16 rotas da API saiu <em>idêntico</em> à baseline de antes da modularização — nenhum comportamento de backend mudou no caminho. <code>/crm/pacientes</code> digitado direto responde 200, que é o que confirma que recarregar a página dentro do CRM não dá mais 404.</p>
+      <p><strong>Uma trava que veio junto:</strong> tornar a gestão de usuários clicável criou dois cliques capazes de deixar o sistema sem nenhum administrador. O servidor agora recusa inativar ou rebaixar o último administrador ativo, e ninguém remove o próprio acesso. São dez testes novos — a suíte foi de 21 para 31.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>O que os 31 testes cobrem — e o que não cobrem:</strong> eles travam autenticação e autorização, que é a camada onde um erro vira vazamento. Um deles verifica que o 401 não manda <code>WWW-Authenticate</code>, o cabeçalho que fazia o navegador sequestrar a tela de login. Cobrem também as travas da gestão de usuários. Não cobrem regra de negócio de módulo, porque ainda não existe nenhuma — o harness existe justamente para os testes da agenda, do estoque e da precificação terem onde nascer.</p>
+      <p>Há ainda uma verificação de navegação que roda um navegador de verdade sobre o front compilado: 30 conferências que teste de unidade não pega — se o site deixou mesmo de baixar o console, se cada aba abre sem erro no console do navegador, se quem não tem token cai no login, se o vendedor não vê o que não deve.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase 2 — Precificação e financeiro <span class="conta">entregue · 17 dev-days</span></h2>
+    <p>O primeiro módulo, escolhido para vir antes da agenda por não depender de nada. Entregue inteiro, menos a comissão por profissional, que era opcional desde o plano.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">T2.1</span>
+        <span class="desc">Custos fixos e parâmetros da clínica
+          <em>aluguel, energia, contador e pró-labore viram um número: o custo por hora</em></span>
+        <span class="chip feito">Feito 28/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T2.2</span>
+        <span class="desc">Motor de cálculo e o teste de referência
+          <em>função pura, 17 casos, o caso conferido à mão batendo centavo a centavo</em></span>
+        <span class="chip feito">Feito 28/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T2.3</span>
+        <span class="desc">Tela da calculadora, aplicar ao catálogo e histórico
+          <em>recalcula ao vivo, compara com o preço praticado e grava a decisão</em></span>
+        <span class="chip feito">Feito 28/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T2.4</span>
+        <span class="desc">Razão único, categorias, despesas e recorrência
+          <em>receita e despesa na mesma tabela; competência e caixa em colunas separadas</em></span>
+        <span class="chip feito">Feito 28/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T2.6</span>
+        <span class="desc">Resultado, fluxo de caixa e contas a pagar
+          <em>quatro números com variação contra o período anterior, e o alternador de base</em></span>
+        <span class="chip feito">Feito 28/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T2.5</span>
+        <span class="desc">Receita nascendo do atendimento
+          <em>fechou com a T1.4: concluir um atendimento lança a receita, a receber</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t fila">
+        <span class="cod">T2.7</span>
+        <span class="desc">Comissão por profissional e fechamento por período
+          <em>era opcional no plano desde o início</em></span>
+        <span class="chip fila">4–6 d</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>A conta que quase todo sistema erra.</strong> Margem, comissão, taxa de cartão e imposto incidem sobre o <em>preço de venda</em>, não sobre o custo. Com R$ 120 de custo direto e 49,5% de percentuais, o preço certo é R$ 237,62 — <code>custo ÷ (1 − percentuais)</code>. Multiplicar o custo por 1,30 daria R$ 156,00 e uma margem real de 19%, não de 30%: a clínica trabalharia de graça achando que está lucrando. Existe um teste que quebra se alguém "simplificar" essa conta.</p>
+      <p><strong>O número que vende a tela.</strong> Na Limpeza de Pele Premium, cadastrada a R$ 180, a conta pede R$ 237,62. A tela escreve isso em português: <em>você está deixando R$ 57,62 por atendimento na mesa — em 20 atendimentos no mês, são R$ 1.152,40</em>. É o mesmo raciocínio que o concorrente usa como carro-chefe.</p>
+      <p><strong>Uma armadilha encontrada no caminho.</strong> A duração no catálogo é texto livre: convive "60" com "40 a 60 minutos". Precificar pegando o primeiro número que aparece erraria justamente o valor por hora. A migration criou uma coluna de minutos e só preencheu o que era inequívoco; para o resto, a tela pede a duração em vez de chutar.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>O financeiro tem uma armadilha própria, e ela é maior.</strong> Competência e caixa dão resultados diferentes para o mesmo mês, e os dois estão certos: competência conta o que aconteceu, caixa conta o dinheiro que andou. No cenário de conferência do módulo, março fecha em <strong>R$ 400,00 por competência e R$ 700,00 por caixa</strong> — a diferença são R$ 800 de aluguel lançado e ainda não pago. Um relatório que mostra um número sem dizer qual dos dois critérios usou é a causa nº 1 de alguém ver dois valores que não batem e parar de confiar no sistema inteiro. Por isso o alternador fica no topo e a base aparece escrita embaixo de cada valor.</p>
+      <p><strong>Duas decisões estão embutidas no formato das tabelas</strong>, para não serem redecididas depois: receita e despesa vivem no mesmo razão, separadas por um campo de tipo — duas tabelas produzem, cedo ou tarde, dois "lucros" que não batem. E o valor é sempre positivo: o sinal vem do tipo. Guardar despesa como número negativo parece prático e vira erro de soma na primeira vez que alguém esquece o módulo.</p>
+      <p><strong>A receita passou a nascer sozinha em 31/08.</strong> Concluir um atendimento na agenda lança a receita no financeiro, e a importação das sessões antigas virou o que sempre foi: um preenchimento de histórico. A aposta da T2.5 deu certo — o formato de origem escolhido na véspera era o mesmo que a agenda usaria, e nada precisou ser jogado fora. <em>Quase</em>: a chave apontava para a sessão clínica, e o evento aponta para o compromisso. Duas chaves para o mesmo fato fariam o sistema faturar de novo cada atendimento migrado; uma migration reapontou as duas para a mesma coisa antes que isso acontecesse.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Dois erros no mesmo dia, os dois registrados.</strong> O primeiro foi de produto: a rota que gera despesas recorrentes criava, num clique, todas as ocorrências desde a data de início — e uma recorrência cadastrada com data retroativa fez o painel acusar <strong>R$ 32.800 em contas vencidas que nunca existiram</strong>. Não quebrou nada; só mentiu, que é pior. O padrão passou a ser apenas o mês corrente, e preencher o passado virou um ato deliberado. Virou função pura com três testes que descrevem o incidente.</p>
+      <p>O segundo foi operacional: a API limita 120 requisições por minuto, e um script de carga estourou o teto no meio do caminho. Metade dos lançamentos gravou, metade não, e a conferência final também levou <code>429</code> e devolveu zeros — parecia que nada tinha funcionado. Ficou a regra: todo script que escreve em lote precisa de freio e de idempotência por conteúdo, para poder ser retomado.</p>
+      <p><strong>A demo agora tem números.</strong> Cinco meses de operação semeados: uma clínica que sai de 19,5% e chega a 39,5% de margem, com receita de R$ 21 mil a R$ 30 mil por mês e duas contas em aberto para a faixa de contas a pagar ter o que mostrar.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase 1 — Agenda <span class="conta">entregue · ~20 dev-days</span></h2>
+    <p>O módulo maior e o mais visível numa demonstração, estimado em 19 a 28 dias e entregue em cerca de 20. Calendário em três visões, regra de conflito, remarcação com histórico, o evento em que três outros módulos vão pendurar efeito, e o lembrete automático por WhatsApp com confirmação pela resposta da paciente.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">T1.1</span>
+        <span class="desc">Modelo de agenda e regra de conflito
+          <em>tabela própria, grade semanal por profissional, 6 compromissos migrados do histórico</em></span>
+        <span class="chip feito">Feito 30/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T1.2</span>
+        <span class="desc">Rotas de agendamento
+          <em>criar, editar, remarcar, mudar status e consultar horários livres</em></span>
+        <span class="chip feito">Feito 30/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T1.3</span>
+        <span class="desc">Calendário dia, semana e mês
+          <em>clicar num espaço vazio já agenda naquele horário; conflito explicado na tela</em></span>
+        <span class="chip feito">Feito 30/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T1.4</span>
+        <span class="desc">O evento "atendimento realizado"
+          <em>serviço único, transacional e idempotente — fecha a T2.5 e prepara estoque e fidelização</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T1.5</span>
+        <span class="desc">Lembrete e confirmação por WhatsApp
+          <em>prévia antes do interruptor; nasce desligado; "1" confirma, "2" sinaliza remarcação</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>A regra de conflito e o erro que passa em revisão.</strong> Dois compromissos conflitam quando um começa antes de o outro terminar <em>e</em> termina depois de o outro começar. Escrita com "menor ou igual" em vez de "menor", a expressão continua parecendo certa — e transforma o dia inteiro de uma clínica em erro, porque uma agenda real é feita de horários encostados: 9h às 10h, 10h às 11h. Há um teste chamado <em>compromissos encostados não conflitam</em> exatamente para isso.</p>
+      <p><strong>Remarcar não é editar a data.</strong> O sistema cria um compromisso novo apontando para o antigo e cancela o antigo. Editar a data no lugar apagaria para sempre a informação de quem remarca demais — que é justamente o número que a clínica quer.</p>
+      <p><strong>A agenda não é a tabela de sessões clínicas.</strong> Usar a que já existia era o caminho curto, e encheria o prontuário de sessões fantasma: bloqueio de almoço, avaliação, retorno e encaixe ocupam a agenda sem serem tratamento. Os compromissos vindos do histórico entraram com hora 09:00 e uma observação dizendo que o horário é estimado — sem essa marca, alguém liga para a paciente confirmando um horário inventado.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Por que a T1.4 é o núcleo do projeto.</strong> Três módulos precisam reagir ao mesmo fato: financeiro lança a receita, estoque baixa o insumo, fidelização credita o ponto. Se cada um pendurar o próprio gatilho na tela de status, um dia alguém conclui o atendimento por outro caminho e um dos três não acontece — e ninguém descobre até o saldo não fechar. Existe <strong>um</strong> serviço que trata a conclusão, e ele é transacional: se o estoque não tiver saldo, o atendimento inteiro volta atrás. Estoque e fidelização já têm o encaixe pronto, vazio, esperando as Fases 3 e 5.</p>
+      <p><strong>Concluir não é receber.</strong> A receita nasce com a data do fato e sem data de pagamento: vai para "a receber", e alguém marca quando o dinheiro entra. Carimbar pago na conclusão encheria o caixa de dinheiro que ninguém viu — a mesma armadilha de competência e caixa que o financeiro já tinha resolvido.</p>
+      <p><strong>Desfazer existe porque erro de recepção existe.</strong> Marcar como realizado por engano acontece toda semana. Desfazer estorna com um lançamento novo, nunca apagando: o erro e a correção ficam lado a lado, e é isso que permite auditar uma divergência de saldo depois. A rota de exclusão recusa apagar lançamento vindo de atendimento, para ninguém "consertar" sumindo com a evidência. Só admin e gerente, com motivo obrigatório.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Dois defeitos apareceram na primeira saída real e foram corrigidos no mesmo dia.</strong> O horário voltava como <code>2026-04-14T12:00:00.000Z</code> — um compromisso das 09:00 convertido para fuso universal. Duas consequências silenciosas: o horário exibido passaria a depender do fuso de quem abre a tela, e agrupar por dia jogaria o compromisso da noite para o dia seguinte. E o título saía <code>SESSAO_TRATAMENTO</code>: o campo parecia certo pelo nome, mas guarda um código, e a recepção veria seis blocos idênticos em maiúsculas.</p>
+      <p><strong>A verificação hoje são 144 testes de servidor e 85 conferências de tela</strong>, estas últimas num navegador de verdade sobre o front compilado. As mais novas concluem um atendimento pela interface e checam que a tela <em>diz</em> o que aconteceu com o dinheiro — efeito colateral silencioso em valor é como se perde a confiança da pessoa no sistema.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>O lembrete nasce desligado, e isso é a decisão de projeto da T1.5.</strong> O banco de demonstração tem telefone de gente real cadastrado como paciente. Um worker que sobe ligado dispara WhatsApp para essas pessoas na primeira vez que alguém abre o sistema — e mensagem enviada não tem desfazer. Na tela, a prévia vem <em>antes</em> do interruptor: mostra o texto integral que sairia, para quem sairia, e também quem <em>não</em> receberia e por quê ("paciente sem telefone", "status cancelado"). Ligar é um ato deliberado.</p>
+      <p><strong>O gatilho é um instante, não uma faixa de horas.</strong> O desenho original mandava buscar compromissos entre 23 e 25 horas de antecedência. Nesta hospedagem o servidor recicla o processo quando ninguém acessa — e com faixa, tudo que vence enquanto o processo dorme nunca recebe lembrete, sem nenhum sinal de que faltou. A regra virou "já passou do momento e ainda não enviei": um despertar tardio manda atrasado, e a tela mostra o atraso como sintoma de que o disparo automático parou de rodar.</p>
+      <p><strong>A resposta é comparada inteira, nunca "contém".</strong> <code>1</code> confirma o horário. <code>1 hora antes dá?</code> não confirma nada — é uma pergunta, e vai para atendimento humano. Procurar o dígito dentro do texto marcaria essa paciente como confirmada e a clínica seguraria um horário que ninguém garantiu. E <code>2</code> sinaliza pedido de remarcação sem remarcar: trocar um horário incerto por outro inventado é pior do que não mexer.</p>
+      <p><strong>Uma dependência foi dispensada.</strong> O plano autorizava <code>node-cron</code>. Para "a cada 15 minutos" a expressão cron não compra nada, e instalar pacote naquele servidor hoje significa reinstalar as dependências sob Node 22 — pendência ainda aberta. O relógio interno vive no próprio processo, e como ele morre quando o servidor recicla a aplicação, existe também uma rota de disparo para um cron do sistema chamar. As duas portas são idempotentes: rodar duas vezes não repete mensagem.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase 3 — Estoque <span class="conta">entregue · ~14 dev-days</span></h2>
+    <p>Estimada em 12 a 16 dias e entregue em cerca de 14. Produtos, lote, validade, custo médio, alertas, extrato legível, ficha técnica por serviço — e a baixa automática encaixada no evento que a Fase 1 deixou pronto e vazio.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">T3.1</span>
+        <span class="desc">Modelo com lote e validade desde o primeiro dia
+          <em>saldo derivado do lote; nenhuma coluna de estoque no produto</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T3.2</span>
+        <span class="desc">FEFO, custo médio ponderado e alertas
+          <em>regras puras, 30 testes; lote vencido nunca sai automaticamente</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T3.3</span>
+        <span class="desc">Telas de saldo, entrada, extrato e ficha técnica
+          <em>alertas no topo; entrada mostra o custo médio antes de confirmar</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T3.4</span>
+        <span class="desc">Baixa no atendimento e custo variável da precificação
+          <em>saldo insuficiente derruba a conclusão inteira, nomeando o produto</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>Um estoque que só conta unidades não serve para esta clínica.</strong> Toxina botulínica, ácido hialurônico e anestésico têm lote e validade, e rastrear lote é requisito sanitário — se um lote for recolhido, a clínica precisa saber em quem foi aplicado. Por isso lote existe desde a primeira migration, e não como "fase 2 do estoque": deixar para depois significaria migrar histórico sem lote.</p>
+      <p><strong>O saldo não existe como campo.</strong> É a soma dos lotes, recalculada em cada consulta. Guardar o total também no produto custaria menos SQL e criaria duas fontes para o mesmo número — que divergem, sempre; a pergunta é só quando. Aí ninguém sabe qual está certa e o inventário inteiro perde a credibilidade.</p>
+      <p><strong>E são dois saldos na tela, não um.</strong> Total é o que está na prateleira; utilizável é o que pode ser aplicado em alguém. No estoque semeado da demonstração, o Skinbooster tem <strong>2 unidades e saldo utilizável zero</strong> — o lote venceu. Ele aparece ao mesmo tempo no alerta crítico e no de reposição, e o mínimo compara com o utilizável: contar o vencido faria o sistema dizer "tem estoque" para algo que não pode ser usado em ninguém.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A saída é por validade, não por ordem de chegada.</strong> FEFO — <em>first expiry, first out</em>. Consumir o lote mais antigo, que é o reflexo automático, deixaria vencer na prateleira o lote que vence antes. Uma saída pode atravessar mais de um lote, e nesse caso gera um movimento por lote: registrar um só, com a soma, apagaria de qual lote saiu o que foi aplicado na paciente.</p>
+      <p><strong>Saldo insuficiente derruba o atendimento inteiro.</strong> Decisão de produto, não de código. Concluir e deixar o estoque negativo parece mais gentil e é pior em todos os desdobramentos: a clínica descobre a falta no meio do próximo procedimento, o custo do atendimento fica errado e o inventário vira um número em que ninguém confia. A mensagem nomeia o produto e diz quanto falta — "erro ao concluir" manda chamar suporte; nomear faz a pessoa resolver na frente da tela.</p>
+      <p><strong>Custo médio ponderado, nunca o último preço pago.</strong> Uma compra de emergência de 1 unidade a R$ 300 faria as 20 antigas valerem R$ 300 cada, e o preço sugerido subiria em cima de um custo que a clínica não tem. A tela mostra o custo antes e depois <em>antes</em> de confirmar a entrada, porque esse número vai direto para a precificação — mudar isso em silêncio significa que um dia o preço muda e ninguém sabe por quê.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A precificação passou a admitir a origem do custo de insumo.</strong> "Calculado pela ficha técnica (6 insumos)" ou "informado manualmente". R$ 120 pode ser a soma real dos produtos com o custo de hoje ou um número digitado há um ano; os dois aparecem igual na conta e levam a decisões diferentes. Sem dizer qual é, o sistema faz um chute antigo parecer cálculo.</p>
+      <p><strong>O que não foi migrado.</strong> As sessões antigas guardam insumos como texto livre — "1 seringa de AH". Não tem quantidade confiável, nem unidade, nem lote. Converter por adivinhação poluiria o saldo inicial com números que ninguém conseguiria auditar depois. O histórico fica onde está e o saldo começa por inventário. Na mesma linha, a ficha técnica foi semeada por palavra-chave do nome do serviço: <strong>3 de 5 serviços casaram</strong>, e os outros dois ficaram sem ficha de propósito — inventar o que eles consomem faria a baixa automática tirar o produto errado do estoque.</p>
+      <p><strong>Um defeito encontrado na própria verificação.</strong> O harness de navegador guardava estado entre execuções: a segunda rodada encontrava os lembretes ligados e a ficha técnica salva pela primeira, e passava a afirmar coisas que não eram verdade num sistema recém-instalado. Verificação não-determinista é pior que verificação nenhuma, porque dá confiança falsa. Hoje ela zera o estado antes de começar e passa duas vezes seguidas com o mesmo resultado: <strong>170 testes de servidor e 119 conferências de tela</strong>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase 5 — Fidelização <span class="conta">entregue · ~12 dev-days</span></h2>
+    <p>Estimada em 10 a 14 dias. Pontos por atendimento, catálogo de recompensas, resgate aplicado ao preço, expiração automática e o relatório que diz quanto o programa custa de verdade.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">T5.1</span>
+        <span class="desc">Modelo, configurações e recompensas
+          <em>saldo é soma de transações; acúmulo retroativo dos atendimentos já concluídos</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T5.2</span>
+        <span class="desc">Acúmulo automático e extrato do paciente
+          <em>terceiro e último efeito a preencher o encaixe da T1.4</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T5.3</span>
+        <span class="desc">Resgate aplicado ao atendimento
+          <em>desconto entra antes da conclusão; o acúmulo cai sobre o valor pago</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T5.4</span>
+        <span class="desc">Expiração, relatório e telas
+          <em>expiração idempotente pelo id do acúmulo; custo real e passivo em circulação</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>A regra que sustenta o programa inteiro é uma ordem.</strong> Desconto entra, atendimento é concluído, pontos acumulam — nessa sequência. Um resgate de R$ 25 num atendimento de R$ 250 acumula <strong>225 pontos, não 250</strong>. Se o acúmulo caísse sobre o valor cheio, a paciente geraria pontos com os próprios pontos e o programa se financiaria até quebrar, sem nenhum erro aparecer em tela. Por isso a rota <em>recusa</em> resgate em atendimento já concluído: depois da conclusão o crédito já foi feito sobre o preço de tabela, e a conta ficaria errada em favor da paciente, em silêncio.</p>
+      <p><strong>Piso, nunca arredondamento.</strong> R$ 249,90 com um ponto por real gera 249 pontos. Arredondar daria 250 — e creditar ponto que não foi conquistado é dívida silenciosa que cresce sozinha a cada atendimento.</p>
+      <p><strong>A tela de configuração mostra a consequência antes de salvar.</strong> "Um atendimento de R$ 250 gera 250 pontos, que valem R$ 25,00 — 10% de volta." Trocar o valor do ponto para R$ 0,50 faz a frase dizer <em>50% de volta</em>, com um aviso para comparar com a margem dos procedimentos. Nenhuma validação pegaria isso: o número não é inválido, é incompatível com a margem da clínica — e quem sabe disso é a pessoa, não o sistema.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Uma inconsistência do próprio plano, corrigida.</strong> O desenho original dizia que os pontos de estorno seriam sempre positivos. Não fecha: o estorno de um acúmulo indevido tem de ser negativo, e o estorno de um resgate cancelado tem de ser positivo — o mesmo tipo de lançamento, dois sinais opostos. O sinal passou a viver na própria linha, e o saldo é a soma simples. A regra escrita no código é: <em>o sinal segue o fato, nunca o tipo</em>.</p>
+      <p><strong>Uma decisão que o contexto deixava em aberto, escolhida e documentada.</strong> Para saber quais pontos expiram, havia dois caminhos: amarrar cada resgate aos acúmulos de onde saiu, ou recalcular a fila a partir do extrato. Escolhemos o segundo — os acúmulos formam uma fila por data de validade, e todo consumo é aplicado contra ela em memória. Com tabela de ligação, cada resgate gravaria várias linhas e todo estorno teria de desfazer exatamente aquelas; é mais uma estrutura para ficar inconsistente. O preço da escolha, dito na cara: o extrato não responde "esses 50 pontos saíram do acúmulo de março ou de abril" — responde "o saldo é X e Y vence em tal data", que é o que a recepção e a paciente perguntam.</p>
+      <p><strong>Dois defeitos meus, encontrados antes de rodar.</strong> O "desfazer resgate" devolvia os pontos em dobro — inseria o estorno <em>e</em> apagava o resgate — e recalculava o desconto a partir de um preço que já tinha sido alterado, o que devolveria o valor errado num desconto percentual. A correção foi gravar quantos reais o resgate abateu, e ela rendeu um número melhor de brinde: o relatório passou a mostrar o <strong>custo real do programa</strong> em vez da estimativa. Num procedimento de R$ 1.800, um desconto de 20% custa R$ 360 por 900 pontos — a tabela diria R$ 90.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Dois números que a clínica precisa ver juntos.</strong> O custo do período é o dinheiro que os descontos tiraram. O <em>passivo em circulação</em> é quanto valeriam todos os saldos existentes se fossem resgatados hoje — na demonstração, R$ 275. Não é dívida contábil, não é obrigação em dinheiro, e por isso não vira lançamento no financeiro: desconto não é dinheiro que saiu, é dinheiro que não entrou, e a receita já foi lançada menor. Mas é o tamanho da promessa que a clínica já fez.</p>
+      <p><strong>E um alerta que é oportunidade.</strong> Ponto que vira pó sem a paciente saber é promessa quebrada em silêncio. A ficha mostra quanto vence nos próximos 30 dias justamente para virar motivo de ligação — é esse o gancho de reengajamento que justifica um programa de pontos existir. Sem a equipe dizer o saldo no fim do atendimento, o recurso vira tabela vazia.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A barra de navegação quebrou, e o teste achou antes de você.</strong> Com um módulo novo por fase, ela chegou a treze abas, passou a ocupar três linhas e uma delas caiu fora da área visível — impossível de clicar. O remendo do dia foi agrupar em dois níveis e esconder a gestão atrás de um botão; ele durou algumas horas e virou a barra lateral descrita mais abaixo. O corte por <strong>frequência de uso</strong> sobreviveu: manter "Logs do Sistema" no mesmo nível da agenda do dia trata as duas como igualmente urgentes.</p>
+      <p><strong>A verificação hoje são 197 testes de servidor e 157 conferências de tela.</strong> Entre elas, a que concluiu um atendimento, viu a receita nascer, o insumo baixar por validade, os pontos serem creditados — e depois desfez tudo, com os saldos voltando ao valor exato de antes.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase 4 — Documentos e anamnese <span class="conta">entregue · ~19 dev-days</span></h2>
+    <p>Estimada em 16 a 23 dias. O Musa já <em>coletava</em> informação clínica — anamnese em texto livre e laudo de IA. O que faltava era forma jurídica: pergunta estruturada, termo de consentimento, conteúdo congelado, assinatura e trilha de acesso.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">T4.1</span>
+        <span class="desc">Modelo e migração da anamnese existente
+          <em>18 perguntas semeadas, 8 marcadas como contraindicação; coluna antiga preservada</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T4.2</span>
+        <span class="desc">Formulário dinâmico e imutabilidade
+          <em>perguntas condicionais; depois de gerado o conteúdo não muda</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T4.3</span>
+        <span class="desc">Alertas clínicos na ficha e na agenda
+          <em>faixa vermelha no compromisso, onde a profissional está antes de aplicar</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T4.4</span>
+        <span class="desc">Assinatura eletrônica simples, hash e trilha
+          <em>canvas com dedo, SHA-256 do conteúdo, IP e data; sem PDF no servidor</em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">T4.5</span>
+        <span class="desc">Guardas de LGPD
+          <em>vendedor bloqueado, leitura registrada, exportação do paciente, <code>docs/LGPD.md</code></em></span>
+        <span class="chip feito">Feito 31/08</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>Um furo de segurança apareceu antes do módulo, no planejamento das permissões.</strong> A tabela de papéis casa por prefixo, e <code>/api/clients/:id/documents</code> cairia sob <code>/api/clients</code> — que não tem regra de leitura. A rota ficaria <strong>aberta a qualquer autenticado, inclusive ao perfil comercial</strong>: histórico de saúde de paciente visível para quem vende, sem nenhum erro aparecer em tela. A tabela passou a aceitar expressão regular além de prefixo, e a regra que fica escrita é simples: rota com id no meio do caminho precisa de padrão, não de prefixo.</p>
+      <p><strong>Depois de gerado, o documento é imutável — e é isso que dá valor à assinatura.</strong> Corrigir significa emitir documento novo. O botão avisa antes de a pessoa clicar, não depois de ela tentar corrigir.</p>
+      <p><strong>O código de integridade é do texto renderizado, não das respostas.</strong> Se fosse das respostas, o mesmo código valeria para dois textos diferentes — bastaria mudar o corpo do modelo. É o texto que a paciente <em>leu</em> que precisa ser provável. Na abertura o código é reconferido, e a página avisa se o conteúdo não corresponde: sinal de alteração feita por fora do sistema.</p>
+      <p><strong>Editar um modelo cria a versão seguinte.</strong> Documento assinado aponta para a versão que foi assinada; alterar o modelo no lugar faria o histórico exibir perguntas que aquela paciente nunca viu, e a assinatura dela cobriria um texto que não existia.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Sem anamnese, a tela diz "ninguém avaliou" — nunca "nenhum alerta".</strong> São informações diferentes, e mostrar tranquilidade onde não houve verificação é mentira por omissão. Três estados distintos: contraindicação relatada, anamnese respondida sem contraindicação, e ninguém avaliou.</p>
+      <p><strong>A faixa vermelha aparece no compromisso da agenda</strong>, não só na ficha do paciente — porque é ali que a profissional está segundos antes de aplicar o produto. Anamnese guardada num arquivo que ninguém abre não impede aplicação de toxina em gestante.</p>
+      <p><strong>O PDF ficou fora do servidor, por decisão sua.</strong> O valor jurídico não vem do arquivo: vem do HTML congelado, do código de integridade e da trilha de IP e data — que existem de qualquer forma. Instalar o Chromium para gerar PDF custaria 170 MB e memória por documento numa hospedagem compartilhada, e o documento assinado abre numa página pronta para imprimir. Se um dia o arquivo no servidor virar necessário, entra sem refazer o módulo.</p>
+      <p><strong>Sobre a assinatura, o texto na tela é deliberado:</strong> eletrônica <em>simples</em>, com validade entre as partes pela MP 2.200-2/2001 e pela Lei 14.063/2020 porque há registro de autoria e integridade — e <strong>não</strong> assinatura digital qualificada com certificado ICP-Brasil. Descrever o recurso como "assinatura digital certificada" seria afirmação falsa sobre o valor probatório do documento.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Dois defeitos foram encontrados pela verificação, não pela clínica.</strong> O primeiro: "gerar para assinatura" validava as respostas <em>gravadas</em>, não as da tela — a pessoa preenchia a anamnese inteira, clicava, e o sistema reclamava das perguntas que ela acabou de responder. O segundo era pior porque era silencioso: o campo de assinatura descartava um traço único. A função que finaliza o traço lia o valor antigo do estado, então a paciente assinava, levantava o dedo e o botão continuava bloqueado — só funcionava no segundo traço.</p>
+      <p><strong>O que o sistema entrega de LGPD, e o que não entrega.</strong> Entrega: acesso por papel testado, trilha de toda leitura de documento assinado, nenhum arquivo em diretório público, verificação de integridade e exportação dos dados do paciente. Não entrega, porque não é decisão de software: prazo de retenção, base legal de cada finalidade e política de exclusão — que dependem da clínica com o jurídico dela. O <code>docs/LGPD.md</code> lista tabela por tabela o que é dado sensível, e registra as dívidas técnicas com efeito em privacidade que continuam abertas.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>O que falta <span class="conta">4 a 6 dev-days</span></h2>
+    <p>Do plano original, restou uma tarefa — e ela já era marcada como opcional. O que existe de trabalho pendente não é módulo: é infraestrutura e calibração, listado no fim desta página.</p>
+
+    <div class="fases">
+      <div class="f">
+        <span class="num">1</span>
+        <span class="nome">Financeiro — <em style="display:inline">entregue</em>
+          <em>resta apenas a comissão por profissional, opcional desde o plano</em></span>
+        <span class="qtd">1 tarefa</span>
+        <span class="dias">4–6 d</span>
+      </div>
+      <div class="f">
+        <span class="num">3</span>
+        <span class="nome">Estoque — <em style="display:inline">entregue</em>
+          <em>resta preencher a ficha técnica dos dois serviços que não casaram por palavra-chave</em></span>
+        <span class="qtd">—</span>
+        <span class="dias">meio dia</span>
+      </div>
+      <div class="f">
+        <span class="num">4</span>
+        <span class="nome">Documentos e anamnese — <em style="display:inline">entregue</em>
+          <em>resta a clínica definir prazo de retenção e revisar o texto do termo com o jurídico</em></span>
+        <span class="qtd">—</span>
+        <span class="dias">jurídico</span>
+      </div>
+      <div class="f">
+        <span class="num">5</span>
+        <span class="nome">Fidelização — <em style="display:inline">entregue</em>
+          <em>combinar com a equipe que o saldo será dito ao paciente no fim de cada atendimento</em></span>
+        <span class="qtd">—</span>
+        <span class="dias">conversa</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fora do plano</h2>
+    <p>Boa parte do vaivém destes dois dias foi trabalho que não estava no backlog — e que não era opcional.</p>
+
+    <div class="extras">
+      <div class="x">
+        <h3>Duas exposições de dados fechadas</h3>
+        <p>A API não exigia autenticação: uma chamada sem credencial devolvia a ficha dos pacientes com anamnese e foto. E quatro telas comparavam senha no próprio JavaScript, com as strings publicadas no bundle e no repositório.</p>
+      </div>
+      <div class="x">
+        <h3>Escopo do vendedor restaurado</h3>
+        <p>O filtro que limitava o vendedor a ver só os próprios pacientes dependia de um cabeçalho enviado pelo navegador. Ao trocar para JWT ele parou de funcionar em silêncio; agora vem do token.</p>
+      </div>
+      <div class="x">
+        <h3>Trilha de auditoria confiável</h3>
+        <p>Nove rotas gravavam o autor da ação como o que o cliente dizia ser. Um log que aceita o autor por cabeçalho não audita nada. Passou a vir do token.</p>
+      </div>
+      <div class="x">
+        <h3>Gestão de usuários</h3>
+        <p>Criar acesso novo não envolve mais editar arquivo nem reiniciar servidor. Os três sócios têm credencial própria; nenhuma senha é compartilhada.</p>
+      </div>
+      <div class="x">
+        <h3>Smoke test versionado</h3>
+        <p>Dezesseis rotas verificadas em um comando, com linha de base guardada. Foi ele que encontrou a rota de logs quebrada antes de a refatoração começar, e que validou cada uma das três fatias da T0.4.</p>
+      </div>
+      <div class="x">
+        <h3>Pacote de contexto reescrito</h3>
+        <p>O <code>AGENTS.md</code> e o <code>OPERACOES.md</code> descreviam um sistema que deixou de existir. Refeitos, com as duas regras de segurança que este projeto já violou.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>A navegação <span class="conta">fora do plano · 31/08</span></h2>
+    <p>Com os seis módulos no ar, a barra de topo tinha catorze itens e metade deles vivia atrás de um botão suspenso. O layout estava resolvido; a descoberta, não. Quem não sabia que o botão existia não sabia que o estoque existia.</p>
+
+    <div class="nota">
+      <p><strong>Na vertical o espaço é praticamente ilimitado — e essa é a única razão da mudança.</strong> A barra lateral mostra os catorze itens ao mesmo tempo, agrupados em "Dia a dia" e "Gestão", sem nada escondido. É a propriedade a preservar: se um dia a lista não couber, agrupe ou role, não volte a esconder.</p>
+      <p><strong>No desktop ela recolhe para só os ícones</strong> — 240 px viram 72 px — e a escolha fica guardada no navegador. Num notebook de 13" isso é largura útil que ninguém quer reconquistar todo dia. <strong>No celular e no tablet ela virou gaveta</strong>, com o botão de menu no topo, fundo escurecido atrás, e fecha de três formas: no toque fora, no <code>Esc</code> e sozinha quando você troca de tela. As duas últimas não são luxo — o menu suspenso anterior prendia quem o abrisse sem querer, e gaveta aberta por cima da tela nova esconde justamente o que a pessoa acabou de pedir. A paleta é a mesma, item por item.</p>
+      <p><strong>O mapa de telas saiu dos componentes para um arquivo só.</strong> A lateral desenha os itens, o cabeçalho lê dali o nome da tela aberta. Duas cópias divergiriam no primeiro módulo novo.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>E foi consolidar essa lista que revelou um problema de verdade.</strong> O item da Fidelidade estava aberto a todos os papéis. A tela mostra custo do programa e passivo em circulação — dado da mesma natureza do preço, que o perfil comercial já não vê. Fechado nos dois lados, a tela e a rota do relatório, porque esconder o menu sem fechar a rota não é segurança, é decoração. O <em>saldo de um paciente</em> continua legível por todos: é a recepção que informa isso a ele no fim do atendimento.</p>
+      <p><strong>A verificação são 222 testes de servidor e 196 conferências em navegador de verdade</strong>, incluindo a gaveta num aparelho de 390 × 844 e o recolhimento persistindo entre recargas.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pendências abertas</h2>
+    <div class="alerta-box">
+      <h3>Precisam de decisão ou de uma janela de trabalho</h3>
+      <p>As credenciais de banco no <code>.env</code> do servidor estão defasadas — a aplicação usa as que o painel injeta — e por isso continua existindo uma rota temporária de migration, que só pode sair depois que o <code>.env</code> for corrigido. As outras aplicações Node no mesmo servidor nunca foram auditadas: se saíram do mesmo molde, têm o mesmo padrão de senha no front. O <code>node_modules</code> do servidor foi instalado sob Node 18 e por isso o build sai da máquina local. E as duas senhas que estavam no bundle continuam no histórico do git: estão queimadas e não podem ser reutilizadas em nenhum sistema da Mulino.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Próximo passo <span class="conta">nada de módulo</span></h2>
+    <div class="nota">
+      <p><strong>O plano de 32 tarefas fechou em 31.</strong> A que faltou — comissão por profissional — era marcada como opcional desde o início. O que resta é de outra natureza, e nada disso é módulo novo:</p>
+      <p><strong>Um cron no servidor</strong>, meia hora de trabalho. Os dois workers — lembrete de WhatsApp e expiração de pontos — só rodam enquanto a aplicação está acordada, e a hospedagem recicla o processo quando ninguém acessa. As duas rotas de disparo existem e são idempotentes; falta um cron chamando cada uma, com um token de serviço.</p>
+      <p><strong>A ficha técnica de dois serviços</strong> que não casaram com nenhuma palavra-chave na semeadura. Fica sem ficha de propósito — inventar o que um procedimento consome faria a baixa automática tirar o produto errado do estoque. São 15 minutos na aba de fichas técnicas.</p>
+      <p><strong>A calibração do programa de pontos</strong> contra a margem real dos procedimentos. Hoje está em 10% de volta; a tela mostra a consequência ao vivo, e a decisão é de negócio.</p>
+      <p><strong>E três conversas que não são técnicas:</strong> combinar com a equipe que o saldo de pontos é dito ao paciente no fim de cada atendimento (sem isso o programa vira tabela vazia); revisar o texto do termo de consentimento com o jurídico; e definir o prazo de retenção de prontuário, que o sistema registra mas não decide.</p>
+    </div>
+  </section>
+
+  <footer>
+    Estimativas em dev-days de um desenvolvedor sênior, cerca de 6 horas produtivas. Prazo de calendário a 21 dias úteis por mês e 75% de foco, com 15% de custo de coordenação na dupla. Os números vêm de leitura do código, não da velocidade histórica do time — calibre pelo primeiro módulo entregue.
+  </footer>
+
+</div>

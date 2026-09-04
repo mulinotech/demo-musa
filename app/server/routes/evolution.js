@@ -4,6 +4,70 @@ const router = express.Router();
 const { pool } = require('../db');
 const { SIMULATED_INSTANCES, EvolutionService, sendWhatsappText, getEvolutionManagerUrl, normalizeWhatsappNumber, jidToNumber } = require('../services/evolution');
 
+const lembretes = require('../services/lembretes');
+const { logSystemEvent } = require('../services/logs');
+
+/** Resposta a um lembrete de compromisso (T1.5).
+ *
+ *  O compromisso alvo é o próximo desta paciente nas próximas 48 h que já
+ *  recebeu lembrete. A janela existe para não confirmar o horário errado de
+ *  quem tem três sessões marcadas no mês — e "já recebeu lembrete" é o que
+ *  garante que a resposta é resposta, e não uma mensagem solta.
+ *
+ *  "2" NÃO REMARCA NADA. Registra o pedido e sinaliza na agenda; remarcar
+ *  sozinho, sem saber para quando, trocaria um horário incerto por outro
+ *  inventado. Quem remarca é gente, olhando os horários livres.
+ */
+async function responderLembrete(phone, texto) {
+  const intencao = lembretes.interpretarResposta(texto);
+  if (!intencao) return null;
+
+  const digitos = String(phone || '').replace(/\D/g, '');
+  if (!digitos) return null;
+
+  try {
+    const [r] = await pool.query(`
+      SELECT a.id, a.title, a.status,
+             DATE_FORMAT(a.starts_at, '%Y-%m-%d %H:%i:%s') AS starts_at,
+             c.name AS client_name
+        FROM appointments a
+        JOIN clients c ON c.id = a.client_id
+       WHERE REPLACE(REPLACE(REPLACE(REPLACE(c.phone,'+',''),'-',''),' ',''),'(','') LIKE ?
+         AND a.kind = 'ATENDIMENTO'
+         AND a.status IN ('AGENDADO','CONFIRMADO')
+         AND a.reminder_sent_at IS NOT NULL
+         AND a.starts_at > NOW()
+         AND a.starts_at < DATE_ADD(NOW(), INTERVAL 48 HOUR)
+       ORDER BY a.starts_at
+       LIMIT 1
+    `, ['%' + digitos.slice(-8)]);
+
+    if (!r.length) return null;
+    const c = r[0];
+
+    if (intencao === 'CONFIRMAR') {
+      await pool.query(
+        "UPDATE appointments SET status = 'CONFIRMADO', confirmed_at = NOW() WHERE id = ? AND status = 'AGENDADO'",
+        [c.id]
+      );
+      await logSystemEvent('AGENDA', c.client_name + ' confirmou "' + c.title + '" pelo WhatsApp.', 'Paciente');
+      return { compromisso: c.id, acao: 'CONFIRMADO' };
+    }
+
+    // REMARCAR: sinaliza e para por aqui.
+    await pool.query(
+      "UPDATE appointments SET notes = CONCAT(COALESCE(notes,''), ?) WHERE id = ?",
+      ['\n[' + new Date().toISOString().slice(0, 10) + '] Paciente pediu remarcacao pelo WhatsApp.', c.id]
+    );
+    await logSystemEvent('AGENDA', c.client_name + ' pediu remarcacao de "' + c.title + '" pelo WhatsApp.', 'Paciente');
+    return { compromisso: c.id, acao: 'PEDIU_REMARCACAO' };
+  } catch (e) {
+    // Uma falha aqui nao pode derrubar o webhook: a mensagem ja foi gravada.
+    console.error('[Webhook] Falha ao tratar resposta de lembrete:', e.message);
+    return null;
+  }
+}
+
 router.get('/api/evolution/instances', async function(req, res) {
   try {
     const list = await EvolutionService.listInstances();
@@ -280,7 +344,12 @@ router.post('/api/webhook/whatsapp', async function(req, res) {
       newInteractionId, targetId, 'whatsapp', content, 'in'
     ]);
 
-    res.json({ success: true });
+    // A mensagem PODE ser resposta a um lembrete. Se for exatamente "1" ou "2",
+    // o compromisso reage; qualquer outro texto segue o fluxo humano normal,
+    // que ja foi registrado acima.
+    const agenda = await responderLembrete(phone, content);
+
+    res.json({ success: true, agenda: agenda });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

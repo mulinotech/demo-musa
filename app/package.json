@@ -9,7 +9,7 @@
     "server": "node app.js",
     "start": "node app.js",
     "migrate": "node db/migrate.js",
-    "test": "node --test tests/autorizacao.test.js tests/financeiro.test.js tests/precificacao.test.js tests/rotas-protegidas.test.js tests/token.test.js tests/usuarios.test.js"
+    "test": "node --test tests/agenda.test.js tests/atendimento-concluido.test.js tests/autorizacao.test.js tests/cron.test.js tests/documentos.test.js tests/estoque.test.js tests/fidelidade.test.js tests/financeiro.test.js tests/lembretes.test.js tests/precificacao.test.js tests/rotas-protegidas.test.js tests/token.test.js tests/usuarios.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

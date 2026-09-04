@@ -51,6 +51,11 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
     currentPrice: "",
   });
   const [resultado, setResultado] = useState<ResultadoCalculo | null>(null);
+  /* De onde vem o custo de insumo: da ficha tecnica do servico (soma real dos
+     produtos, com o custo medio de hoje) ou digitado a mao. Um custo de R$ 120
+     pode ser qualquer um dos dois, e os dois levam a decisoes diferentes -- sem
+     dizer qual e, o sistema faz um chute antigo parecer calculo. */
+  const [custoInfo, setCustoInfo] = useState<{ origem: string; daFicha: number | null; itensDaFicha: number } | null>(null);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
   const [erro, setErro] = useState("");
   const [calculando, setCalculando] = useState(false);
@@ -138,6 +143,7 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
         setErro("");
         setResultado(d.resultado);
         setComparacao(d.comparacao);
+        setCustoInfo(d.custoVariavel || null);
       } catch {
         setErro("Erro de conexão ao calcular.");
       } finally {
@@ -234,6 +240,25 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
                 onChange={(ev) => setE({ ...e, variableCost: ev.target.value })}
                 placeholder="0,00"
               />
+              {custoInfo && custoInfo.daFicha !== null && (
+                Math.abs(custoInfo.daFicha - (numero(e.variableCost) || 0)) < 0.01 ? (
+                  <p className="text-[9px] uppercase tracking-wider text-emerald-700 mt-1">
+                    calculado pela ficha técnica ({custoInfo.itensDaFicha} insumos)
+                  </p>
+                ) : (
+                  <button
+                    onClick={() => setE({ ...e, variableCost: String(custoInfo.daFicha) })}
+                    className="text-[9px] uppercase tracking-wider text-brand-brown/70 hover:text-brand-brown mt-1 underline decoration-dotted cursor-pointer text-left"
+                  >
+                    ficha técnica soma {reais(custoInfo.daFicha)} · usar
+                  </button>
+                )
+              )}
+              {custoInfo && custoInfo.daFicha === null && (
+                <p className="text-[9px] uppercase tracking-wider text-brand-brown/45 mt-1">
+                  informado manualmente · sem ficha técnica
+                </p>
+              )}
             </div>
           </div>
 

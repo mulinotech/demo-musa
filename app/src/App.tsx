@@ -27,6 +27,10 @@ const Logs = lazy(() => import("./paginas/crm/Logs"));
 const Usuarios = lazy(() => import("./paginas/crm/Usuarios"));
 const Precificacao = lazy(() => import("./paginas/crm/Precificacao"));
 const Financeiro = lazy(() => import("./paginas/crm/Financeiro"));
+const Agenda = lazy(() => import("./paginas/crm/Agenda"));
+const Estoque = lazy(() => import("./paginas/crm/Estoque"));
+const Fidelidade = lazy(() => import("./paginas/crm/Fidelidade"));
+const Documentos = lazy(() => import("./paginas/crm/Documentos"));
 
 function CarregandoConsole() {
   return (
@@ -80,6 +84,10 @@ export default function App() {
 
         <Route path="/crm" element={<ConsoleProtegido />}>
           <Route index element={<VisaoGeral />} />
+          <Route path="agenda" element={<Agenda />} />
+          <Route path="estoque" element={<Estoque />} />
+          <Route path="fidelidade" element={<Fidelidade />} />
+          <Route path="documentos" element={<Documentos />} />
           <Route path="funil" element={<Funil />} />
           <Route path="pacientes" element={<Pacientes />} />
           <Route path="atendimento" element={<Atendimento />} />

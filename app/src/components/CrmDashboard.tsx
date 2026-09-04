@@ -4,6 +4,7 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { X, Sparkles, ShieldCheck, FileText, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Navbar from "./Navbar";
+import Sidebar from "./Sidebar";
 import { ContextoCrm } from "../paginas/crm/contexto";
 import { Client, Lead, Interaction, Treatment, TreatmentCatalog, TreatmentPlan, TreatmentSession } from "../types";
 
@@ -53,6 +54,17 @@ export default function CrmDashboard({
   const [isAiConfigured, setIsAiConfigured] = useState<boolean>(false);
   const [isEvolutionConfigured, setIsEvolutionConfigured] = useState<boolean>(false);
   const [loadingData, setLoadingData] = useState<boolean>(false);
+
+  /* Estado da navegação lateral.
+   *  - `menuAberto` só vale no celular, onde a lateral é gaveta.
+   *  - `menuRecolhido` só vale no desktop, e é preferência guardada. A leitura
+   *    entra dentro de try/catch porque `localStorage` lança em aba anônima e
+   *    em alguns dispositivos gerenciados — e uma preferência de menu não pode
+   *    derrubar o console. */
+  const [menuAberto, setMenuAberto] = useState(false);
+  const [menuRecolhido, setMenuRecolhido] = useState(() => {
+    try { return localStorage.getItem("musa_menu_recolhido") === "1"; } catch { return false; }
+  });
 
   // Active Lead Details Drawer inside CRM
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -821,10 +833,26 @@ export default function CrmDashboard({
 
   return (
     <div className="fixed inset-0 z-50 flex bg-brand-beige animate-fade-in">
-      <div className="relative w-full h-full overflow-hidden flex flex-col justify-between bg-brand-beige">
+      <Sidebar
+        aberta={menuAberto}
+        recolhida={menuRecolhido}
+        aoFechar={() => setMenuAberto(false)}
+        aoRecolher={() => {
+          const novo = !menuRecolhido;
+          setMenuRecolhido(novo);
+          // Quem trabalha em notebook de 13" recolhe uma vez e não quer refazer
+          // isso a cada login. Se o navegador recusar o armazenamento (aba
+          // anônima, política do dispositivo), a preferência simplesmente não
+          // persiste — não é motivo para quebrar a tela.
+          try { localStorage.setItem("musa_menu_recolhido", novo ? "1" : "0"); } catch { /* segue sem lembrar */ }
+        }}
+        onSair={sair}
+      />
+
+      <div className="relative flex-1 min-w-0 h-full overflow-hidden flex flex-col justify-between bg-brand-beige">
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Navbar isAiConfigured={isAiConfigured} onSair={sair} />
+          <Navbar isAiConfigured={isAiConfigured} onAbrirMenu={() => setMenuAberto(true)} onSair={sair} />
 
           <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-brand-beige/50">
             {/* Faixa de relatorio - so nas telas que o servidor sabe consolidar */}

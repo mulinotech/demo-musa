@@ -27,8 +27,8 @@ function tokenPara(papel, extras) {
   }, extras || {}));
 }
 
-async function chamar(ctx, metodo, caminho, token) {
-  const cabecalhos = {};
+async function chamar(ctx, metodo, caminho, token, extras) {
+  const cabecalhos = Object.assign({}, extras || {});
   if (token) cabecalhos.Authorization = 'Bearer ' + token;
   const r = await fetch(ctx.base + caminho, { method: metodo, headers: cabecalhos });
   return r;

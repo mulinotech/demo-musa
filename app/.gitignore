@@ -19,3 +19,6 @@ dist-ssr/
 Thumbs.db
 .vscode/
 .idea/
+
+# Token de servico do cron (migration 017). Segredo: nunca versionar.
+.musa-cron.conf
