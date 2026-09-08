@@ -19,6 +19,21 @@ router.post('/api/auth/login', express.json({ limit: '1mb' }), async function (r
         return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       }
       const u = r[0];
+
+      // Sem clinica, nao ha sessao (M0.3). Deixar entrar produziria um token
+      // que o porteiro recusa na requisicao seguinte -- a pessoa veria a tela
+      // piscar e voltar para o login, sem explicacao. Melhor recusar aqui, com
+      // uma frase que diga o que fazer.
+      //
+      // Como isso acontece: usuario criado entre a migration 020 e a M1.7 por
+      // codigo que ainda nao preenchia a coluna. A senha esta certa; o cadastro
+      // e que esta incompleto -- e a mensagem nao insinua o contrario.
+      if (!u.clinica_id) {
+        return res.status(403).json({
+          error: 'Este acesso nao esta vinculado a uma clinica. Fale com o administrador.'
+        });
+      }
+
       await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [u.id]);
       return res.json({ token: auth.gerarToken(u), role: u.role, salespersonName: u.name, salespersonId: u.salesperson_id });
     }

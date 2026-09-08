@@ -27,12 +27,29 @@ function ehRotaPublica(metodo, caminho) {
 }
 
 async function porteiro(req, res, next) {
-  res.set('X-Trava-Musa', 'v18');
+  res.set('X-Trava-Musa', 'v20');
   const caminho = req.originalUrl.split('?')[0];
   if (ehRotaPublica(req.method, caminho)) return next();
 
   const usuario = auth.usuarioDaRequisicao(req);
-  if (usuario) { req.usuario = usuario; return next(); }
+  if (usuario) {
+    // TOKEN SEM CLINICA NAO VALE (M0.3).
+    //
+    // Todo token emitido antes desta versao cai aqui, e isso e deliberado:
+    // aceitar sessao sem inquilino significaria consultas sem filtro rodando
+    // com identidade de gente de verdade. Quem estava logado sai e entra de
+    // novo; o front ja trata 401 como sessao expirada.
+    //
+    // A identidade de servico do cron NAO tem clinica -- as varreduras
+    // percorrem todas -- e por isso ela e conferida no bloco de baixo, nunca
+    // aqui. Um token de PESSOA sem clinica e defeito; a rotina sem clinica e o
+    // desenho.
+    if (!usuario.clinicaId) {
+      return res.status(401).json({ error: 'Sessao sem clinica. Entre de novo.' });
+    }
+    req.usuario = usuario;
+    return next();
+  }
 
   // O `require` fica aqui dentro de proposito: so quem manda o cabecalho do
   // cron toca no banco, e a suite de teste do porteiro nao precisa de pool.

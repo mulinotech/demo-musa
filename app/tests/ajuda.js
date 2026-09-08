@@ -21,9 +21,16 @@ function subirServidor() {
   });
 }
 
+/** Token de sessao valida para os testes.
+ *
+ *  `clinica_id` entra no padrao porque desde a M0.3 o porteiro recusa token
+ *  sem clinica: sem isto, TODO teste de papel passaria a receber 401 e deixaria
+ *  de exercitar o que foi escrito para exercitar. Para testar a ausencia de
+ *  clinica, passe `{ clinica_id: null }` explicitamente. */
 function tokenPara(papel, extras) {
   return auth.gerarToken(Object.assign({
-    id: 'u_teste', name: 'Usuario de Teste', role: papel, salesperson_id: null
+    id: 'u_teste', name: 'Usuario de Teste', role: papel, salesperson_id: null,
+    clinica_id: 'cl_teste'
   }, extras || {}));
 }
 

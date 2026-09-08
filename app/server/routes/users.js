@@ -29,11 +29,42 @@ router.post('/api/users', express.json({ limit: '1mb' }), async function (req, r
   if (String(senha).length < 10) return res.status(400).json({ error: 'A senha precisa ter ao menos 10 caracteres.' });
   try {
     const id = 'u_' + Math.random().toString(36).slice(2, 10);
-    await pool.query('INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
-      [id, nome, email, bcrypt.hashSync(String(senha), 10), papel]);
+
+    // A CLINICA DO NOVO USUARIO E A DE QUEM O ESTA CRIANDO (M0.3).
+    //
+    // Vem da sessao, nunca do corpo da requisicao: aceitar `clinica_id` do
+    // cliente deixaria a proprietaria da clinica A criar um acesso dentro da
+    // clinica B -- que e o pior tipo de furo, porque nao vaza dado, cria uma
+    // porta.
+    //
+    // Sem stamp, o usuario nasceria com clinica vazia e nao conseguiria entrar
+    // (o porteiro recusa token sem clinica). Este e o primeiro lugar do sistema
+    // que grava a coluna; a fase M1 faz o mesmo nos outros 44.
+    const clinicaId = req.usuario && req.usuario.clinicaId;
+    if (!clinicaId) {
+      return res.status(403).json({ error: 'Sessao sem clinica. Entre de novo.' });
+    }
+
+    await pool.query(
+      'INSERT INTO users (id, name, email, password_hash, role, clinica_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, nome, email, bcrypt.hashSync(String(senha), 10), papel, clinicaId]);
     res.status(201).json({ id: id, name: nome, email: email, role: papel });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ja existe usuario com esse e-mail.' });
+    if (e.code === 'ER_DUP_ENTRY') {
+      // NAO diga "ja existe usuario com esse e-mail".
+      //
+      // `users.email` e unico entre TODAS as clinicas (decisao de produto de
+      // 04/09), entao a recusa pode estar vindo de um cadastro que existe em
+      // OUTRA clinica. Dizer "ja existe" conta a esta clinica que aquele
+      // endereco esta em uso em algum lugar da plataforma -- e informacao de um
+      // cliente escapando para outro. Pouca, mas de graca para quem quiser
+      // sondar: basta tentar cadastrar e-mails e ler a resposta.
+      //
+      // A recusa continua existindo; o que muda e nao explicar o motivo.
+      // Ha teste em tests/multi-inquilino.test.js fixando esta frase, porque
+      // e o tipo de mensagem que alguem "melhora" para ser mais util.
+      return res.status(409).json({ error: 'Este e-mail nao esta disponivel. Use outro endereco.' });
+    }
     res.status(500).json({ error: 'Falha ao criar usuario.' });
   }
 });
