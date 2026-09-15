@@ -110,3 +110,8 @@ module.exports = async function up(conn) {
   }
   console.log('   + ' + novas + ' categoria(s) financeira(s) criada(s)');
 };
+
+/* Exportada para o nascimento de uma clinica (M2.4) semear as MESMAS 16
+ * categorias, e nao uma copia da lista. Duas listas da mesma coisa divergem na
+ * terceira semana -- a mesma razao que fez a 025 importar a lista da 018. */
+module.exports.CATEGORIAS = CATEGORIAS;

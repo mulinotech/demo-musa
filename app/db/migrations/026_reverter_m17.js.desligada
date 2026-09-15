@@ -1,0 +1,93 @@
+'use strict';
+/** A VOLTA DA M1.7 — desligada de propósito. Só use se algo quebrar.
+ *
+ *  ============================================================ COMO LIGAR
+ *
+ *  Este arquivo termina em `.js.desligada`, e o `db/run-migrations.js` só olha
+ *  arquivos que terminam em `.js` ou `.sql`. Ou seja: **ele não roda, e nem
+ *  aparece como pendente**, enquanto tiver esse nome.
+ *
+ *  Para usar, no terminal SSH:
+ *
+ *      cd /srv/demo-musa.2d384ff2.configr.cloud/www
+ *      mv db/migrations/026_reverter_m17.js.desligada \
+ *         db/migrations/026_reverter_m17.js
+ *
+ *  e depois rodar a migration pelo console do navegador, como sempre.
+ *
+ *  ======================================================= QUANDO USAR ISTO
+ *
+ *  **Só num caso:** depois da migration 025 (a M1.7), alguma gravação do sistema
+ *  passou a falhar — salvar paciente, concluir atendimento, lançar despesa,
+ *  qualquer coisa que grave. O sintoma é "erro ao salvar" na tela, e no console
+ *  do navegador uma resposta 500.
+ *
+ *  Isso significaria que existe um caminho que grava sem carimbar a clínica e
+ *  que nem os testes nem o ensaio de vazamento pegaram. **Foi exatamente o que
+ *  aconteceu em 04/09**, e naquele dia o sistema ficou uma hora sem inserir uma
+ *  linha porque não havia um caminho de volta preparado.
+ *
+ *  Este arquivo é esse caminho. Ele existe para a decisão sob pressão ser
+ *  `mv` + um clique, e não improviso.
+ *
+ *  ==================================================== O QUE ELE NÃO RESOLVE
+ *
+ *  Ele devolve a coluna a "aceita vazio", e com isso as gravações voltam. Mas as
+ *  linhas que aquele caminho gravar **nascem sem clínica** — e desde a M1.6a
+ *  linha sem clínica **desaparece da tela de quem a criou**, porque as consultas
+ *  filtram. Não é perda de dado; é dado invisível, que foi o problema que a
+ *  migration 021 consertou.
+ *
+ *  Então rodar isto não é "voltar ao normal": é trocar um problema alto (não
+ *  grava) por um problema baixo (grava e não aparece), para ganhar tempo. Depois
+ *  é preciso achar o caminho culpado, carimbar, rodar a 021 de novo para
+ *  preencher o que ficou vazio, e a 025 outra vez.
+ */
+
+const LISTAS = require('./018_clinicas.js').LISTAS;
+const ALVOS = LISTAS.OBRIGATORIA;
+
+module.exports = async function up(conn) {
+  const [linhas] = await conn.query(
+    'SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()');
+  const doBanco = linhas.map((l) => l.t);
+  const tabelas = ALVOS.filter((t) => doBanco.indexOf(t) !== -1);
+
+  const soltas = [];
+  const jaEstavam = [];
+
+  for (const t of tabelas) {
+    const [c] = await conn.query(
+      "SELECT IS_NULLABLE AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()" +
+      " AND TABLE_NAME = ? AND COLUMN_NAME = 'clinica_id'", [t]);
+    if (!c.length) continue;
+    if (c[0].n === 'YES') { jaEstavam.push(t); continue; }
+    await conn.query('ALTER TABLE `' + t + '` MODIFY clinica_id VARCHAR(50) NULL');
+    soltas.push(t);
+  }
+
+  console.log('   ! M1.7 REVERTIDA em ' + soltas.length + ' tabela(s)');
+  console.log('   ! as gravacoes voltam a funcionar, MAS linha nova sem clinica');
+  console.log('     nasce invisivel para quem a criou. Ache o caminho culpado.');
+
+  await conn.query(
+    'INSERT INTO system_logs (id, action_type, description, author, created_at, clinica_id)' +
+    ' VALUES (?, ?, ?, ?, NOW(), NULL)',
+    ['lg_026_' + Date.now().toString(36), 'MIGRATION',
+     'Migration 026: M1.7 REVERTIDA em ' + soltas.length + ' tabela(s). ' +
+     'A coluna clinica_id voltou a aceitar vazio para destravar as gravacoes. ' +
+     'Linha nova sem clinica nasce invisivel na tela -- achar o caminho culpado, ' +
+     'carimbar, rodar a 021 e depois a 025 de novo.',
+     'Sistema']);
+
+  return {
+    revertidas: soltas,
+    jaAceitavamVazio: jaEstavam.length,
+    observacao: 'As gravacoes voltam. Mas linha sem clinica nasce INVISIVEL para quem a ' +
+      'criou (as consultas filtram desde a M1.6a). Isto e um ganho de tempo, nao um ' +
+      'conserto: ache o caminho que grava sem carimbar, corrija, rode a 021 para preencher ' +
+      'o que ficou vazio, e a 025 outra vez.'
+  };
+};
+
+module.exports.ALVOS = ALVOS;

@@ -10,10 +10,11 @@
  * no total.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Boxes, RefreshCw, PackagePlus, AlertTriangle, ClipboardList, Layers } from "lucide-react";
+import { Boxes, RefreshCw, PackagePlus, AlertTriangle, ClipboardList, Layers, Plus, Pencil } from "lucide-react";
 import AlertasEstoque from "../../components/estoque/AlertasEstoque";
 import EntradaModal from "../../components/estoque/EntradaModal";
 import FichaTecnicaPanel from "../../components/estoque/FichaTecnicaPanel";
+import ProdutoModal from "../../components/estoque/ProdutoModal";
 import { Produto, Movimento, Alertas, reais, qtd, dataBR, dataHoraBR, ESTILO_MOV } from "../../components/estoque/comum";
 
 type Aba = "saldo" | "movimentos" | "fichas";
@@ -25,6 +26,10 @@ export default function Estoque() {
   const [movimentos, setMovimentos] = useState<Movimento[]>([]);
   const [servicos, setServicos] = useState<{ id: string; name: string }[]>([]);
   const [entrada, setEntrada] = useState<Produto | null>(null);
+  /* `null` = fechado; `{ produto: null }` = cadastrando; `{ produto }` = editando.
+   * Um estado só, e não dois booleanos: dois booleanos permitem o estado
+   * impossível "cadastrando E editando". */
+  const [editor, setEditor] = useState<{ produto: Produto | null } | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
@@ -129,6 +134,13 @@ export default function Estoque() {
             ))}
           </div>
           <button
+            onClick={() => setEditor({ produto: null })}
+            className="flex items-center gap-1.5 bg-brand-brown hover:bg-brand-brown/95 text-brand-beige px-3 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5 text-brand-gold" />
+            Novo produto
+          </button>
+          <button
             onClick={carregar}
             className="p-2 rounded-lg text-brand-brown/60 hover:bg-brand-beige cursor-pointer"
             title="Recarregar"
@@ -190,12 +202,24 @@ export default function Estoque() {
                           )}
                         </div>
 
+                        {/* Os dois com rótulo, e não só ícone: em 10/09 um lápis
+                          * de 14px sem palavra fez alguém concluir que editar
+                          * não existia. Ver a regra 22. */}
+                        <button
+                          onClick={() => setEditor({ produto: p })}
+                          title={"Editar o cadastro de " + p.name}
+                          className="shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider text-brand-brown/70 hover:bg-brand-beige cursor-pointer"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Editar
+                        </button>
                         <button
                           onClick={() => setEntrada(p)}
                           title={"Dar entrada em " + p.name}
-                          className="shrink-0 p-2 rounded-lg text-brand-brown/70 hover:bg-brand-beige cursor-pointer"
+                          className="shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider text-brand-brown/70 hover:bg-brand-beige cursor-pointer"
                         >
-                          <PackagePlus className="h-4 w-4" />
+                          <PackagePlus className="h-3.5 w-3.5" />
+                          Entrada
                         </button>
                       </div>
 
@@ -278,6 +302,18 @@ export default function Estoque() {
         <EntradaModal
           produto={entrada}
           aoFechar={() => setEntrada(null)}
+          aoSalvar={carregar}
+        />
+      )}
+
+      {editor && (
+        <ProdutoModal
+          produto={editor.produto}
+          /* As categorias que JÁ existem, para o formulário sugerir em vez de
+            * deixar cada cadastro inventar uma grafia. "Sem categoria" é rótulo
+            * de tela, não categoria de verdade, então fica de fora. */
+          categorias={Object.keys(porCategoria).filter((c) => c !== "Sem categoria").sort()}
+          aoFechar={() => setEditor(null)}
           aoSalvar={carregar}
         />
       )}

@@ -47,7 +47,45 @@ const REGRAS_DE_PAPEL = [
   { metodo: '*', padrao: /^\/api\/clients\/[^/]+\/(alerts|export)(\/|$)/, prefixo: '/api/clients',
     papeis: ['admin', 'gerente', 'profissional'] },
   { metodo: '*',      prefixo: '/api/documents',         papeis: ['admin', 'gerente', 'profissional'] },
-  { metodo: '*',      prefixo: '/api/document-templates',papeis: ['admin', 'gerente', 'profissional'] }
+  { metodo: '*',      prefixo: '/api/document-templates',papeis: ['admin', 'gerente', 'profissional'] },
+
+  /* A CHAVE DE CAPTACAO e configuracao, nao trabalho de funil.
+   *
+   * O funil em si (`/api/leads`) e de todo papel autenticado -- vendedor
+   * trabalha lead o dia inteiro. Mas quem mexe no endereco para onde o site
+   * manda contato esta mexendo em infraestrutura da clinica, e isso e de gestao.
+   *
+   * Usa `padrao` porque a rota e filha de /api/leads: com `prefixo` sozinho a
+   * regra valeria para o funil inteiro e o vendedor perderia a tela dele. E a
+   * mesma armadilha das rotas aninhadas de /api/clients logo acima. */
+  { metodo: 'GET', padrao: /^\/api\/leads\/captacao$/, prefixo: '/api/leads',
+    papeis: ['admin', 'gerente'] },
+
+  /* O PRIMEIRO OPERADOR DA PLATAFORMA -- `admin`, e ela se fecha sozinha.
+   *
+   * Repare que ela NAO mora em /api/plataforma: aquele caminho e recusado a
+   * todo token de clinica, e esta rota e chamada justamente por um. O nome
+   * separado nao e enfeite -- e o que a faz alcancavel.
+   *
+   * Havendo um operador, a rota recusa com 409 para sempre. Ver o cabecalho dela
+   * em routes/plataforma.js, inclusive o risco que sobra, escrito. */
+  { metodo: 'POST',   prefixo: '/api/primeiro-operador',  papeis: ['admin'] },
+
+  /* CONCEDER E REVOGAR O ACESSO DE SUPORTE e do dono do dado: `admin` da
+   * clinica. A LEITURA (GET) fica de fora da regra para o proprio suporte poder
+   * ver ate quando foi autorizado -- ele ja esta limitado por lista de rotas. */
+  { metodo: 'POST',   prefixo: '/api/suporte',            papeis: ['admin'] },
+  { metodo: 'DELETE', prefixo: '/api/suporte',            papeis: ['admin'] },
+
+  /* NAO ha linha para /api/plataforma AQUI, e isso e deliberado.
+   *
+   * O alcance do operador e uma LISTA DE ROTAS em server/middleware/plataforma.js,
+   * conferida no porteiro, antes desta tabela. Pendurar tambem uma regra de papel
+   * aqui daria a impressao de duas travas e entregaria meia: o operador nao tem
+   * `papel`, entao qualquer regra escrita em termos de papel nao casaria com ele.
+   *
+   * A rota interina `POST /api/clinicas` (papel admin, 11/09) saiu junto com o
+   * arquivo dela em 14/09: criar clinica virou operacao de plataforma de verdade. */
 ];
 
 /** O prefixo casa com o caminho exato ou com um filho dele.
@@ -90,6 +128,20 @@ function exigirPapel(req, res, next) {
   // tem linha aqui, porque a regra logo abaixo e "sem regra, pode". Um lugar
   // so decide o que o cron alcanca.
   if (req.usuario && req.usuario.servico === true) return next();
+
+  // O OPERADOR DA PLATAFORMA passa direto aqui pela MESMA razao, e nunca por
+  // confianca: ele ja foi limitado por lista de rotas no porteiro
+  // (server/middleware/plataforma.js). Fazer o token dele atravessar tambem esta
+  // tabela seria pior, e nao melhor: ele nao tem `papel`, entao cairia na regra
+  // "sem regra, pode" e herdaria toda rota nova que ninguem lembrou de regrar.
+  // Um lugar so decide o que a plataforma alcanca.
+  if (req.usuario && req.usuario.plataforma === true) return next();
+
+  // E a sessao de SUPORTE pela mesma razao: ela ja passou por lista de rotas E
+  // pela conferencia da concessao no banco, no porteiro. Se ela atravessasse
+  // esta tabela, o papel 'suporte' -- que nao esta em regra nenhuma -- herdaria
+  // toda rota sem regra. Um lugar so decide o que o suporte alcanca.
+  if (req.usuario && req.usuario.suporte === true) return next();
 
   const caminho = req.originalUrl.split('?')[0];
   const regra = regraPara(req.method, caminho);

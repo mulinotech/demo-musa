@@ -9,7 +9,7 @@
  * servidor vai recusar.
  */
 import { useEffect, useState } from "react";
-import { UserPlus, KeyRound, Power, ShieldCheck, RefreshCw } from "lucide-react";
+import { UserPlus, KeyRound, Power, ShieldCheck, RefreshCw, Pencil } from "lucide-react";
 import { papelDoToken } from "../../lib/api";
 
 interface Usuario {
@@ -52,6 +52,21 @@ export default function Usuarios() {
   // troca de senha
   const [trocandoSenhaDe, setTrocandoSenhaDe] = useState<string>("");
   const [novaSenha, setNovaSenha] = useState("");
+
+  /* ================================ TROCA DE NOME — e por que ela faltava
+   *
+   * Esta tela deixava mudar papel, situação e senha. **O nome, não** — e é o
+   * nome que aparece em cada registro de auditoria, em cada agendamento e em
+   * cada lembrete enviado para paciente. Alguém que casa, ou um nome digitado
+   * errado no cadastro, ficava assim para sempre.
+   *
+   * A rota `PATCH /api/users/:id` já aceitava `name` desde a M1.6b. Faltava só
+   * o campo — e em 10/09, quando isso foi pedido, eu consertei a tela de
+   * **Cadastros** (a equipe comercial, que é conteúdo de demonstração e não
+   * concede login) em vez desta. A frase original era "somente a senha", que é
+   * exatamente o que esta coluna oferecia. */
+  const [trocandoNomeDe, setTrocandoNomeDe] = useState<string>("");
+  const [novoNome, setNovoNome] = useState("");
 
   const mostrar = (tipo: "ok" | "erro", texto: string) => {
     setAviso({ tipo, texto });
@@ -120,6 +135,15 @@ export default function Usuarios() {
     } finally {
       setSalvando("");
     }
+  };
+
+  const trocarNome = async (u: Usuario) => {
+    const nome = novoNome.trim();
+    if (nome.length < 2) return mostrar("erro", "O nome precisa ter ao menos 2 letras.");
+    if (nome === u.name) { setTrocandoNomeDe(""); return; }
+    await alterar(u, { name: nome }, '"' + u.name + '" agora se chama "' + nome + '".');
+    setNovoNome("");
+    setTrocandoNomeDe("");
   };
 
   const trocarSenha = async (u: Usuario) => {
@@ -317,8 +341,21 @@ export default function Usuarios() {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => {
+                                setTrocandoNomeDe(trocandoNomeDe === u.id ? "" : u.id);
+                                setNovoNome(u.name);
+                                setTrocandoSenhaDe("");
+                              }}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-brand-brown/75 hover:bg-brand-beige transition-colors cursor-pointer"
+                            >
+                              <Pencil className="h-3 w-3" />
+                              Nome
+                            </button>
+
+                            <button
+                              onClick={() => {
                                 setTrocandoSenhaDe(trocandoSenhaDe === u.id ? "" : u.id);
                                 setNovaSenha("");
+                                setTrocandoNomeDe("");
                               }}
                               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-brand-brown/75 hover:bg-brand-beige transition-colors cursor-pointer"
                             >
@@ -345,6 +382,28 @@ export default function Usuarios() {
                               {u.status === "active" ? "Inativar" : "Reativar"}
                             </button>
                           </div>
+
+                          {trocandoNomeDe === u.id && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                autoComplete="off"
+                                value={novoNome}
+                                onChange={(e) => setNovoNome(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") trocarNome(u); }}
+                                placeholder="nome da pessoa"
+                                className="bg-white border border-brand-gold/30 rounded px-2 py-1.5 text-[11px] text-brand-brown w-44 focus:outline-none focus:border-brand-brown"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => trocarNome(u)}
+                                disabled={ocupado}
+                                className="bg-brand-brown text-brand-beige px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer disabled:opacity-60"
+                              >
+                                Salvar
+                              </button>
+                            </div>
+                          )}
 
                           {trocandoSenhaDe === u.id && (
                             <div className="flex items-center gap-2">

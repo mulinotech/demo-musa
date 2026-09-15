@@ -7,15 +7,28 @@
  *
  *  Restrito a admin e gerente pela linha de /api/finance em REGRAS_DE_PAPEL.
  *  Profissional não enxerga o financeiro da clínica.
+ *
+ *  ============================================= O QUE MUDOU NA M1.2 (09/09)
+ *
+ *  Toda consulta passou a `escopo(req)`. O caso que mais importa aqui é
+ *  `lerRazao()`: ela lê o razão inteiro e as três rotas de relatório filtram
+ *  período **em memória**, na função pura. Sem o filtro de clínica na consulta,
+ *  cada uma dessas rotas somaria o dinheiro das 50.
+ *
+ *  UM ACHADO QUE O FILTRO NÃO RESOLVE, e está registrado na fila como M1.2b:
+ *  as 16 categorias financeiras nascem da migration 008 com **id fixo**
+ *  (`cat_procedimentos`, `cat_aluguel`, ...), uma linha cada no banco inteiro.
+ *  Filtradas por clínica, a segunda clínica abre o financeiro com **zero
+ *  categorias** e não consegue classificar uma despesa. Precisa de mudança de
+ *  esquema, não de filtro.
  */
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
+const escopo = require('../db/escopo');
 const fin = require('../services/financeiro');
-const { logSystemEvent } = require('../services/logs');
+const logs = require('../services/logs');
 
 const novoId = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
-const autor = (req) => (req.usuario && req.usuario.nome) || 'Sistema';
 const TIPOS = ['RECEITA', 'DESPESA'];
 const PAGAMENTOS = ['DINHEIRO', 'PIX', 'DEBITO', 'CREDITO', 'TRANSFERENCIA', 'OUTRO'];
 
@@ -46,11 +59,20 @@ function periodoPadrao(query) {
   return { de, ate };
 }
 
-async function lerRazao() {
-  const [linhas] = await pool.query(`
+/** O razão da clínica, inteiro. As rotas de relatório filtram período depois,
+ *  na função pura de `services/financeiro.js`.
+ *
+ *  O `LEFT JOIN` das categorias filtra clínica **no ON**, não no WHERE: no
+ *  WHERE ele viraria INNER JOIN e todo lançamento sem categoria sumiria do
+ *  razão — inclusive as receitas de atendimento, enquanto a M1.2b não resolver
+ *  a categoria de id fixo. Lançamento que desaparece do razão é pior que
+ *  lançamento sem categoria. */
+async function lerRazao(db) {
+  const [linhas] = await db.q(`
     SELECT e.*, c.name AS category_name
       FROM cash_entries e
-      LEFT JOIN finance_categories c ON c.id = e.category_id
+      LEFT JOIN finance_categories c ON c.id = e.category_id AND c.clinica_id = :clinica
+     WHERE e.clinica_id = :clinica
      ORDER BY e.entry_date DESC, e.created_at DESC
   `);
   return linhas;
@@ -79,8 +101,10 @@ function paraTela(l) {
 /* ------------------------------------------------------------- categorias */
 
 router.get('/api/finance/categories', async function (req, res) {
+  const db = escopo(req);
   try {
-    const [r] = await pool.query('SELECT * FROM finance_categories WHERE active = 1 ORDER BY type, name');
+    const [r] = await db.q('SELECT * FROM finance_categories ' +
+      'WHERE clinica_id = :clinica AND active = 1 ORDER BY type, name');
     res.json(r.map((c) => ({ id: c.id, name: c.name, type: c.type })));
   } catch (e) {
     res.status(500).json({ error: 'Falha ao listar as categorias.' });
@@ -92,9 +116,11 @@ router.post('/api/finance/categories', async function (req, res) {
   const nome = String(b.name || '').trim();
   if (!nome) return res.status(400).json({ error: 'Informe o nome da categoria.' });
   if (TIPOS.indexOf(b.type) === -1) return res.status(400).json({ error: 'Tipo precisa ser RECEITA ou DESPESA.' });
+  const db = escopo(req);
   try {
     const id = novoId('cat');
-    await pool.query('INSERT INTO finance_categories (id, name, type) VALUES (?, ?, ?)', [id, nome, b.type]);
+    await db.q('INSERT INTO finance_categories (id, name, type, clinica_id) VALUES (?, ?, ?, :clinica)',
+      [id, nome, b.type]);
     res.status(201).json({ id, name: nome, type: b.type });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao criar a categoria.' });
@@ -102,6 +128,7 @@ router.post('/api/finance/categories', async function (req, res) {
 });
 
 router.patch('/api/finance/categories/:id', async function (req, res) {
+  const db = escopo(req);
   const b = req.body || {};
   const sets = [], valores = [];
   if (b.name !== undefined) {
@@ -113,7 +140,8 @@ router.patch('/api/finance/categories/:id', async function (req, res) {
   if (!sets.length) return res.status(400).json({ error: 'Nada para atualizar.' });
   try {
     valores.push(req.params.id);
-    await pool.query('UPDATE finance_categories SET ' + sets.join(', ') + ' WHERE id = ?', valores);
+    await db.q('UPDATE finance_categories SET ' + sets.join(', ') +
+      ' WHERE clinica_id = :clinica AND id = ?', valores);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao atualizar a categoria.' });
@@ -123,10 +151,11 @@ router.patch('/api/finance/categories/:id', async function (req, res) {
 /* ------------------------------------------------------------ lancamentos */
 
 router.get('/api/finance/entries', async function (req, res) {
+  const db = escopo(req);
   try {
     const { de, ate } = periodoPadrao(req.query);
     const base = req.query.basis === 'caixa' ? 'caixa' : 'competencia';
-    let linhas = await lerRazao();
+    let linhas = await lerRazao(db);
 
     linhas = linhas.filter(function (l) {
       const d = base === 'caixa' ? fin.dia(l.paid_at) : fin.dia(l.entry_date);
@@ -145,6 +174,7 @@ router.get('/api/finance/entries', async function (req, res) {
 });
 
 router.post('/api/finance/entries', async function (req, res) {
+  const db = escopo(req);
   const b = req.body || {};
   if (TIPOS.indexOf(b.type) === -1) return res.status(400).json({ error: 'Tipo precisa ser RECEITA ou DESPESA.' });
   const descricao = String(b.description || '').trim();
@@ -162,17 +192,26 @@ router.post('/api/finance/entries', async function (req, res) {
   }
 
   try {
+    // A categoria vem do corpo da requisicao: um id de outra clinica
+    // classificaria a despesa desta na categoria daquela. Aqui isso nao vaza
+    // dado, mas suja o relatorio das duas -- e o filtro de leitura nao acusa.
+    if (b.categoryId) {
+      const [cat] = await db.q(
+        'SELECT id FROM finance_categories WHERE clinica_id = :clinica AND id = ?', [b.categoryId]);
+      if (!cat.length) return res.status(404).json({ error: 'Categoria nao encontrada.' });
+    }
+
     const id = novoId('ce');
-    await pool.query(
+    await db.q(
       `INSERT INTO cash_entries
         (id, type, category_id, description, amount, entry_date, due_date, paid_at, payment_method,
-         source, source_id, supplier, notes, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,'MANUAL',NULL,?,?,?)`,
+         source, source_id, supplier, notes, created_by, clinica_id)
+       VALUES (?,?,?,?,?,?,?,?,?,'MANUAL',NULL,?,?,?, :clinica)`,
       [id, b.type, b.categoryId || null, descricao, valor, competencia, vencimento, pago,
        b.paymentMethod || null, b.supplier || null, b.notes || null, (req.usuario && req.usuario.sub) || null]
     );
-    await logSystemEvent('FINANCEIRO',
-      b.type + ' lancada: ' + descricao + ' - R$ ' + valor.toFixed(2) + '.', autor(req));
+    await logs.registrar(db, 'FINANCEIRO',
+      b.type + ' lancada: ' + descricao + ' - R$ ' + valor.toFixed(2) + '.');
     res.status(201).json({ id });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao gravar o lancamento.' });
@@ -180,6 +219,7 @@ router.post('/api/finance/entries', async function (req, res) {
 });
 
 router.patch('/api/finance/entries/:id', async function (req, res) {
+  const db = escopo(req);
   const b = req.body || {};
   const sets = [], valores = [];
   if (b.description !== undefined) {
@@ -204,13 +244,15 @@ router.patch('/api/finance/entries/:id', async function (req, res) {
   if (!sets.length) return res.status(400).json({ error: 'Nada para atualizar.' });
 
   try {
-    const [r] = await pool.query('SELECT source FROM cash_entries WHERE id = ?', [req.params.id]);
+    const [r] = await db.q(
+      'SELECT source FROM cash_entries WHERE clinica_id = :clinica AND id = ?', [req.params.id]);
     if (!r.length) return res.status(404).json({ error: 'Lancamento nao encontrado.' });
     if (r[0].source !== 'MANUAL') {
       return res.status(409).json({ error: 'Este lancamento veio de um atendimento e nao pode ser editado a mao. Estorne o atendimento.' });
     }
     valores.push(req.params.id);
-    await pool.query('UPDATE cash_entries SET ' + sets.join(', ') + ' WHERE id = ?', valores);
+    await db.q('UPDATE cash_entries SET ' + sets.join(', ') +
+      ' WHERE clinica_id = :clinica AND id = ?', valores);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao atualizar o lancamento.' });
@@ -220,18 +262,22 @@ router.patch('/api/finance/entries/:id', async function (req, res) {
 /** Marcar como pago e desmarcar. É a coluna `paid_at` que separa caixa de
  *  competência — por isso tem rota própria, e não um PATCH genérico. */
 router.patch('/api/finance/entries/:id/pay', async function (req, res) {
+  const db = escopo(req);
   const b = req.body || {};
   const pago = b.paidAt === null ? null : (dataValida(b.paidAt) || fin.dia(new Date()));
   if (b.paymentMethod && PAGAMENTOS.indexOf(b.paymentMethod) === -1) {
     return res.status(400).json({ error: 'Forma de pagamento invalida.' });
   }
   try {
-    const [r] = await pool.query('SELECT description, amount FROM cash_entries WHERE id = ?', [req.params.id]);
+    const [r] = await db.q(
+      'SELECT description, amount FROM cash_entries WHERE clinica_id = :clinica AND id = ?',
+      [req.params.id]);
     if (!r.length) return res.status(404).json({ error: 'Lancamento nao encontrado.' });
-    await pool.query('UPDATE cash_entries SET paid_at = ?, payment_method = ? WHERE id = ?',
+    await db.q('UPDATE cash_entries SET paid_at = ?, payment_method = ? ' +
+      'WHERE clinica_id = :clinica AND id = ?',
       [pago, b.paymentMethod || null, req.params.id]);
-    await logSystemEvent('FINANCEIRO',
-      (pago ? 'Baixa registrada' : 'Baixa desfeita') + ': ' + r[0].description + '.', autor(req));
+    await logs.registrar(db, 'FINANCEIRO',
+      (pago ? 'Baixa registrada' : 'Baixa desfeita') + ': ' + r[0].description + '.');
     res.json({ ok: true, paidAt: pago });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao registrar a baixa.' });
@@ -239,14 +285,17 @@ router.patch('/api/finance/entries/:id/pay', async function (req, res) {
 });
 
 router.delete('/api/finance/entries/:id', async function (req, res) {
+  const db = escopo(req);
   try {
-    const [r] = await pool.query('SELECT description, source FROM cash_entries WHERE id = ?', [req.params.id]);
+    const [r] = await db.q(
+      'SELECT description, source FROM cash_entries WHERE clinica_id = :clinica AND id = ?',
+      [req.params.id]);
     if (!r.length) return res.status(404).json({ error: 'Lancamento nao encontrado.' });
     if (r[0].source !== 'MANUAL') {
       return res.status(409).json({ error: 'Lancamento vindo de atendimento nao se apaga: estorne o atendimento.' });
     }
-    await pool.query('DELETE FROM cash_entries WHERE id = ?', [req.params.id]);
-    await logSystemEvent('FINANCEIRO', 'Lancamento removido: ' + r[0].description + '.', autor(req));
+    await db.q('DELETE FROM cash_entries WHERE clinica_id = :clinica AND id = ?', [req.params.id]);
+    await logs.registrar(db, 'FINANCEIRO', 'Lancamento removido: ' + r[0].description + '.');
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao remover o lancamento.' });
@@ -256,10 +305,11 @@ router.delete('/api/finance/entries/:id', async function (req, res) {
 /* ------------------------------------------------------------- relatorios */
 
 router.get('/api/finance/summary', async function (req, res) {
+  const db = escopo(req);
   try {
     const { de, ate } = periodoPadrao(req.query);
     const base = req.query.basis === 'caixa' ? 'caixa' : 'competencia';
-    const linhas = await lerRazao();
+    const linhas = await lerRazao(db);
 
     const atual = fin.resumo(linhas, { de, ate, base });
     const anterior = periodoAnterior(de, ate);
@@ -275,11 +325,12 @@ router.get('/api/finance/summary', async function (req, res) {
 });
 
 router.get('/api/finance/cashflow', async function (req, res) {
+  const db = escopo(req);
   try {
     const { de, ate } = periodoPadrao(req.query);
     const base = req.query.basis === 'competencia' ? 'competencia' : 'caixa';
     const agruparPor = req.query.groupBy === 'month' ? 'month' : 'day';
-    const linhas = await lerRazao();
+    const linhas = await lerRazao(db);
     res.json({ periodo: { de, ate, base, agruparPor }, serie: fin.fluxo(linhas, { de, ate, base, agruparPor }) });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao montar o fluxo de caixa.' });
@@ -289,11 +340,13 @@ router.get('/api/finance/cashflow', async function (req, res) {
 /* ---------------------------------------------------------- recorrencias */
 
 router.get('/api/recurring-expenses', async function (req, res) {
+  const db = escopo(req);
   try {
-    const [r] = await pool.query(`
+    const [r] = await db.q(`
       SELECT e.*, c.name AS category_name
         FROM recurring_expenses e
-        LEFT JOIN finance_categories c ON c.id = e.category_id
+        LEFT JOIN finance_categories c ON c.id = e.category_id AND c.clinica_id = :clinica
+       WHERE e.clinica_id = :clinica
        ORDER BY e.active DESC, e.day_of_month
     `);
     res.json(r.map((l) => ({
@@ -307,6 +360,7 @@ router.get('/api/recurring-expenses', async function (req, res) {
 });
 
 router.post('/api/recurring-expenses', async function (req, res) {
+  const db = escopo(req);
   const b = req.body || {};
   const descricao = String(b.description || '').trim();
   const valor = valorValido(b.amount);
@@ -316,8 +370,8 @@ router.post('/api/recurring-expenses', async function (req, res) {
   if (!isFinite(dia) || dia < 1 || dia > 31) return res.status(400).json({ error: 'O dia do mes precisa ficar entre 1 e 31.' });
   try {
     const id = novoId('rec');
-    await pool.query(
-      'INSERT INTO recurring_expenses (id, category_id, description, amount, day_of_month, start_date, end_date) VALUES (?,?,?,?,?,?,?)',
+    await db.q(
+      'INSERT INTO recurring_expenses (id, category_id, description, amount, day_of_month, start_date, end_date, clinica_id) VALUES (?,?,?,?,?,?,?, :clinica)',
       [id, b.categoryId || null, descricao, valor, dia, dataValida(b.startDate) || fin.dia(new Date()), dataValida(b.endDate)]
     );
     res.status(201).json({ id });
@@ -327,6 +381,7 @@ router.post('/api/recurring-expenses', async function (req, res) {
 });
 
 router.patch('/api/recurring-expenses/:id', async function (req, res) {
+  const db = escopo(req);
   const b = req.body || {};
   const sets = [], valores = [];
   if (b.description !== undefined) { sets.push('description = ?'); valores.push(String(b.description).trim()); }
@@ -346,7 +401,8 @@ router.patch('/api/recurring-expenses/:id', async function (req, res) {
   if (!sets.length) return res.status(400).json({ error: 'Nada para atualizar.' });
   try {
     valores.push(req.params.id);
-    await pool.query('UPDATE recurring_expenses SET ' + sets.join(', ') + ' WHERE id = ?', valores);
+    await db.q('UPDATE recurring_expenses SET ' + sets.join(', ') +
+      ' WHERE clinica_id = :clinica AND id = ?', valores);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao atualizar a despesa recorrente.' });
@@ -366,9 +422,11 @@ router.patch('/api/recurring-expenses/:id', async function (req, res) {
  *  Foi o que aconteceu na primeira vez que isto rodou. Para preencher o
  *  passado, mande `de` explicitamente e vá marcar as baixas depois. */
 router.post('/api/finance/recurring/run', async function (req, res) {
+  const db = escopo(req);
   try {
     const b = req.body || {};
-    const [recorrencias] = await pool.query('SELECT * FROM recurring_expenses WHERE active = 1');
+    const [recorrencias] = await db.q(
+      'SELECT * FROM recurring_expenses WHERE clinica_id = :clinica AND active = 1');
     let criados = 0, jaExistiam = 0;
     let janela = null;
 
@@ -378,10 +436,10 @@ router.post('/api/finance/recurring/run', async function (req, res) {
       for (const data of datas) {
         const chave = fin.chaveRecorrencia(r.id, data);
         try {
-          await pool.query(
+          await db.q(
             `INSERT INTO cash_entries
-              (id, type, category_id, description, amount, entry_date, due_date, paid_at, source, source_id)
-             VALUES (?, 'DESPESA', ?, ?, ?, ?, ?, NULL, 'RECURRING', ?)`,
+              (id, type, category_id, description, amount, entry_date, due_date, paid_at, source, source_id, clinica_id)
+             VALUES (?, 'DESPESA', ?, ?, ?, ?, ?, NULL, 'RECURRING', ?, :clinica)`,
             [novoId('ce'), r.category_id, r.description, r.amount, data, data, chave]
           );
           criados += 1;
@@ -392,7 +450,7 @@ router.post('/api/finance/recurring/run', async function (req, res) {
       }
     }
 
-    if (criados) await logSystemEvent('FINANCEIRO', criados + ' despesa(s) recorrente(s) lancada(s).', autor(req));
+    if (criados) await logs.registrar(db, 'FINANCEIRO', criados + ' despesa(s) recorrente(s) lancada(s).');
     res.json({ criados, jaExistiam, periodo: janela || fin.janelaDeGeracao({ de: b.de, ate: b.ate }) });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao gerar as despesas recorrentes.' });
@@ -413,28 +471,32 @@ router.post('/api/finance/recurring/run', async function (req, res) {
  *  entrou. Um atendimento concluído hoje nasce a receber, porque concluir não
  *  é receber. */
 router.post('/api/finance/sync-atendimentos', async function (req, res) {
+  const db = escopo(req);
   try {
     // A origem agora e o COMPROMISSO, nao a sessao clinica -- a migration 011
     // reapontou o que ja tinha sido lancado com a chave antiga. Duas chaves
     // para o mesmo fato e o comeco de uma divergencia de saldo.
-    const [feitos] = await pool.query(`
+    const [feitos] = await db.q(`
       SELECT a.id, a.title, a.price, a.client_id, a.professional_id,
              DATE_FORMAT(a.starts_at, '%Y-%m-%d') AS dia,
              c.name AS client_name
         FROM appointments a
-        LEFT JOIN clients c ON c.id = a.client_id
-       WHERE a.status = 'REALIZADO' AND a.kind = 'ATENDIMENTO' AND a.price > 0
+        LEFT JOIN clients c ON c.id = a.client_id AND c.clinica_id = :clinica
+       WHERE a.clinica_id = :clinica
+         AND a.status = 'REALIZADO' AND a.kind = 'ATENDIMENTO' AND a.price > 0
     `);
 
     let criados = 0, jaExistiam = 0;
     for (const a of feitos) {
       const descricao = (a.title || 'Atendimento') + (a.client_name ? ' - ' + a.client_name : '');
       try {
-        await pool.query(
+        // `cat_procedimentos` e o id fixo da migration 008, e hoje ele pertence
+        // a clinica `cl_1`. Ver a nota do cabecalho: e a M1.2b.
+        await db.q(
           `INSERT INTO cash_entries
             (id, type, category_id, description, amount, entry_date, due_date, paid_at,
-             source, source_id, client_id, professional_id)
-           VALUES (?, 'RECEITA', 'cat_procedimentos', ?, ?, ?, ?, ?, 'APPOINTMENT', ?, ?, ?)`,
+             source, source_id, client_id, professional_id, clinica_id)
+           VALUES (?, 'RECEITA', 'cat_procedimentos', ?, ?, ?, ?, ?, 'APPOINTMENT', ?, ?, ?, :clinica)`,
           [novoId('ce'), descricao.slice(0, 255), a.price, a.dia, a.dia, a.dia,
            a.id, a.client_id, a.professional_id]
         );
@@ -445,7 +507,7 @@ router.post('/api/finance/sync-atendimentos', async function (req, res) {
       }
     }
 
-    if (criados) await logSystemEvent('FINANCEIRO', criados + ' atendimento(s) importado(s) como receita.', autor(req));
+    if (criados) await logs.registrar(db, 'FINANCEIRO', criados + ' atendimento(s) importado(s) como receita.');
     res.json({ criados, jaExistiam, atendimentosRealizados: feitos.length });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao importar a receita dos atendimentos.' });

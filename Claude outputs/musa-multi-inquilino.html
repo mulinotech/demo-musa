@@ -1,0 +1,1104 @@
+<title>Musa Multi-inquilino</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground: #F7F3EC;
+    --surface: #FFFFFF;
+    --surface-sunk: #F1EADD;
+    --line: #E0D5C2;
+    --line-soft: #EDE5D6;
+    --ink: #3A2517;
+    --ink-soft: #6B5443;
+    --ink-mute: #8E7B69;
+    --gold: #9A7C22;
+    --gold-soft: #C9A94A;
+    --feito: #3E6B4F;
+    --feito-bg: #E6EFE7;
+    --fila: #8E7B69;
+    --fila-bg: #EFE9DF;
+    --alerta: #9E3B28;
+    --alerta-bg: #F7E7E2;
+    --decisao: #2F5468;
+    --decisao-bg: #E4EDF1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #17120E;
+      --surface: #201A15;
+      --surface-sunk: #1B1611;
+      --line: #35291F;
+      --line-soft: #2A2118;
+      --ink: #F0E7D8;
+      --ink-soft: #C4B3A0;
+      --ink-mute: #94826F;
+      --gold: #D9B85C;
+      --gold-soft: #B39440;
+      --feito: #7FB894;
+      --feito-bg: #1D2A21;
+      --fila: #94826F;
+      --fila-bg: #241D16;
+      --alerta: #E08C77;
+      --alerta-bg: #2E1C17;
+      --decisao: #8FC0D6;
+      --decisao-bg: #16242B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #17120E;
+    --surface: #201A15;
+    --surface-sunk: #1B1611;
+    --line: #35291F;
+    --line-soft: #2A2118;
+    --ink: #F0E7D8;
+    --ink-soft: #C4B3A0;
+    --ink-mute: #94826F;
+    --gold: #D9B85C;
+    --gold-soft: #B39440;
+    --feito: #7FB894;
+    --feito-bg: #1D2A21;
+    --fila: #94826F;
+    --fila-bg: #241D16;
+    --alerta: #E08C77;
+    --alerta-bg: #2E1C17;
+    --decisao: #8FC0D6;
+    --decisao-bg: #16242B;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Karla", "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.5rem;
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    margin: 0 0 0.85rem;
+    text-wrap: balance;
+  }
+  .lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 40rem; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  .band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .cell { background: var(--surface); padding: 1.15rem 1.25rem 1.25rem; }
+  .cell dt {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin: 0 0 0.5rem;
+  }
+  .cell dd {
+    margin: 0;
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 1.7rem;
+    font-weight: 600;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+  }
+  .cell dd span {
+    font-family: "Karla", sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--ink-mute);
+    display: block;
+    margin-top: 0.3rem;
+    line-height: 1.4;
+  }
+
+  section { display: flex; flex-direction: column; gap: 1.4rem; }
+  h2 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
+    margin: 0;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h2 .conta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--ink-mute);
+    float: right;
+    padding-top: 0.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+  p { margin: 0; max-width: 42rem; color: var(--ink-soft); }
+  code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.9em;
+    background: var(--surface-sunk);
+    padding: 0.1em 0.35em;
+    border-radius: 2px;
+  }
+
+  /* ---------- defesa em camadas ---------- */
+  .defesa { display: flex; flex-direction: column; gap: 0; }
+  .camada {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 1.1rem 1.25rem;
+  }
+  .camada + .camada { margin-top: -1px; }
+  .camada h3 {
+    font-family: "Karla", sans-serif;
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 0 0 0.3rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+  .camada h3 .ordem {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 500;
+  }
+  .camada p { font-size: 0.9rem; max-width: 44rem; }
+  .camada.c1 { border-left: 3px solid var(--gold-soft); }
+  .camada.c2 { border-left: 3px solid var(--gold); margin-left: 1.25rem; }
+  .camada.c3 { border-left: 3px solid var(--alerta); margin-left: 2.5rem; }
+  .camada .pega {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--ink-mute);
+    margin-top: 0.5rem;
+    display: block;
+  }
+
+  /* ---------- tarefas ---------- */
+  .tarefas {
+    display: flex; flex-direction: column; gap: 1px;
+    background: var(--line-soft);
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .t {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 3.9rem 1fr auto;
+    gap: 1rem;
+    align-items: baseline;
+    padding: 0.9rem 1rem 0.9rem 0.75rem;
+    border-left: 3px solid var(--line);
+  }
+  .t.chave { border-left-color: var(--alerta); }
+  .t.feito { border-left-color: var(--feito); }
+  .t.feito .cod { color: var(--feito); }
+  .cod {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink-mute);
+    letter-spacing: 0.02em;
+  }
+  .t.chave .cod { color: var(--alerta); }
+  .desc { font-size: 0.95rem; }
+  .desc em {
+    display: block; font-style: normal; font-size: 0.83rem;
+    color: var(--ink-mute); margin-top: 0.2rem;
+  }
+  .chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.22rem 0.55rem;
+    border-radius: 2px;
+    white-space: nowrap;
+    color: var(--fila);
+    background: var(--fila-bg);
+  }
+  .chip.feito { color: var(--feito); background: var(--feito-bg); }
+
+  .nota {
+    background: var(--surface-sunk);
+    border-left: 3px solid var(--gold);
+    padding: 1.15rem 1.35rem;
+    border-radius: 0 3px 3px 0;
+  }
+  .nota p { font-size: 0.93rem; max-width: 44rem; }
+  .nota p + p { margin-top: 0.7rem; }
+  .nota strong { color: var(--ink); font-weight: 600; }
+
+  .alerta-box {
+    background: var(--alerta-bg);
+    border-left: 3px solid var(--alerta);
+    padding: 1.15rem 1.35rem;
+    border-radius: 0 3px 3px 0;
+  }
+  .alerta-box h3 {
+    font-family: "Karla", sans-serif;
+    font-size: 0.9rem; font-weight: 700; color: var(--alerta);
+    margin: 0 0 0.4rem; letter-spacing: 0.01em;
+  }
+  .alerta-box p { font-size: 0.9rem; }
+  .alerta-box p + p { margin-top: 0.6rem; }
+
+  .decisao-box {
+    background: var(--decisao-bg);
+    border-left: 3px solid var(--decisao);
+    padding: 1.15rem 1.35rem;
+    border-radius: 0 3px 3px 0;
+  }
+  .decisao-box h3 {
+    font-family: "Karla", sans-serif;
+    font-size: 0.9rem; font-weight: 700; color: var(--decisao);
+    margin: 0 0 0.4rem;
+  }
+  .decisao-box p { font-size: 0.9rem; }
+  .opcoes { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 0.9rem; }
+  .op { padding-left: 0.9rem; border-left: 2px solid var(--decisao); }
+  .op h4 {
+    font-family: "Karla", sans-serif; font-size: 0.88rem; font-weight: 700;
+    margin: 0 0 0.15rem; color: var(--ink);
+  }
+  .op p { font-size: 0.86rem; }
+
+  .tabela-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--line-soft); }
+  th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-mute); font-weight: 500;
+  }
+  td { color: var(--ink-soft); }
+  td:first-child { color: var(--ink); font-weight: 500; }
+  td.num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; text-align: right; }
+  tfoot td { font-weight: 700; color: var(--ink); border-bottom: none; border-top: 1px solid var(--line); }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 1.5rem;
+    font-size: 0.82rem;
+    color: var(--ink-mute);
+  }
+
+  @media (max-width: 34rem) {
+    .t { grid-template-columns: 3.5rem 1fr; }
+    .t .chip { grid-column: 2; justify-self: start; margin-top: 0.35rem; }
+    h2 .conta { float: none; display: block; padding-top: 0.3rem; }
+    .camada.c2 { margin-left: 0.5rem; }
+    .camada.c3 { margin-left: 1rem; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Mulino Tech · Plano de trabalho · 3 de setembro de 2026</p>
+    <h1>Musa Multi-inquilino</h1>
+    <p class="lede">Transformar o Musa, hoje um sistema de <strong>uma</strong> clínica, em uma instalação que atende <strong>50 clínicas</strong> com um banco de dados só. <strong>A conversão terminou em 10/09</strong>: as 220 consultas foram convertidas, a coluna da clínica voltou a ser obrigatória nas 26 tabelas, e o banco passou a <em>recusar</em> a linha que mistura duas clínicas. As três barreiras estão de pé — o código filtra, o ensaio grita, o banco recusa.</p>
+    <p class="lede">O que falta <strong>não é mais conversão</strong>: é a plataforma. Cadastrar clínica, suspender, enxergar as 50, e o que hoje existe em uma linha só virar 50 — configuração de preço, de pontos, de lembrete. O risco que organizava o plano até aqui (uma consulta sem filtro mostrando a paciente de uma clínica para outra) passou a ter três camadas contra ele; o risco que organiza daqui em diante é outro: <strong>a segunda clínica só existe de verdade quando alguém conseguir cadastrá-la sozinho.</strong></p>
+    <p class="lede"><strong>E em 11/09, à tarde, a segunda clínica passou a existir de verdade.</strong> Criada pela API, nasceu completa — administrador, 16 categorias financeiras, configuração de preço, programa de pontos, dois modelos de documento e a própria chave de captação — e nasceu <em>vazia</em>: entrando nela, não se vê um paciente, um lead ou um serviço da primeira. A tese deste plano deixou de ser projeto e virou coisa medida em produção.</p>
+  </header>
+
+  <dl class="band">
+    <div class="cell">
+      <dt>Andamento</dt>
+      <dd>33 / 39<span>tarefas · M0, M1 (conversão), M2 e M3 fechadas</span></dd>
+    </div>
+    <div class="cell">
+      <dt>As três barreiras</dt>
+      <dd>3 / 3<span>o código filtra · o ensaio grita · o banco recusa (26 chaves de clínica, 8 compostas)</span></dd>
+    </div>
+    <div class="cell">
+      <dt>Verificação</dt>
+      <dd>388 + 263<span>testes e conferências de vazamento, mais 62 em navegador de verdade</span></dd>
+    </div>
+    <div class="cell">
+      <dt>Falta</dt>
+      <dd>7,5–13<span>dev-days · sobra a M4 (a verificação) e a M1.9</span></dd>
+    </div>
+  </dl>
+
+  <section>
+    <h2>O que vem agora, em ordem <span class="conta">e o que não pode ser invertido</span></h2>
+
+    <p>A conversão acabou. Daqui em diante a pergunta deixa de ser "esta consulta filtra?" e passa a ser <strong>"a segunda clínica consegue nascer e trabalhar sozinha?"</strong>. Em ordem de dependência real:</p>
+
+    <div class="t feito">
+      <span class="cod">✓</span>
+      <span class="desc">O formulário público de captação de leads — <strong>resolvido em 11/09</strong>
+        <em>era o bloqueio da M3: o formulário gravava na única clínica que existia e pararia de gravar no dia em que a segunda fosse cadastrada. Agora cada clínica tem uma <strong>chave pública de captação</strong> e o site dela posta com ela. <strong>A M3 não tem mais nada na frente.</strong></em></span>
+      <span class="chip feito">Feito 11/09</span>
+    </div>
+    <div class="t feito">
+      <span class="cod">✓</span>
+      <span class="desc">A configuração de linha única e o <strong>nascimento de uma clínica</strong> — <strong>feitos em 11/09</strong>
+        <em>as três tabelas de configuração ganharam chave primária composta, e criar uma clínica passou a gravar em seis tabelas numa transação só: ou nasce inteira, ou não nasce. Estimado em 4 a 6 dias, saiu numa tarde — porque as consultas já filtravam por clínica desde a M1.2 e o que faltava era o esquema permitir.</em></span>
+      <span class="chip feito">Feito 11/09</span>
+    </div>
+    <div class="t feito">
+      <span class="cod">✓</span>
+      <span class="desc">O <strong>operador da plataforma</strong> e o cadastro pela tela — <strong>feitos em 14/09</strong>
+        <em>a Mulino passou a ter acesso próprio, que administra as clínicas e é <strong>recusado em toda rota de dado de clínica</strong> — 12 recusas medidas. Cadastrar clínica saiu do console do navegador e virou formulário; a rota interina de <code>admin</code> foi apagada. E o ensaio achou, no caminho, que o inverso estava aberto: uma administradora de clínica cadastrava clínica pela rota da plataforma.</em></span>
+      <span class="chip feito">Feito 14/09</span>
+    </div>
+    <div class="t feito">
+      <span class="cod">1º</span>
+      <span class="desc">M3.1b, M3.2b e M3.3 — <strong>o resto da plataforma</strong>
+        <em>o acesso de suporte concedido pela clínica com prazo, suspender e encerrar (que não apaga: prontuário tem prazo legal de guarda), e o painel de uso das 50 — onde os registros da instalação voltaram a ter tela.</em></span>
+      <span class="chip feito">Feito 14/09</span>
+    </div>
+    <div class="t feito">
+      <span class="cod">2º</span>
+      <span class="desc">M4.1 — o teste que <strong>tenta</strong> vazar
+        <em>era a única tarefa que não podia ser adiada para depois do primeiro cliente pagante. Feita: nada vazou, e 10 rotas que respondiam sobre id alheio foram fechadas.</em></span>
+      <span class="chip feito">Feito 14/09</span>
+    </div>
+    <div class="t feito">
+      <span class="cod">3º</span>
+      <span class="desc">M4.3 — <strong>a LGPD do desenho novo</strong>
+        <em>a Mulino como operadora, o acesso de suporte como instrução da controladora, e o que o contrato ainda precisa dizer.</em></span>
+      <span class="chip feito">Feito 14/09</span>
+    </div>
+    <div class="t chave">
+      <span class="cod">4º</span>
+      <span class="desc">M1.9 — <strong>as 22 relações sem chave estrangeira</strong>
+        <em>onde mora o fato de que apagar uma paciente não apaga as conversas dela. Não bloqueia o primeiro cliente pagante; bloqueia dizer que a exclusão é completa.</em></span>
+      <span class="chip">1,5 a 3 d</span>
+    </div>
+
+    <p><strong>E duas coisas que não são tarefa de programação, mas atrasam tudo se ficarem para depois.</strong> O código do front <strong>não está versionado</strong> — o repositório tem o servidor, mas o <code>src</code> das telas é de 28/08 e não contém nada de setembro; hoje ele existe só no computador da Silvia e no servidor, e nenhum dos dois é backup do outro. E as credenciais de banco no <code>.env</code> do servidor estão velhas, o que obriga toda mudança de estrutura a passar por uma rota HTTP em vez de SQL direto.</p>
+  </section>
+
+  <section>
+    <h2>O problema, em uma frase</h2>
+    <p>Hoje uma linha da agenda diz "consulta da Maria, dia 10, às 14h". Amanhã ela precisa dizer "consulta da Maria, dia 10, às 14h, <em>na clínica X</em>" — e toda consulta ao banco precisa perguntar também pela clínica. São 220 lugares. Basta um esquecido.</p>
+
+    <div class="alerta-box">
+      <h3>O nome da coluna não pode ser <code>client_id</code></h3>
+      <p>Esse nome já existe em sete tabelas deste banco e significa <strong>paciente</strong> — <code>clients</code> é a tabela de pacientes, e <code>JOIN clients c ON c.id = a.client_id</code> é "junte a consulta com a paciente dela".</p>
+      <p>Reaproveitar o nome faria a mesma palavra significar duas coisas no mesmo banco. Na melhor hipótese ninguém entende mais o código; na pior, alguém escreve um filtro achando que separa clínicas quando separa pacientes. O sistema não acusa nada: só mostra a ficha errada para a pessoa errada. <strong>A coluna se chama <code>clinica_id</code>.</strong></p>
+    </div>
+
+    <p>Escrever o filtro em 220 lugares e confiar que ninguém esquecerá o 221º não é um plano — é uma esperança. O desenho abaixo tira isso das mãos de quem escreve e coloca três barreiras independentes no caminho.</p>
+
+    <div class="defesa">
+      <div class="camada c1">
+        <h3><span class="ordem">1ª barreira</span> Prevenção — o filtro não se escreve à mão</h3>
+        <p>As rotas param de chamar <code>pool.query</code> diretamente. Passam a usar uma camada que recebe a clínica da sessão e a injeta na consulta. Quem escreve código novo não tem como esquecer, porque não tem como escrever sem.</p>
+        <span class="pega">pega: o esquecimento comum, no código do dia a dia</span>
+      </div>
+      <div class="camada c2">
+        <h3><span class="ordem">2ª barreira</span> Detecção — o teste que finge ser outra clínica</h3>
+        <p>Duas clínicas semeadas, com dados parecidos de propósito. Um teste percorre todas as rotas autenticado como a clínica A e falha se qualquer resposta contiver um único registro da clínica B. Rota nova sem filtro quebra a suíte antes de existir em produção.</p>
+        <span class="pega">pega: o que passou pela 1ª — consulta crua, junção esquecida, relatório novo</span>
+      </div>
+      <div class="camada c3">
+        <h3><span class="ordem">3ª barreira</span> Contenção — o banco recusa</h3>
+        <p>Chaves estrangeiras compostas por <code>(clinica_id, id)</code>. Um compromisso da clínica A fica <em>impedido pelo próprio MySQL</em> de apontar para uma paciente da clínica B. Não é validação de código: é o banco recusando gravar. <strong>Só vale com a coluna preenchida</strong> — por isso ela é a última tarefa da M1, e não da M0.</p>
+        <span class="pega">pega: o que passou pelas duas — e limita o estrago a leitura, nunca mistura de dados</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>Por que três e não uma.</strong> A primeira barreira é a que funciona no dia a dia, e é a que uma pressa desfaz — alguém precisa de uma consulta que a camada não expressa e escreve SQL cru "só desta vez". A segunda existe justamente para esse dia. A terceira não depende de nenhuma das outras duas estar correta, e é a única que continua valendo se as duas primeiras falharem juntas.</p>
+      <p><strong>A regra a deixar escrita no contexto:</strong> <em>esquecer o filtro tem de quebrar o teste, não vazar em produção</em>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>A decisão de entrada, tomada <span class="conta">04/09 · Silvia e sócio</span></h2>
+
+    <div class="decisao-box">
+      <h3>E-mail único no sistema inteiro</h3>
+      <p>Cada pessoa da clínica tem o próprio e-mail e a própria senha, cadastrados pela proprietária na tela de Usuários — como já funciona hoje. O que ficou decidido é que <strong>o e-mail é único entre todas as 50 clínicas</strong>: o login continua <code>SELECT * FROM users WHERE email = ?</code>, e a linha do usuário é que diz de qual clínica ele é.</p>
+      <p>Profissional que atende em duas clínicas usa dois endereços — <code>maria-clinicax@gmail.com</code> e <code>maria-clinicay@gmail.com</code> — e é orientada nesse sentido no cadastro.</p>
+      <p><strong>O que isso poupa:</strong> nada de DNS com curinga, nada de certificado por subdomínio, nada de resolver a clínica antes da tela de login. A tarefa M3.3 deixa de existir e a M0.2 encolhe.</p>
+      <p><strong>E a porta continua aberta.</strong> Migrar depois para um endereço por clínica é <em>afrouxar</em> a regra de unicidade, não apertá-la — operação barata, desde que o token carregue a clínica desde o primeiro dia. É exatamente o que a M0.3 faz, e é por isso que ela não pode ser adiada.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Uma consequência da escolha, e ela precisa de decisão de texto</h3>
+      <p>Com o e-mail único entre as 50, a proprietária da Clínica A que tentar cadastrar <code>maria@gmail.com</code> vai ser recusada porque esse e-mail já existe — <em>na Clínica B</em>. A mensagem de erro óbvia ("e-mail já cadastrado") conta à Clínica A que esse endereço está em uso em algum lugar da plataforma. É pouco, mas é informação de um cliente escapando para outro.</p>
+      <p>A recusa tem de existir; o que muda é o texto. <strong>"Este e-mail não está disponível. Use outro endereço."</strong> — sem dizer se já existe, onde, ou desde quando. Está incluído na M0.2, e há teste fixando a mensagem, porque é o tipo de frase que alguém "melhora" seis meses depois para ser mais útil.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase M0 — Fundação do inquilino <span class="conta">fechada · 4 de 4</span></h2>
+    <p>Não entrega tela nova. É o que faz as 220 conversões da fase seguinte serem mecânicas em vez de perigosas — e a ordem importa: a camada de acesso precisa existir <em>antes</em> de a primeira consulta ser convertida.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">M0.1</span>
+        <span class="desc">Tabela <code>clinicas</code> e a coluna em 28 tabelas
+          <em>aplicada em produção; a instalação atual é a clínica <code>cl_1</code>, sem perder nada</em></span>
+        <span class="chip feito">Feito 04/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M0.2</span>
+        <span class="desc">Quatro unicidades por clínica, e a recusa que não vaza
+          <em>aplicada; <code>users.email</code> continua global, por decisão, com teste nos dois sentidos</em></span>
+        <span class="chip feito">Feito 04/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M0.3</span>
+        <span class="desc">O token de sessão carrega a clínica
+          <em>o porteiro recusa token sem ela, e a criação de usuário já grava a coluna</em></span>
+        <span class="chip feito">Feito 04/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M0.4</span>
+        <span class="desc">A camada de acesso, e a catraca que impede furá-la
+          <em>a 1ª barreira; consulta sem filtro nem chega ao banco</em></span>
+        <span class="chip feito">Feito 04/09</span>
+      </div>
+
+    </div>
+
+    <div class="nota">
+      <p><strong>M0.1 — o que ficou melhor do que o planejado.</strong> A ideia era conferir a contagem de linhas à mão, antes e depois. A migration passou a cobrar isso de si mesma: ela conta as 28 tabelas antes de alterar, conta de novo no fim e <em>aborta com erro</em> se qualquer contagem mudou ou se sobrou linha sem clínica. Ninguém precisa comparar nada — se ela termina, bateu.</p>
+      <p><strong>E a parte mais importante do arquivo não são os <code>ALTER</code>s: é a lista.</strong> Toda tabela do banco tem de estar em exatamente uma de três listas — 26 com a coluna obrigatória, 2 aceitando vazio, 2 de fora. Se aparecer uma tabela que não está em nenhuma, a migration <strong>para e diz o nome, antes de tocar em qualquer coisa</strong>. O motivo: tabela sem coluna de inquilino tem o conteúdo compartilhado pelas 50 clínicas, a consulta simplesmente não filtra, e nada dá erro em lugar nenhum. Esquecer uma tabela é a forma mais silenciosa de vazar dado neste projeto — a lista explícita transforma o esquecimento em falha na hora de aplicar.</p>
+      <p><strong>A coluna nasce aceitando vazio e só depois vira obrigatória.</strong> Três passos por tabela: cria aceitando vazio, preenche tudo com <code>cl_1</code>, aí trava. Acrescentar direto como obrigatória numa tabela com dados obriga o MySQL a inventar um valor padrão, e a linha existente fica com inquilino errado. Há teste conferindo a <em>ordem</em>, não só o resultado.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>M0.2 — as duas unicidades que assustam mais não eram a óbvia.</strong> O código de produto era o caso previsível: a clínica B não conseguiria usar um código que a A já usou, e veria "código já existe" olhando uma lista onde ele não está. As duas chaves de origem, no razão e nos pontos, são piores — são a trava de idempotência do sistema, onde "chave repetida" significa <em>isso já foi feito</em>. Uma colisão entre clínicas ali <strong>não daria erro</strong>: a receita da clínica B seria tratada como já lançada e simplesmente não entraria. Sem log, sem sintoma, até o fechamento do mês não bater. A probabilidade é baixíssima; o custo de incluir a clínica na chave foi uma linha.</p>
+      <p><strong>E a recusa de e-mail agora diz "não está disponível", sem dizer por quê.</strong> A frase óbvia contaria à clínica A que aquele endereço está em uso em algum lugar da plataforma — informação de um cliente escapando para outro, de graça para quem quisesse sondar. O teste que fixa a frase olha só as mensagens que saem para o cliente: a primeira versão varria o arquivo inteiro e acusou o <em>próprio comentário</em> que manda não usar a frase vazada.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>M0.4 — a marca obrigatória.</strong> Reescrever 220 consultas num construtor de SQL não era opção: o SQL deste sistema tem junções, agregações e formatação de data escritas à mão. A camada mantém o SQL como está e exige uma marca dentro dele — <code>WHERE clinica_id = :clinica</code>. Consulta sem a marca é <strong>recusada antes de tocar o banco</strong>, com uma mensagem que ensina o que escrever e menciona a saída legítima. E a marca sozinha não basta: a consulta também precisa citar a coluna, senão <code>SELECT :clinica AS x</code> passaria sem filtrar nada.</p>
+      <p><strong>A parte perigosa foi contar os parâmetros.</strong> A consulta real da agenda tem <code>DATE_FORMAT(x, '%Y-%m-%d %H:%i:%s')</code> — cheia de dois-pontos dentro de um texto. Se o analisador enxergasse <code>:i</code> como marca, todos os valores seguintes deslizariam uma casa. E deslizar parâmetro não dá erro de sintaxe: dá <em>resultado errado</em> — um filtro de clínica recebendo o valor da coluna vizinha devolve linhas da clínica errada, calado. O analisador pula literais, comentários e crases, e há teste para aspas escapadas, apóstrofo duplicado e interrogação dentro de texto.</p>
+      <p><strong>O alcance dela, dito sem exagero.</strong> Ela garante que a marca está lá, não que filtra a coisa certa: uma junção com a tabela de pacientes sem amarrar a clínica do lado de lá passa por aqui. É por isso que são <em>três</em> barreiras — a segunda existe exatamente para junção esquecida. Camada que promete demais é pior que camada nenhuma.</p>
+      <p><strong>A catraca veio da M4.2 para cá, e essa mudança foi minha.</strong> A lista de arquivos que ainda falam com o banco direto falha de duas formas: se alguém de fora da lista usar o banco cru, e <em>também</em> se alguém da lista já não usar — é a segunda que obriga a lista a encolher. No fim da M1 ela seria só um relatório do estrago; agora cada módulo convertido tem critério de pronto que se verifica sozinho.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Descoberto por acaso: um arquivo de teste que não sobe some sem avisar</h3>
+      <p>Um envio caiu no meio e o arquivo de testes da própria camada não chegou ao servidor. A suíte respondeu <strong>"291 testes, zero falhas"</strong> — 27 a menos, tudo verde. <code>node --test</code> com um arquivo inexistente na lista não reclama: roda o que achou e sai com sucesso. Medido, não suposto.</p>
+      <p>O risco não é o dia em que acontece com um arquivo recém-escrito, como hoje. É o dia em que acontece com um teste antigo: a contagem cai de 291 para 264 e ninguém repara, porque esse número só sobe e ninguém o decora. Testes deixam de rodar e o sistema continua dizendo que está tudo bem.</p>
+      <p><strong>Agora existe uma conferência que roda antes da suíte</strong> e derruba o <code>npm test</code> nomeando o arquivo que falta. Ela protege inclusive a si mesma: se o próprio arquivo de guarda sumir, o comando erra ao abri-lo e falha alto — foi por isso que ela não é mais um teste dentro da suíte. Os 15 arquivos foram conferidos: nenhum tinha sumido antes.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>M0.3 — a clínica vem do token, e o token é assinado.</strong> A alternativa seria vir do endereço ou do corpo da requisição, e aí bastaria trocar um valor para ler a clínica do vizinho. Há teste garantindo que ela nunca chegue pelo corpo — inclusive na criação de usuário, onde aceitar a clínica do cliente deixaria a proprietária da clínica A criar um acesso <em>dentro</em> da clínica B. Isso não vaza dado: cria uma porta.</p>
+      <p><strong>O nome da clínica de propósito não entra no token.</strong> Renomear uma clínica deixaria o nome velho valendo até a pessoa sair e entrar de novo. Dado mutável em token é dado que envelhece escondido — o nome vem de rota, na M3.</p>
+      <p><strong>A peça que quase faltou.</strong> Sem gravar a clínica na criação de usuário, o acesso novo nasceria com a coluna vazia e o porteiro recusaria o token dele <em>para sempre</em>. A verificação em produção provou os dois lados juntos: um usuário criado agora entra, e o token dele já vem com a clínica certa. É o primeiro lugar do sistema que grava essa coluna; a M1 faz o mesmo nos outros 44.</p>
+      <p><strong>E uma armadilha fechada antes de existir:</strong> a rotina automática do cron não tem clínica — as varreduras percorrem todas. Se o porteiro deixasse um token de <em>pessoa</em> sem clínica cair para o bloco do cron, bastaria um token velho para virar rotina automática. Há teste para exatamente esse caminho.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Incidente de 04/09 — a M0.1 parou todas as gravações por uma hora</h3>
+      <p>A M0.1 tornou <code>clinica_id</code> obrigatória sem valor padrão, e o sistema tem <strong>45 comandos de inserção que não nomeiam a coluna</strong>. O MySQL passou a recusar cada um: criar paciente, marcar consulta, lançar receita, dar entrada em estoque, gerar documento, cadastrar usuário — nada gravava. Leitura funcionava.</p>
+      <p><strong>A causa raiz não foi a migration: foi a verificação.</strong> A conferência pós-M0.1 chamou cinco rotas de <em>leitura</em> e declarou a tarefa concluída com o sistema incapaz de inserir uma linha. Leitura e escrita são coisas diferentes. Virou regra da fila: tarefa de banco não fecha sem exercitar uma gravação de verdade.</p>
+      <p><strong>O erro de sequência tem nome.</strong> Numa mudança dessas se <strong>expande</strong> (a coluna passa a existir aceitando vazio), <strong>migra</strong> (o código passa a preenchê-la) e só então <strong>aperta</strong> (a coluna passa a ser obrigatória). A M0.1 fez o primeiro e o terceiro juntos, antes do segundo. O aperto voltou para o fim da M1, como tarefa M1.7.</p>
+      <p><strong>E o conserto tinha um caminho fácil e errado:</strong> dar à coluna o valor padrão <code>cl_1</code>. Resolveria na hora, e depois da M1 uma gravação que esquecesse a clínica arquivaria o dado da clínica X debaixo da clínica 1, em silêncio, aparecendo para o inquilino errado. <strong>Vazio falha fechado; valor padrão falha aberto.</strong> Com vazio, a linha desaparece de quem a criou — defeito visível no mesmo dia, nunca vazamento. Há teste impedindo que alguém acrescente esse padrão depois.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Duas correções à medição inicial, e a segunda mudou o desenho.</strong> São <strong>28</strong> tabelas e não 26 — o <code>os</code> que apareceu na primeira contagem era falso positivo, vindo de um comentário no arquivo de esquema. E são <strong>duas</strong> tabelas aceitando vazio, não uma: <code>system_settings</code>, onde vive o token do cron, e <code>system_logs</code>, onde vão as ações do operador da plataforma. "Criou a clínica X" não é evento da clínica X nem de nenhuma outra.</p>
+      <p><strong>Vazio ali não significa "vale para todas": significa "não é de nenhuma".</strong> Linha com clínica vazia nunca entra em listagem de clínica. É a distinção que impede o token do cron de aparecer na configuração de alguém.</p>
+      <p><strong>O estado agora, dito com precisão:</strong> o banco tem a coluna e o sistema não a usa. As 220 consultas continuam sem filtro, e isso não é meio-caminho perigoso <em>porque só existe uma clínica</em> — passa a ser no minuto em que a segunda entrar. É o que a fase M1 resolve, e é por isso que a M4.1 não pode ser adiada para depois do primeiro cliente.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase M1 — Converter as consultas <span class="conta">✓ conversão fechada · sobra 1 tarefa</span></h2>
+    <p>A fase de volume. Cada tarefa fecha com o teste de vazamento do seu próprio módulo — não se acumula "testar tudo no fim", porque no fim ninguém lembra o que uma consulta específica deveria devolver.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">M1.1a</span>
+        <span class="desc">Pacientes, e a ferramenta que tenta vazar
+          <em>5 consultas · o primeiro módulo na camada, e a 2ª barreira construída junto</em></span>
+        <span class="chip feito">Feito 08/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.1b</span>
+        <span class="desc">Atendimentos e planos de tratamento
+          <em>11 consultas · junção de três tabelas, e as sessões casadas em memória</em></span>
+        <span class="chip feito">Feito 08/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.1c</span>
+        <span class="desc">Agenda <strong>e a cadeia de efeitos do atendimento</strong>
+          <em>≈45 consultas · concluir → receita → baixa de estoque → pontos; e o defeito que ela achou, abaixo</em></span>
+        <span class="chip feito">Feito 08/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.2</span>
+        <span class="desc">Financeiro, precificação e relatórios
+          <em>51 consultas · treze delas são somas, e soma errada não tem nome — ver abaixo</em></span>
+        <span class="chip feito">Feito 09/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.2b</span>
+        <span class="desc">Categoria de id fixo e configuração de linha única
+          <em>as 16 categorias e a linha <code>'default'</code> de preço e pontos: a primária virou composta na <code>migration 030</code> — cada clínica tem o seu <code>'default'</code></em></span>
+        <span class="chip feito">Feito 11/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.3</span>
+        <span class="desc">Estoque
+          <em>22 consultas · e a tarefa que descobriu que a conferência estava passando por não ser necessária</em></span>
+        <span class="chip feito">Feito 09/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.4</span>
+        <span class="desc">Fidelidade <em>11 consultas · e a tarefa em que a marca <code>_b_</code> era cega: resposta agregada não tem id, então a conferência mede o número</em></span>
+        <span class="chip feito">Feito 09/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.5</span>
+        <span class="desc">Documentos e anamnese <em>19 consultas · dado de saúde, o vazamento sem conserto possível; e a rota de alertas clínicos, que a profissional abre segundos antes de aplicar o produto</em></span>
+        <span class="chip feito">Feito 09/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.6a</span>
+        <span class="desc">Funil, equipe comercial e a <strong>trilha de auditoria</strong>
+          <em>21 consultas · e a decisão de que o log é por clínica, que mexeu em 56 pontos de chamada</em></span>
+        <span class="chip feito">Feito 09/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.6b</span>
+        <span class="desc">Acessos, IA e o WhatsApp
+          <em>≈19 consultas · a porta que a troca de senha abria, o vazamento que voltava reescrito, e o que filtro nenhum resolve</em></span>
+        <span class="chip feito">Feito 09/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.7</span>
+        <span class="desc">Voltar a exigir a coluna
+          <em>o "apertar" que a M0.1 fez cedo demais — <strong>26 tabelas apertadas, zero linha órfã</strong>, e as oito gravações conferidas numa tela de verdade</em></span>
+        <span class="chip feito">Feito 10/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M1.8</span>
+        <span class="desc">Chaves estrangeiras compostas <code>(clinica_id, id)</code>
+          <em>a 3ª barreira — 26 chaves de clínica e 8 compostas; o banco passa a recusar a linha cruzada</em></span>
+        <span class="chip feito">Feito 10/09</span>
+      </div>
+      <div class="t chave">
+        <span class="cod">M1.9</span>
+        <span class="desc">As 22 relações que seguem sem chave estrangeira
+          <em>uma decisão de <code>ON DELETE</code> por relação — medidas pela própria migration, nenhuma com linha cruzada hoje</em></span>
+        <span class="chip">1,5–3 d</span>
+      </div>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Medido em 04/09: por que as chaves compostas saíram da M0 para o fim da M1</h3>
+      <p>Elas estavam planejadas como M0.5, antes da conversão das consultas. Um ensaio contra um MySQL de verdade mostrou que ali elas seriam <strong>um retrocesso</strong>, e não uma proteção. Três resultados, medidos e não supostos:</p>
+      <p>Documento com a clínica <em>preenchida</em> apontando para paciente de outra clínica: <strong>recusado</strong> — a chave composta funciona. Documento com a clínica <em>vazia</em> apontando para paciente de outra clínica: <strong>aceito</strong> — nenhuma proteção. E o pior: apagar a paciente deixa o documento de clínica vazia <strong>órfão</strong>, apontando para alguém que não existe mais, porque o apagamento em cascata não dispara em linha que a chave não casa.</p>
+      <p>Desde a migration 020, toda linha nova nasce com a clínica vazia. Fazer as chaves compostas hoje não protegeria nada e quebraria o cascade que já existe — prontuário órfão de paciente apagada. Elas passam a ser a <strong>M1.8</strong>, logo depois de a coluna voltar a ser obrigatória.</p>
+      <p><strong>A lição não é sobre chave estrangeira.</strong> É que "esta tarefa é independente" foi uma afirmação minha, sem medida por trás. Meia hora subindo um MySQL descartável desfez a suposição. O ensaio contra banco de verdade passou a fazer parte do fluxo — e teria pego também o incidente da manhã.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>11/09: o formulário do site ganhou dono, e a M3 ficou livre</h3>
+      <p><strong>Era o único bloqueio que sobrava na frente da plataforma.</strong> <code>POST /api/leads</code> é a única gravação sem sessão — o formulário do site posta ali, de fora, sem ninguém logado —, e um formulário público não sabe de qual clínica ele é. Com uma clínica a pergunta não existia; a rota gravava na única que havia e <em>recusava com 503 a partir da segunda</em>, de propósito. Ou seja: cadastrar a segunda clínica desligaria a captação de todas.</p>
+      <p>Três saídas estavam na mesa desde 09/09, e a decisão foi a <strong>chave pública por clínica</strong>: o site posta em <code>/api/leads?captacao=&lt;chave&gt;</code>. As outras duas foram descartadas com o motivo registrado — <em>endereço próprio por clínica</em> tem exatamente a mesma exposição (o endereço também está no código da página) e dá o mesmo trabalho; <em>token de integração</em> seria de fato secreto, mas exige que o site da clínica tenha servidor capaz de guardar segredo, e a maioria tem landing page com formulário em JavaScript. Travaria a captação da maior parte delas: <strong>a proteção impedindo o produto de funcionar.</strong></p>
+      <p><strong>A chave não é senha, e isso está escrito em todo lugar onde ela aparece</strong> — na migration, na rota e na tela. Ela vive no código da página de quem a usa; qualquer visitante a lê. O que ela permite é criar um lead naquela clínica, e nada mais. Sem essa ressalva, ela seria guardada como segredo e colá-la no site pareceria um vazamento.</p>
+      <p>O que ela realmente arrisca é <em>lead falso</em>, e o remédio é o limite de envios por IP — não o sigilo. E o limite ficou conservador por um motivo medido no mesmo dia, contado abaixo.</p>
+      <p><strong>A ponte:</strong> sem chave, com uma clínica só, o pedido continua sendo aceito. O formulário que está no ar não tem chave e não podia parar de gravar no dia da migration. A partir da segunda clínica, sem chave é recusa — <strong>alta e visível</strong>, escolhida contra a alternativa de estacionar o lead para triagem manual: lead estacionado vai para um lugar que ninguém olha, e o problema só apareceria semanas depois como "o site parou de trazer cliente".</p>
+      <p><strong>E um efeito colateral que valia por si só:</strong> o registro do lead na trilha de auditoria ia para a instalação — e linha sem clínica é invisível em toda tela desde a M1.6a. A clínica que recebia o lead <em>nunca via</em> que ele tinha chegado. Agora o registro é dela.</p>
+      <p>Custo para o futuro, e ele é real: <code>chave_captacao</code> é obrigatória e única, então <strong>cadastrar clínica passou a ter um passo a mais</strong>. A tarefa que dá nascimento a uma clínica tem de gerar a chave, senão a clínica nova nasce sem captação.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>11/09, medido em produção: a trilha de auditoria não sabia de onde veio nada</h3>
+      <p>Enquanto se escrevia o limite de envios da captação, apareceu uma pergunta lateral: o limite é por pessoa ou somado entre todos? A resposta dependia de a aplicação declarar em quem confiar atrás do proxy — e ela não declarava.</p>
+      <p>A medição levou dez segundos e devolveu <strong>um único endereço para a trilha inteira: <code>127.0.0.1</code></strong>. Quer dizer: desde sempre, todo registro de auditoria — quem criou paciente, quem apagou lançamento, quem trocou a senha de alguém — guardava o endereço <em>do proxy</em>. A coluna existia e não dizia nada. Numa investigação de "quem fez isso?", é a diferença entre uma resposta e um encolher de ombros.</p>
+      <p>O conserto é uma linha, e a forma dela importa mais que a existência: <strong>confiar em <em>quem</em>, e não em <em>quantos</em>.</strong> A opção óbvia seria dizer "confie no primeiro salto" — e um número confia sem olhar quem é; se a topologia mudar, o sistema passa a acreditar no endereço que o próprio visitante escreveu, e a linha que existia para dar identidade passa a dar disfarce. Confiando apenas no endereço do proxy que foi medido, a coisa para de confiar sozinha quando esse endereço mudar.</p>
+      <p>Um teste cobra as duas coisas — que a declaração exista, e que não seja um número.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>10/09: a terceira barreira entrou — e quase apagou a segunda</h3>
+      <p>A M1.7 apertou a coluna nas 26 tabelas, sem nenhuma linha órfã, e a M1.8 pôs as chaves: <strong>26 chaves de clínica</strong> (a clínica de toda linha tem de existir) e <strong>8 chaves compostas</strong> (o pai tem de ser da mesma clínica). O banco passou a recusar a linha cruzada, que era a única das três barreiras que faltava.</p>
+      <p><strong>E aí apareceu um problema que não estava previsto em lugar nenhum.</strong> A semente do ensaio de vazamento contém <em>sete linhas cruzadas de propósito</em> — elas existem para medir se os filtros de leitura estão lá. Com as chaves compostas no lugar, o banco recusa essas linhas: o ensaio simplesmente não sobe. A barreira de baixo apagaria a medição da de cima.</p>
+      <p>Isso é diferente do padrão já conhecido (a camada de cima <em>resgata</em> a sabotagem da de baixo, e a conferência passa verde). Aqui é pior: <strong>o cenário deixa de poder ser montado</strong>, e a conferência deixa de existir. E a tentação seguinte seria apagar as linhas cruzadas da semente, que é o defeito de 09/09 de volta pela porta da frente.</p>
+      <p>A saída tem três partes, e as três são necessárias: desligar a conferência do banco <em>só</em> no trecho da semente, religar em seguida, e acrescentar um bloco que mede a barreira de baixo com a conferência ligada — <em>"desliguei para semear" não pode virar "nunca mais conferi se a contenção existe"</em>. Três testes amarram as três partes. A ordem de importância continua a mesma: <strong>chave estrangeira se apaga com um comando; o filtro da consulta é o que segura a tela todo dia.</strong></p>
+      <p><strong>E uma sabotagem passou o ensaio inteiro verde — 158 conferências, zero falhas.</strong> Trocando o comportamento de apagamento das chaves novas de "apaga junto" para "recusa", nada acusou. O que teria chegado na tela é <em>"erro ao excluir paciente"</em>, porque as fichas dela passariam a impedir a exclusão em vez de irem com ela. O aviso estava escrito neste plano desde 04/09, com essas palavras — e <strong>aviso em documento não é barreira</strong>. Agora são duas: a migration compara a regra nova com a antiga e para se diferirem, e o ensaio apaga um paciente de controle e conta se as oito filhas foram com ele (conferindo <em>antes</em> que as oito existem, senão zero-antes e zero-depois passaria sem medir nada).</p>
+      <p><strong>O que a M1.8 <em>não</em> cobre, medido e nomeado:</strong> só 8 das <strong>30</strong> colunas que apontam para um pai tinham chave estrangeira. As outras 22 seguem contidas apenas pelo código, e a própria migration lista cada uma com a contagem de linhas cruzadas que ela já tem. Elas não entraram no mesmo lote porque criar chave onde não havia <strong>muda o que acontece quando alguém apaga algo</strong>, e isso é uma decisão de negócio por relação, não um lote de digitação.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>10/09, em produção: 3 linhas órfãs, e um número que juntava duas causas</h3>
+      <p>Das 22 relações sem chave estrangeira, <strong>uma</strong> veio com contagem diferente de zero: três interações — conversas e anotações — apontando para pacientes que não existem. Elas ficaram para trás quando as pacientes foram apagadas, porque essa relação nunca teve chave estrangeira e o apagamento em cascata não tinha por onde acontecer. Não aparecem em tela nenhuma: a lista de interações é sempre pedida a partir de uma paciente.</p>
+      <p><strong>E o texto que a minha própria migration pendurou nesse número estava errado.</strong> Ela disse "são dados na tela da clínica errada" — impossível numa instalação com <em>uma</em> clínica. A consulta somava duas condições diferentes: o pai ser de outra clínica, e o pai não existir. Com uma clínica só, sobra a segunda. <strong>Número que junta duas causas obriga quem lê a adivinhar qual delas aconteceu — e a frase que eu escrevi adivinhou errado.</strong> A migration seguinte conta as duas separadamente, porque a decisão é diferente em cada caso: pai inexistente é limpeza, pai de outra clínica é carimbo errado.</p>
+      <p><strong>A consequência maior é de privacidade, não de esquema.</strong> Apagar uma paciente hoje não apaga a conversa dela — e ali é texto livre escrito por quem atende, onde cabe valor negociado, motivo de desistência, observação clínica. Se houve pedido de exclusão de dados, ele foi cumprido pela metade. Isso deixa de ser um detalhe de chave estrangeira e passa a ser um motivo independente para a tarefa existir.</p>
+      <p>E a migration aplicada <strong>não</strong> foi reescrita para corrigir a frase. Migration que já rodou não se reescreve: a correção vive no plano e na próxima.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>10/09, numa tela de verdade: "não achei" e "não existe" são relatos diferentes</h3>
+      <p>A conferência da M1.7 não podia ser de leitura — em 04/09 foi, e declarou a tarefa pronta com o sistema incapaz de inserir uma linha. Então foram <strong>oito gravações reais</strong>, feitas à mão na tela: paciente, agendamento, atendimento concluído, despesa, entrada de estoque, anamnese, status de lead, edição de vendedor.</p>
+      <p>As oito gravaram. Mas <strong>três queixas voltaram na mesma forma</strong> — "não gravou", "não tem como" — e as três tinham causas diferentes:</p>
+      <p><strong>"Não gravou a receita do atendimento."</strong> Gravou. O estoque baixou, os pontos entraram e a receita existia, com o mesmo minuto de criação dos outros dois. A competência dela é a <em>data do atendimento</em> — que era o dia seguinte — e a tela do Financeiro abria do dia 1º <em>até hoje</em>. Concluir hoje o atendimento de amanhã é rotina numa clínica, e a tela fazia o valor desaparecer. A janela agora é o mês inteiro.</p>
+      <p><strong>"Não há como editar o nome da equipe."</strong> Há. O campo está no formulário; o botão que o abre era um lápis de 14 pixels com metade da opacidade, ao lado de um <strong>"Excluir"</strong> escrito com letras. Ela achou o botão que apaga a pessoa e não achou o que a corrige. <em>Ação destrutiva com rótulo e ação segura com ícone apagado convida o erro mais caro dos dois.</em></p>
+      <p><strong>"Abrir/imprimir dá erro de sessão."</strong> Esse era defeito de verdade, e antigo: os dois botões eram links comuns. Navegação do navegador não passa pelo interceptador que injeta a credencial, então a requisição ia sem ela e o porteiro respondia o que tinha de responder. Nunca funcionou por esse caminho. O conserto busca com o cabeçalho e abre o resultado — e <strong>não</strong> põe a credencial na URL, que iria para o histórico do navegador, para o log de acesso e para o cabeçalho de referência de tudo que a página carregasse depois.</p>
+      <p><strong>Duas de três eram coisas que já existiam.</strong> Acreditar no relato teria produzido um campo duplicado e uma caça a uma gravação que nunca se perdeu. Fica como regra: <em>"não achei" e "não existe" são relatos diferentes, e quem lê o código descobre qual é antes de escrever código.</em></p>
+    </div>
+
+    <div class="nota">
+      <p><strong>Por que a agenda e o financeiro custam o dobro do estoque.</strong> Não é o número de consultas: é o número de junções. Uma consulta que cruza compromisso, paciente, profissional e serviço tem quatro lugares onde o filtro pode faltar, e a junção esquecida é justamente a que não aparece em teste feito com uma clínica só.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Medido em 08/09: concluir atendimento estava quebrado, e a conversão foi quem descobriu</h3>
+      <p>Marcar um atendimento como realizado, com o programa de pontos ligado, <strong>falhava com erro</strong> desde 04/09. A mensagem na tela era "Falha ao mudar o status do compromisso" — que não diz nada a quem está na recepção com a paciente na frente.</p>
+      <p>A causa era uma data convertida para texto no lugar errado. O banco devolve data e hora como objeto; o código pegava os dez primeiros caracteres do texto desse objeto, o que dá <em>"Mon Sep 08"</em>. A validade do ponto saía inválida, o banco recusava a gravação, e o desfazer automático derrubava o atendimento inteiro — sem lançar a receita, sem baixar o insumo, sem concluir nada.</p>
+      <p><strong>Por que ninguém tinha visto.</strong> Nenhuma conferência deste projeto havia <em>concluído</em> um atendimento contra banco de verdade com pontos ligados. Os testes usam banco de mentira, que aceita qualquer coisa em qualquer coluna. Foi a ferramenta de vazamento — ao gravar por conta própria, em vez de só ler — que fez o erro aparecer no primeiro segundo.</p>
+      <p><strong>A regra que sai daí:</strong> conferência que só lê não encontra defeito de gravação, e banco de mentira não encontra defeito de tipo. A primeira metade já era regra desde o incidente de 04/09. A segunda é nova, e vale para toda a fase: cada tarefa exercita uma gravação sua contra um MySQL de verdade — e é a ferramenta que faz isso, não a tela.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A M1.1c também consertou dois defeitos na própria camada.</strong> O primeiro é o que mais assusta: a transação abria conexão no lugar errado, então <em>transação dentro de transação</em> rodaria fora da transação de fora — um desfazer não desfaria o que ela gravou, e metade do efeito ficaria aplicada em silêncio. Agora isso é recusado alto, com três testes. O segundo: treze pontos da agenda engoliam a causa do erro antes de responder. Foi o que custou uma hora com um erro de autenticação indistinguível em setembro; agora registram. E foi assim que o defeito da data acima apareceu em trinta segundos.</p>
+      <p><strong>E uma mudança de comportamento decidida de propósito:</strong> clínica sem programa de pontos configurado <em>não pontua</em>, em vez de herdar a configuração da clínica 1. Herdar daria a regra de pontos de outro negócio valendo dinheiro na recepção dela, sem ninguém ter decidido.</p>
+      <p><strong>As quatro rotas de lembrete mudaram de arquivo.</strong> Elas não podem usar a camada — a rotina automática chama sem sessão, e a configuração é da instalação inteira —, e ficando junto prendiam a agenda toda. Isso criou um cuidado de publicação: o arquivo novo tem de ser montado antes do da agenda, senão a tela de lembretes passa a responder "compromisso não encontrado".</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Medido em 09/09: a conferência estava passando por não ser necessária</h3>
+      <p>Terminada a conversão do estoque, a ferramenta de vazamento ficou verde. Então o filtro de clínica foi <strong>removido de propósito</strong> da leitura de lotes, só para ver a ferramenta acusar. <strong>Continuou verde.</strong> Removido também da escolha de lote da baixa automática. Verde de novo.</p>
+      <p>O motivo: o identificador de produto é único no banco inteiro, então o lote da segunda clínica aponta para um produto que não está na lista da primeira — a junção em memória descartava o lote e o saldo saía certo <em>por acidente</em>. O filtro estava sendo conferido contra um cenário que não o exigia.</p>
+      <p>O conserto foi semear <strong>a linha que o defeito criaria</strong>: um lote da segunda clínica apontando para o produto da primeira, com validade anterior — assim, faltando o filtro, a regra de "vence antes sai antes" prefere justamente ele. Nada no banco impede essa linha hoje; é exatamente o que a terceira barreira vai conter.</p>
+      <p>Com ela, a mesma sabotagem falha, e o que ela diz é o que dói: <strong>a baixa saiu do lote da vizinha e foi carimbada como desta clínica</strong>. O estoque dela drenando, o inventário dela deixando de fechar, e o rastro de lote — que existe por exigência sanitária — apontando para o lugar errado. Nenhum erro em tela.</p>
+      <p><strong>A regra que sai daí, e ela vale para trás: conferência com dado bem formado não mede filtro.</strong> Aplicada no mesmo dia às três tarefas anteriores, com três linhas cruzadas novas — sessão clínica de outra clínica no plano da paciente, insumo de outra clínica na ficha técnica, pontos de outra clínica no saldo. As duas primeiras aguentaram; a terceira ficou registrada para a tarefa que a cobre.</p>
+      <p><strong>E um limite do método, achado no terceiro caso:</strong> a conferência por marca é <em>cega</em> no relatório de pontos, porque a resposta é um saldo agregado e nunca traz identificador. Ali "não vazou hoje" não é informação sobre o filtro — e está escrito no arquivo que a próxima tarefa confere o número, não a marca.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A M1.2 e o número que não tem nome.</strong> Os relatórios foram o arquivo mais perigoso do projeto até aqui, e não pelo tamanho: as treze consultas dele são somas e contagens. Vazamento de listagem alguém estranha pelo nome que apareceu; vazamento de <em>soma</em> aparece só como um número maior — e "faturamento do mês: R$ 184.320" com o dinheiro de duas clínicas somado é indistinguível de um mês bom, até alguém conferir com o extrato do banco, semanas depois.</p>
+      <p>Por isso as duas clínicas do ensaio são semeadas com valores <strong>idênticos</strong>: a soma errada é exatamente o dobro. Custo fixo tem de dar 8.000 e não 16.000; a receita do período, 900 e não 1.350; o painel, 1 paciente ativa e não 2. Provado tirando o filtro de propósito: <strong>veio 1.350</strong>. A ferramenta diz o número, não só "vazou" — e essa diferença é o que faz alguém acreditar nela.</p>
+      <p><strong>Duas coisas ali o filtro não resolveu, e estão escritas em vez de escondidas.</strong> As 16 categorias financeiras nascem com id fixo, uma linha cada no banco inteiro: a segunda clínica abriria o financeiro com zero categorias. E a precificação tem uma linha só, que a versão antiga <em>criava</em> quando não achava — impossível com mais de uma clínica. As duas exigem mudar a chave primária, e viraram a tarefa M1.2b. Enquanto isso, a receita de atendimento passou a <em>conferir</em> a categoria: sem categoria própria ela nasce sem categoria, visível na tela, em vez de apontar para a da vizinha.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: havia risco de dado invisível, e ele foi fechado</h3>
+      <p>Desde 04/09 a coluna da clínica aceita vazio — foi o conserto do incidente daquele dia. Consequência que só apareceu agora: <strong>toda linha gravada por código ainda não convertido nascia sem clínica</strong>. Enquanto nada filtrava, invisível e inofensivo. A partir da conversão, a rota filtra — e linha sem clínica não é da clínica 1 nem de ninguém: <strong>desaparece da tela de quem a criou</strong>.</p>
+      <p>Não é perda de dado: a linha está íntegra no banco. É pior de diagnosticar do que perda, porque não dá erro nenhum — só uma lista mais curta e um número menor, e ninguém decora número que muda todo dia.</p>
+      <p>A migration 021 preencheu essas linhas, e ela <strong>aborta se houver mais de uma clínica cadastrada</strong>: ali "de quem é esta linha?" deixaria de ter resposta, e preencher no chute arquiva o dado de uma clínica debaixo de outra. Ensaiada contra banco de verdade com linhas órfãs plantadas: encontrou, preencheu, é idempotente na segunda passada, e abortou no cenário de duas clínicas. Ela <em>não</em> torna a coluna obrigatória — isso só quando a lista de arquivos não convertidos esvaziar, senão repete o incidente de 04/09.</p>
+      <p><strong>E uma perda pequena, dita por inteiro:</strong> a migration conta quantas linhas preencheu por tabela, e essa contagem foi para o console do servidor — que não é guardado em arquivo nenhum nesta instalação. O estado final está garantido, porque ela abortaria se sobrasse linha vazia; o quanto ela mexeu não é recuperável. Da próxima migration em diante, o relatório vai para os registros do sistema, que sobrevivem a reinício.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>E um erro meu na publicação: hash não é conferência de conteúdo</h3>
+      <p>O arquivo novo de rotas de lembrete foi criado, enviado ao servidor com o <strong>hash conferido</strong>, e <strong>nunca ligado</strong> ao arquivo que monta as rotas. A edição desse arquivo estava atrás de um comando que falhou antes dela, e eu declarei o passo pronto olhando o que eu esperava ter acontecido, não a saída.</p>
+      <p>O sintoma foi o pior possível: as quatro rotas de lembrete <em>simplesmente não existiam</em>. Nenhum erro ao subir, nenhum teste vermelho, marcador de versão novo no ar, e a conferência de hash passando — porque hash prova que o arquivo <em>chegou inteiro</em>, não que ele foi <em>ligado</em> em coisa alguma. Arquivo de rota não montado é código morto que parece vivo.</p>
+      <p>Achado pela Silvia, clicando no botão. Três guardas novas nasceram disso, e as três foram provadas falhando de propósito: todo arquivo de rota tem de aparecer no arquivo de montagem; toda rota montada tem de existir no disco; e as de lembrete têm de vir antes das da agenda. Mais uma mudança no roteiro de publicação — <strong>passo que mexe no arquivo de montagem fecha conferindo a linha, não só o hash</strong>.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Medido em 08/09: a catraca só olhava um terço do código</h3>
+      <p>A lista de arquivos que ainda falam com o banco direto tinha 19 nomes, e a varredura que a preenche lia <strong>uma pasta de três</strong>. Ao conferi-la contra o disco em vez de contra a expectativa, faltavam seis arquivos — e as duas faltas eram independentes.</p>
+      <p><strong>Faltavam pastas.</strong> Os <em>serviços</em> e as <em>rotinas</em> nunca eram lidos. São eles que gravam lançamento de caixa, baixa de estoque e ponto de fidelidade — as gravações que mais doem se forem para a clínica errada, porque são dinheiro, estoque e crédito da paciente. Cinco arquivos invisíveis para a catraca.</p>
+      <p><strong>E faltava padrão.</strong> A busca procurava dois nomes de variável específicos. Um arquivo de rota que usa um terceiro nome passava batido, e os serviços usam um quarto. Agora ela procura a <em>chamada</em>, não o nome da variável.</p>
+      <p><strong>É a quinta vez neste projeto que uma conferência passava sem exercitar o que dizia exercitar</strong> — e o padrão é sempre o mesmo: a conferência foi escrita olhando o que se esperava encontrar, não o que existe. Entraram três guardas novas, e as três foram provadas <em>falhando de propósito</em> antes de serem aceitas: um piso de arquivos varridos, para a queda brusca aparecer; um caso negativo, para o padrão que casa demais aparecer também; e a exigência de escrever a pasta no caminho, porque <code>logs.js</code> existe em duas.</p>
+      <p><strong>A consequência para o plano é honesta e vale dizer:</strong> a M1.1 virou três tarefas, e a cadeia de efeitos do atendimento é um front próprio. Enquanto a M1.1c não fechar, toda receita, baixa de estoque e ponto de fidelidade nasce sem clínica — e é por isso que a M1.7 não pode ser antecipada. O trabalho foi <em>encontrado</em>, não criado: ele já estava lá desde o começo, e a diferença é que agora está escrito e tem uma varredura que o conta.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Medido em 09/09: duas camadas filtrando é o pior cenário para a conferência</h3>
+      <p>A M1.5 é o prontuário — anamnese, termo assinado, exportação de dado de saúde. O módulo em que o vazamento não tem conserto possível depois. Terminada a conversão, o filtro de clínica foi <strong>removido de propósito</strong> de três lugares, um por vez. Dois acusaram na hora. O terceiro — a rota de <em>alertas clínicos</em>, que a profissional abre segundos antes de aplicar o produto — <strong>continuou verde</strong>.</p>
+      <p>Ali o vazamento não é vazamento de dado: é a contraindicação da <em>pessoa errada</em> na tela de quem está com a agulha na mão. E era justamente a conferência que não media nada, por dois motivos empilhados. O documento cruzado semeado no ensaio não tinha modelo associado, e a rota descarta na primeira instrução quem não tem modelo. E mesmo com modelo, se o modelo fosse da clínica vizinha, a leitura de modelos — que já está filtrada — devolveria vazio e <strong>salvaria a rota por acidente</strong>.</p>
+      <p>A linha que mede de verdade é a mais improvável e a mais perigosa: documento da segunda clínica, na paciente da primeira, <strong>usando o modelo da primeira</strong>, mais recente que a anamnese verdadeira (para ganhar a ordenação) e com uma contraindicação <em>diferente</em> — assim a conferência sabe de qual documento o alerta veio pelo conteúdo, e não pelo identificador. Com ela, a mesma sabotagem passou a acusar a contraindicação da vizinha no lugar da contraindicação da paciente.</p>
+      <p><strong>A regra que sai daí: defesa em profundidade esconde regressão.</strong> Duas camadas filtrando é o que se quer em produção e é o pior cenário possível para a verificação, porque a segunda aprova a sabotagem da primeira. A semente do ensaio tem de ser construída para que a falha <strong>não tenha quem a resgate</strong>. E toda conferência de lista ganhou antes uma conferência de que a lista <em>não está vazia</em> — foi uma lista vazia, num modelo semeado sem perguntas, que deixou tudo passar.</p>
+      <p><strong>Conferido em produção em 09/09.</strong> O alerta de contraindicação apareceu na ficha com a origem escrita ("da anamnese tal, de 09/09, ainda em rascunho"); a versão 2 de um modelo nasceu com a 1 continuando na lista, esmaecida e marcada "versão antiga"; e a exportação da paciente baixou. Nenhum dos três é conferível com uma clínica só — todos passariam igual antes da conversão. O que a conversão garante é que continuam passando <em>quando houver a segunda</em>.</p>
+      <p>Fechadas com ela, três coisas que o filtro por si não resolvia: a leitura compartilhada que protege <strong>cinco rotas de uma vez</strong> (editar, finalizar, assinar, ver e cancelar); o contador de versão de modelo, que sem filtro faria a segunda clínica salvar a versão 2 de uma anamnese sem nunca ter tido a versão 1, porque a primeira tinha; e a <strong>exportação da LGPD</strong>, que agora confere quem é a dona da paciente <em>antes</em> de ler qualquer uma das seis consultas — é o mesmo pedido que a portabilidade legítima faz.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: a janela cega da auditoria — e duas afirmações minhas feitas de memória</h3>
+      <p>Ao pôr a tela de Logos para filtrar por clínica, avisei que os registros antigos sumiriam. <strong>Errado.</strong> A migration que criou a coluna, em 04/09, já havia carimbado as linhas existentes com a clínica 1 — está escrito no código dela: <em>"o que existe hoje é da clínica 1; o vazio fica reservado para o que nascer depois pertencendo à plataforma"</em>. Afirmei o contrário sem reler.</p>
+      <p><strong>Mas havia um problema, e outro: a janela do meio.</strong> Entre 04/09 (quando a coluna nasceu) e 09/09 (quando a tela passou a filtrar), a função de log continuou gravando <em>sem</em> a coluna. Enquanto nada filtrava, invisível e inofensivo. No instante em que a tela passou a filtrar, <strong>cinco dias de auditoria saíram da tela de uma vez</strong> — paciente criada, atendimento concluído, anamnese assinada, exportação de prontuário. Nada foi perdido: tudo está no banco, íntegro, e uma migration devolve.</p>
+      <p>É o mesmo defeito que já tinha sido consertado nas tabelas de dado, e que não foi repetido aqui porque a migration anterior excluiu a tabela de logs <em>de propósito</em> — ali vazio significa "da instalação". O que passou despercebido é que, <strong>naquele momento, vazio ainda não significava nada</strong>: o caminho que grava log da instalação só passou a existir horas depois. Até ali, toda linha vazia era da clínica.</p>
+      <p><strong>Rodada em produção: 18 registros voltaram para a tela</strong> — cinco dias de trilha, incluindo paciente criada, atendimento concluído, anamnese assinada e exportação de prontuário. Um único registro segue sem clínica, de propósito: o relatório da migration anterior.</p>
+      <p>A migration de conserto devolve os órfãos e <strong>deixa de fora os registros de migration</strong> — esses são da instalação de verdade, e apareceriam na tela de uma clínica como se fossem ação dela. E ela lê de volta o relatório que tinha nascido invisível, para o número finalmente ser dito.</p>
+      <p><strong>Duas regras saíram do dia, e as duas são sobre método, não sobre código.</strong> Primeira: afirmação sobre o próprio repositório se lê, não se lembra — a fonte estava a um comando de distância. Segunda: regra que depende de uma tela morre quando a tela muda; prefira a garantia que não depende de tela.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: a M1.7 não depende da catraca esvaziar — depende da M2</h3>
+      <p>O plano dizia que voltar a exigir a coluna podia ser feito "depois de a catraca esvaziar". Está errado, e a medida é do fim da conversão.</p>
+      <p>A catraca lista quem fala com o banco direto. Sobraram nove arquivos e <strong>todos são exceção declarada</strong>: o login (acontece antes de existir sessão), as migrations, o porteiro, o token da rotina automática, as duas varreduras e o webhook do WhatsApp. Quatro delas são permanentes. <strong>A catraca não vai esvaziar</strong> — esperar por ela é esperar para sempre.</p>
+      <p>O portão certo é mais estreito: <strong>nenhum caminho pode inserir numa tabela de clínica sem carimbar a clínica.</strong> Com a coluna obrigatória, um INSERT sem ela não fica invisível — ele falha. E são exatamente dois, medidos: o webhook do WhatsApp, que grava lead e conversa, e a varredura de expiração de pontos, que grava lançamento de fidelidade.</p>
+      <p>Feita antes, a M1.7 teria dois efeitos em produção, os dois em silêncio: <strong>a mensagem que a paciente manda pelo WhatsApp não é gravada</strong>, e <strong>a expiração de pontos para de rodar</strong> — porque os dois caminhos já engolem erro para não derrubar o que os chamou. Então a M1.7 e a M1.8 passam para depois da M2.1 e da M2.3.</p>
+      <p>E está travado por <em>teste</em>, não por parágrafo: a suíte lê a lista de tabelas obrigatórias da própria migration que a criou, varre os arquivos da catraca e falha se alguém gravar sem carimbar. Falha também no outro sentido — quem resolver tem de sair da lista, senão ela vira decoração.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: o pior furo do sistema não era vazamento — era uma porta</h3>
+      <p>A gestão de acessos aceitava identificador de <strong>qualquer clínica</strong>. A proprietária da Clínica A podia inativar, rebaixar ou <strong>trocar a senha</strong> de um usuário da Clínica B. Trocar a senha não vaza dado: com a senha nova na mão, ela <strong>entra na conta da vizinha</strong> — e de lá vê tudo, legitimamente, como se fosse a dona.</p>
+      <p>E a trava do "último administrador ativo" contava administradores do sistema inteiro. Isso não é "mais seguro", é errado nos dois sentidos — e o primeiro é o que tranca gente do lado de fora: com 50 clínicas a contagem nunca chegaria a 1, então a clínica conseguiria inativar a <strong>própria única</strong> administradora e ficar sem ninguém que abra a tela de usuários. A trava deixaria de travar exatamente o acidente para o qual foi feita.</p>
+      <p>A regra em si não mudou uma linha — ela sempre recebeu o número já contado, e continua pura, testável sem banco. O defeito estava na consulta que produzia o número.</p>
+      <p><strong>E um vazamento que voltava reescrito.</strong> A rota de sugestão de resposta lia o histórico de conversa sem filtro e o mandava para a IA como contexto. A sugestão voltava construída sobre a conversa da paciente da vizinha — <em>sem identificador, sem marca</em>, só um texto plausível que alguém copia e manda no WhatsApp. É o vazamento mais difícil de perceber que este sistema tinha, porque não há nada na resposta que denuncie a origem. Agora a dona do contato é conferida antes da chamada externa: o dado sai do sistema nela, e conferir depois não o traz de volta.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: o WhatsApp tem um vazamento que filtro nenhum conserta</h3>
+      <p>A instância de WhatsApp é <strong>uma só</strong> para as 50 clínicas. A lista de conversas, a de contatos e o histórico vêm do serviço de WhatsApp, <strong>não do nosso banco</strong> — é literalmente a mesma caixa de entrada. A conversa da Clínica B aparece na tela da Clínica A, e nenhuma cláusula de filtro muda isso, porque o dado não está lá para ser filtrado.</p>
+      <p>É o tipo de vazamento que passaria por qualquer conferência de filtro, justamente porque não há filtro envolvido. Vale registrar como categoria: <strong>nem todo vazamento é de consulta.</strong> Quando o dado vem de fora, a pergunta deixa de ser "a consulta filtra?" e passa a ser "esse recurso é de uma clínica ou da instalação?".</p>
+      <p>Por isso as três rotas que leem a caixa de entrada passaram a <strong>recusar quando existe mais de uma clínica</strong> — a mesma escolha do formulário público de lead, e a única honesta enquanto cada clínica não tiver a instância dela. O envio continua funcionando, porque o destinatário é resolvido pelo nosso banco; o que segue errado nele é o <strong>remetente</strong>: a paciente recebe do número da instalação, não do consultório dela. Isso é identidade, não vazamento.</p>
+      <p><strong>O webhook é o caso em que recusar seria pior.</strong> A mensagem que chega traz um telefone e um texto, e mais nada — e telefone repetido entre clínicas é caso real, não hipótese: a mesma pessoa pode ser paciente de dois consultórios. Recusar significaria <strong>perder a mensagem da paciente</strong>: ela não fica em fila, não volta, e a pessoa fica sem resposta achando que a clínica a ignorou. Entre atender pela clínica possivelmente errada e não atender, quem decide é a dona do negócio — e a decisão vale mais depois de existir uma instância por clínica do que antes.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: o formulário público do site não sabe de qual clínica ele é</h3>
+      <p>A captação de lead é <strong>rota pública</strong> — o formulário e o quiz do site postam nela de fora, sem ninguém logado. Com uma clínica, a pergunta não existe. Com duas, o site de uma e o da outra postam para o mesmo endereço e o servidor <strong>não tem nada que os distinga</strong>: nem sessão, nem token, nem cabeçalho. Não é problema técnico; é decisão de produto que ninguém tinha tomado.</p>
+      <p>Ela foi recortada para arquivo próprio e, por ora, <strong>grava na única clínica que existir e recusa se houver mais de uma</strong> — a mesma escolha da migration que preencheu as linhas vazias, e pela mesma razão: chutar arquiva o lead de uma clínica debaixo de outra, e lead é dinheiro entrando pela porta. A recusa é visível; o chute só apareceria como "o site parou de trazer cliente", semanas depois.</p>
+      <p><strong>Isso mudou a ordem do plano.</strong> Uma das três saídas — chave pública de captação por clínica, endereço próprio por clínica, ou token de integração — tem de estar pronta <em>antes</em> de a fase de plataforma cadastrar a segunda clínica. Do contrário, a primeira consequência de vender para a segunda cliente é o site das duas deixar de trazer lead.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: havia senha em texto puro no banco, e a listagem da equipe a devolvia ao navegador</h3>
+      <p>Este não é achado de multi-inquilino — apareceu porque a conversão passou pelo arquivo. A tabela da equipe comercial tem uma coluna de senha que guarda o que a pessoa digitou, <strong>sem embaralhar</strong>. Ela nasceu quando o login era por essa tabela; uma migration antiga já transformou essas senhas em hash no lugar certo e o login mudou — <strong>mas ninguém apagou o original.</strong></p>
+      <p>Três portas continuavam abertas. A listagem da equipe pedia "todas as colunas", ou seja <strong>devolvia a senha em texto ao navegador</strong> — e essa rota não tem restrição de cargo: qualquer pessoa logada a alcançava, <strong>inclusive um vendedor</strong>, que passava a ler a senha dos colegas e a da própria gerente. As rotas de cadastrar e editar continuavam gravando senha em texto. E o que já estava gravado seguia lá.</p>
+      <p>As três foram fechadas: a listagem passou a nomear as colunas que devolve (com teste proibindo o "todas as colunas" de voltar, porque ele entregaria também qualquer coluna sensível criada depois), as gravações ignoram o campo, e uma migration apaga o que restou — ensaiada contra banco de verdade, idempotente, com o próprio relatório gravado nos registros do sistema. A coluna <em>não</em> foi derrubada: apagar resolve o risco e é reversível; derrubar não é, e não há backup no fluxo ainda.</p>
+      <p><strong>Rodada em produção no mesmo dia: eram quatro.</strong> Quatro senhas legíveis, por meses — a coluna existe desde uma das primeiras migrations. Estiveram em qualquer backup do banco anterior a essa data e alcançáveis por qualquer pessoa logada, inclusive de perfil vendedor. A ação que resta é genérica: quem tem acesso ao sistema deve trocar a senha <em>nos outros serviços</em> onde a tenha reutilizado. A senha do próprio sistema nunca esteve exposta — o login usa o hash, que sempre foi bcrypt.</p>
+      <p><strong>E uma falha do conserto, registrada porque é minha:</strong> a migration apagou <em>sem registrar de quem eram as quatro</em>. O relatório diz o número, não os nomes — e depois de apagar não há de onde tirar. Apagar era a parte urgente e a parte informativa não foi pensada. A regra que sai disso: <strong>migration que apaga registra antes o que vai apagar</strong> — os identificadores, nunca o valor, se ele for segredo. O número responde "qual era o tamanho do problema"; os identificadores responderiam "quem precisa ser avisado", e essa pergunta ficou sem resposta.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A decisão do log por clínica custou 56 pontos de chamada — e a saída barata foi recusada de propósito.</strong> A trilha de auditoria gravava sem clínica. Com 50, a tela de registros de uma clínica mostraria que a vizinha excluiu um lead — com nome, telefone e tratamento, porque é isso que a descrição do log carrega. É o vazamento mais completo do sistema, justamente porque a trilha existe para dizer o que aconteceu com detalhe.</p>
+      <p>Acrescentar um parâmetro seria o caminho de meia hora. Foi descartado: com quatro parâmetros opcionais já existentes, um quinto esquecido não daria erro nenhum — gravaria sem clínica, e o registro sumiria da tela de quem o gerou. A função antiga foi <strong>removida</strong> e trocada por duas que dizem no nome de quem é o registro: uma para o log de uma clínica, que tira a clínica e o autor da própria sessão, e outra para o que é da instalação inteira — cron, migration, falha de inicialização —, que exige motivo escrito. Mais uma varredura de disco atrás da forma antiga, porque um ponto de chamada esquecido só quebraria semanas depois.</p>
+      <p><strong>Os registros antigos ficam sem clínica.</strong> Adivinhar dono de log retroativo é inventar uma afirmação sobre quem fez o quê, e log é exatamente o lugar onde isso não se faz. Eles continuam no banco, íntegros, sem tela, até a fase de plataforma dar à Mulino a visão que lhes cabe.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>E uma lacuna de produto que a conferência achou de lado: não existe editor de modelos.</strong> A aba de modelos é só listagem. As rotas de criar modelo e de criar a versão seguinte existem, funcionam e foram provadas em produção — mas a tela que as chama nunca foi construída. Pior do que a falta: o rodapé da própria aba promete que "salvar mudanças cria a versão seguinte", descrevendo um botão que não está lá.</p>
+      <p>Não é tarefa do multi-inquilino e não bloqueia nada — é meia diária de tela. Mas vira limitação real na hora de vender: hoje a clínica usa as duas anamneses que vieram semeadas e nada mais, e "campo de contraindicação" é justamente o que muda de negócio para negócio. Com 50 clínicas, todas receberiam a mesma anamnese genérica.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A ferramenta de vazamento virou o critério de pronto de cada tarefa, e não do fim da fase.</strong> Ela cria um banco descartável, aplica as 20 migrations do zero, semeia duas clínicas com dados de propósito parecidos — "Maria Silva" numa, "Maria Souza" na outra, mesmos serviços, mesmos valores, um telefone repetido — sobe a aplicação e varre as rotas de leitura autenticada como a primeira clínica.</p>
+      <p>O detalhe que a faz valer algo: ela <strong>lê a própria catraca</strong> e classifica cada rota sozinha. Módulo já convertido que vaza é falha, e o script sai com erro. Módulo que ainda não foi convertido é pendência informativa. Sem essa divisão o script sairia com erro do primeiro dia da fase até o último — e script que sempre falha ninguém lê, vira o arquivo de backup que se acumula sem ninguém olhar.</p>
+      <p>Provada nas duas direções em 08/09. Com um <code>OR 1=1</code> enxertado de propósito no filtro de pacientes: quatro falhas, incluindo a que mostra a clínica vizinha enxergando dado alheio. Sem ele: dez conferências, nenhuma falha. E ela também conta linhas esperadas, porque resposta vazia não contém dado da vizinha e passaria calada — foi exatamente o que aconteceu na primeira versão dela.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase M2 — O que hoje é único e vira por clínica <span class="conta">fechada em 11/09 · 4 de 4</span></h2>
+    <p>Há configuração espalhada pelo sistema que hoje existe em uma linha só, com o identificador literal <code>'default'</code>. Cada uma dessas linhas vira 50.</p>
+
+    <div class="alerta-box">
+      <h3>11/09, no dia seguinte: o que "funcionava" só funcionava por não haver escolha</h3>
+      <p>A segunda clínica nasceu na parte da tarde. Na manhã seguinte, <strong>duas telas do CRM estavam quebradas em produção</strong> — o <em>"iniciar nova conversa"</em> do Atendimento e o <em>"adicionar lead"</em> do Kanban — e ninguém tinha mexido nelas.</p>
+      <p>As duas criavam lead pela <strong>porta pública do formulário do site</strong>. Com uma clínica só, essa porta respondia "a única que existe" e tudo andava. Com duas, ela passou a recusar com 503 — corretamente: ela não tem como adivinhar de quem é o lead. <strong>O defeito não era da clínica nova; era de endereço.</strong> Essas telas têm sessão, e sessão já diz de qual clínica é — elas estavam entrando pela porta da rua com a chave da porta de dentro no bolso.</p>
+      <p>O ensaio de vazamento sempre teve duas clínicas semeadas e mesmo assim não viu, e o motivo é exato: ele media <strong>a rota</strong>, e o defeito estava em <strong>quem a chamava</strong>. A pergunta que encontra essa classe é <em>"quem mais entra por esta porta, e por que essa pessoa não usa a porta dela?"</em>. A regra que fica: <strong>rota que funciona por falta de ambiguidade não está funcionando — está adiando</strong>, e vale para tudo que hoje só dá certo porque só existe um.</p>
+      <p><strong>E ao lado dele, um defeito mais velho que o projeto inteiro.</strong> A página do site mostrava "Sua mensagem foi enviada!" e <em>só então</em> disparava o envio, sem esperar; a falha virava um <code>console.error</code>. Enquanto a captação funcionava, era invisível. Desde a segunda clínica, <strong>toda visitante que preencheu o formulário saiu acreditando que estava pré-agendada, e não havia lead nenhum</strong>. O servidor estava certo o tempo todo — recusava alto, com registro. <strong>Era a página que mentia</strong>, e nenhum teste de servidor pegaria isso.</p>
+      <p>Por isso entrou uma conferência de navegador que mede a <strong>recusa</strong>, e não só o sucesso — a API interceptada responde 201 num caso e 503 no outro. Ela quase nasceu inútil: a primeira versão aceitava a palavra "contato" como prova de sucesso, palavra que aparece na seção inteira, e <strong>passou verde com o formulário sequer enviado</strong>. Conferência frouxa dentro da própria ferramenta de medir.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>10/09: a catraca chegou ao piso, e o portão abriu</h3>
+      <p>A lista de arquivos que falam com o banco direto tem <strong>quatro</strong> nomes, e os quatro são exceção <em>permanente</em>: o login (que acontece antes de existir sessão), as migrations (mudança de estrutura da instalação), o porteiro e o token da rotina automática. Não há mais nada "por converter" — a lista deixou de ser uma fila e passou a ser um inventário.</p>
+      <p><strong>E eu havia classificado as duas varreduras automáticas como exceção permanente. Estava errado.</strong> A saída não era usar a sessão — não existe sessão numa rotina automática. Era montar o escopo <em>da clínica</em>, com o laço atravessando (com o motivo escrito) e o trabalho de cada clínica dentro do escopo dela. <strong>"Não tenho sessão" deixou de significar "não uso a camada"</strong>, e foi isso que tirou dois nomes da lista. Fica como padrão: <em>varredura tem duas camadas — o laço atravessa, o trabalho não.</em></p>
+      <p><strong>Com isso o portão do aperto da coluna abriu.</strong> Nenhum caminho do sistema grava em tabela de clínica sem carimbar a clínica — que era a única condição real, e não "a lista esvaziar", como o plano dizia antes.</p>
+      <p><strong>A sabotagem da expiração precisou de três tentativas, e as duas primeiras ensinaram mais que a terceira.</strong> Na primeira, nada era expirado no ensaio — e "zero expirados" satisfaz qualquer conferência sem medir nada. Na segunda, o filtro continuou verde porque a junção com a tabela de pacientes já descartava as linhas da vizinha: <em>terceira vez em dois dias que a segunda camada aprova a sabotagem da primeira.</em></p>
+      <p>A linha que mede é a mais improvável: um acúmulo de pontos da segunda clínica, na paciente da primeira, com a validade vencida — ela atravessa a junção sem esforço, porque a paciente é da clínica certa. Com ela, a sabotagem diz "expirou 2, 877 pontos" e, em cascata, <strong>"saldo: 0, esperado 450"</strong>: a paciente perde os pontos dela porque a linha da vizinha estava no mesmo extrato.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>10/09, em produção: "livre" não é o mesmo que "de ninguém"</h3>
+      <p>A rota que lista as instâncias de WhatsApp passou a devolver a da clínica <em>mais as livres</em>, com um raciocínio que parecia sólido: instância livre, por definição, não é de outra clínica. É verdadeiro dentro do sistema e <strong>falso no mundo.</strong></p>
+      <p>A tela real mostrou três instâncias no servidor, e uma delas era de <strong>outro negócio</strong> — nome e número de WhatsApp à vista. "Livre" só quer dizer "não vinculada a nenhuma clínica deste CRM"; não quer dizer que não seja de alguém. Havia uma terceira categoria que o ensaio não tinha, porque nos dados inventados toda instância ou é de uma clínica ou é livre-de-verdade. <strong>Foi a instalação real que mostrou.</strong></p>
+      <p>O conserto foi ficar <em>mais</em> restrito, e não menos: a lista mostra só a da própria clínica, e vincular uma instância existente saiu do alcance da clínica — é a única operação que exige enxergar o servidor inteiro, e por isso passa a ser da plataforma. Clínica nova conecta <strong>criando</strong> a instância dela, com nome derivado, que é o caminho que não exige ver nada de ninguém.</p>
+      <p>A regra que sai: <strong>todo recurso compartilhado com terceiros precisa de uma pergunta que o banco não responde</strong> — quem mais está hospedado ali? Vale para o que vier: servidor de e-mail, gateway de pagamento, armazenamento de arquivos.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>10/09: alcance é um eixo separado de filtro</h3>
+      <p>Todos os achados anteriores deste projeto eram sobre <strong>ler ou gravar a linha errada</strong>. Este é de outra natureza: <strong>agir sobre linhas demais</strong>.</p>
+      <p>A rota que dispara os lembretes tinha dois chamadores querendo coisas diferentes. A rotina automática varre todas as clínicas — é o trabalho dela. Mas o botão <em>"Enviar agora"</em> na tela tem de disparar <strong>só os lembretes daquela clínica</strong>. Nenhum filtro estava faltando; o que estava errado era o <strong>tamanho da ação</strong>. Sem a distinção, a gerente de uma clínica clicando num botão da tela dela dispararia WhatsApp para pacientes das outras 49 — cada uma pelo número certo, o que torna o estrago completo e silencioso. E envio não tem desfazer.</p>
+      <p>A pergunta "esta consulta filtra?" não encontra esse defeito. A que encontra é <strong>"quem chamou, e sobre quantas clínicas esta ação deveria agir?"</strong> — e ela vale para todo botão que dispara efeito fora do sistema: envio, cobrança, exportação, exclusão em massa.</p>
+      <p><strong>O segundo achado é o QR Code.</strong> Quem lê o QR de uma instância de WhatsApp <em>assume a sessão daquele consultório</em> — passa a receber e a enviar as mensagens dele. Era o pior objeto deste módulo para servir sem conferir dono, e a sabotagem disse exatamente isso: <em>"respondeu 200 — a clínica A poderia assumir o WhatsApp da B"</em>.</p>
+      <p><strong>E quatro das seis sabotagens passaram verdes na primeira tentativa</strong>, cada uma por um motivo diferente. A prévia de lembretes vinha <em>vazia</em>, e lista vazia satisfaz "não contém a vizinha" sem medir nada. A lista de instâncias não continha a da vizinha para filtrar — a regra da linha malformada, agora aplicada a um <strong>serviço externo</strong>: dado que vem de fora também precisa de semente malformada. Uma sabotagem era simplesmente fraca. E a última continuou verde porque a <strong>unicidade no banco</strong> recusa o que a rota deixaria passar — a segunda camada aprovando a sabotagem da primeira, o exemplo mais limpo desse padrão até agora. Está escrito no ensaio que aquela linha confere o resultado, e não a checagem da rota, para ninguém a ler como prova do que ela não prova.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>09/09: a informação sempre esteve no envelope, e não na carta</h3>
+      <p>O webhook do WhatsApp era o caso declarado como <em>sem conserto por filtro</em>: a mensagem que chega traz um telefone e um texto, e telefone repetido entre clínicas é caso real — a mesma pessoa pode ser paciente de dois consultórios. Nenhuma cláusula de banco resolve isso, porque a informação que falta nunca chegou.</p>
+      <p><strong>Só que ela chegava.</strong> O serviço de WhatsApp informa, em cada disparo, <em>qual instância recebeu</em> a mensagem. Ligando cada instância a uma clínica — com unicidade cobrada pelo banco, porque duas clínicas na mesma instância dariam dois donos à mesma mensagem —, a mensagem passou a ter dono.</p>
+      <p>O efeito foi maior que a tarefa. O webhook <strong>saiu da lista de exceções</strong> e <strong>saiu do portão que segurava o aperto da coluna</strong>, que ficou com uma pendência só. E saiu <strong>sem que nenhuma consulta dele mudasse de forma</strong>: o que mudou foi passar a haver de onde tirar a clínica. Fica como regra: <strong>quando falta informação, a solução é de esquema, não de consulta</strong> — e vale perguntar, antes de declarar algo insolúvel, se o dado não está no envelope.</p>
+      <p>A prova usa o telefone repetido que já estava semeado no ensaio: três mensagens, o mesmo número, instâncias diferentes. Cada uma foi para a clínica certa, e a instância desconhecida não escolheu nenhuma — registrou o texto inteiro nos registros da plataforma, porque descartar seria a paciente ficar sem resposta achando que foi ignorada. Sabotado para resolver por telefone de novo: quatro falhas, incluindo a conversa de uma clínica contendo a mensagem que chegou pela instância da outra.</p>
+      <p><strong>E um desvio do plano, com o motivo medido.</strong> Estava previsto tornar composta a chave primária da tabela de configurações. Não dá: coluna que aceita vazio não entra em chave primária, e aquela precisa aceitar — a tabela guarda o token da rotina automática (da instalação) junto com a configuração de lembrete (da clínica). Entrou uma tabela nova, só para o que é de clínica, com a coluna obrigatória e chave estrangeira. A distinção saiu do comentário e passou a viver no esquema.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>Medido em 08/09: a chave primária impede a segunda linha</h3>
+      <p>As três tabelas de configuração têm a chave primária na coluna do identificador. A coluna da clínica foi acrescentada em 04/09, mas <strong>um segundo <code>'default'</code> é recusado pelo banco</strong> — a chave não deixa. Então cada uma dessas tarefas carrega uma mudança de esquema, e não só a reescrita das consultas: a primária passa a ser composta. Enquanto isso não acontecer, as 50 clínicas dividem uma configuração de preço, uma de pontos e um texto de lembrete.</p>
+      <p><strong>E há uma parte que não está em tabela nenhuma: o WhatsApp.</strong> O endereço, a chave e o nome da instância vêm do arquivo de configuração do servidor — uma instância para a instalação inteira. Com 50 clínicas, o lembrete da Clínica A sairia <em>do número da Clínica B</em>, e a paciente responderia para a clínica errada. Não é vazamento de leitura: é mensagem enviada para pessoa real, e mensagem enviada não tem desfazer. A instância precisa ser um campo da clínica, e clínica sem instância configurada tem de nascer com o lembrete <strong>desligado</strong> — nunca herdando a de outra.</p>
+    </div>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">M2.1</span>
+        <span class="desc">Configuração do sistema por clínica
+          <em>em três partes: a instância de WhatsApp virou da clínica e o webhook ganhou dono (09/09), lembrete e envio por clínica (10/09), e a tela de conexão para clínica nova (11/09)</em></span>
+        <span class="chip feito">Feito 11/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M2.2</span>
+        <span class="desc">Preço e programa de pontos por clínica
+          <em>custo por hora, margem, validade dos pontos — a mesma <code>migration 030</code> da M1.2b, porque o que travava era só a chave primária</em></span>
+        <span class="chip feito">Feito 11/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M2.3</span>
+        <span class="desc">As duas varreduras automáticas percorrem clínicas
+          <em>o cron continua sendo um só; quem passou a ter laço é o worker — o laço atravessa, o trabalho não</em></span>
+        <span class="chip feito">Feito 10/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M2.4</span>
+        <span class="desc">O nascimento de uma clínica
+          <em><strong>provado em produção:</strong> a segunda clínica nasceu inteira numa transação — administrador, 16 categorias, preço, pontos e os dois modelos — e vazia de dado alheio</em></span>
+        <span class="chip feito">Feito 11/09</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>A M2.4 era a que decidia se vender a 51ª clínica é uma tarde ou uma semana</strong> — e em 11/09 virou uma tarde. A instalação atual só funcionava porque foi semeada à mão ao longo de duas semanas; uma clínica que abrisse com as telas vazias e nenhuma categoria financeira não conseguiria nem lançar a primeira despesa.</p>
+      <p>A segunda clínica de produção nasceu <strong>inteira numa transação só</strong>, e a rota não devolve "ok": ela <em>lê de volta</em> e conta o que a clínica nova tem — 1 administrador ativo, 16 categorias, preço, pontos, 2 modelos. Porque "criou sem erro" não é "funciona", que foi o que a M1.7 ensinou da pior forma. <strong>Ou nasce inteira, ou não nasce</strong>: uma clínica pela metade é pior que nenhuma, porque a pessoa entra e encontra telas que funcionam ao lado de telas que recusam.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase M3 — Administração da plataforma <span class="conta">fechada em 14/09 · 5 de 5</span></h2>
+    <p>Alguém na Mulino precisa cadastrar clínica, suspender quem não pagou e enxergar o conjunto. <strong>Esse alguém passou a existir em 14/09</strong> — e o cuidado ao criá-lo foi maior do que parecia, inclusive do lado que eu não tinha olhado.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">M3.1</span>
+        <span class="desc">Operador da plataforma: administra sem ler prontuário
+          <em>identidade <strong>fora</strong> de <code>users</code> (que exige clínica desde a M1.7), e o que ela alcança é uma <strong>lista de rotas que nega por padrão</strong> — 12 recusas medidas, uma por família de dado</em></span>
+        <span class="chip feito">Feito 14/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M3.1b</span>
+        <span class="desc">O acesso de suporte, concedido pela clínica e com prazo
+          <em>a clínica libera por horas, e o acesso é de <strong>leitura</strong>: ficha de paciente, anamnese e documento clínico ficam fora <strong>mesmo autorizados</strong>. Revogar vale na requisição seguinte, porque a permissão é lida do banco — não do token</em></span>
+        <span class="chip feito">Feito 14/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M3.2a</span>
+        <span class="desc">Cadastrar clínica pela tela
+          <em>sem console do navegador; e a rota interina de <code>admin</code> foi <strong>apagada</strong>, com teste cobrando que não volte</em></span>
+        <span class="chip feito">Feito 14/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M3.2b</span>
+        <span class="desc">Suspender, encerrar e reativar
+          <em>o acesso cai <strong>na hora</strong>, inclusive para quem já estava dentro — e não daqui a 12 horas, quando o token vencer. <strong>Nada é apagado</strong>: o ensaio conta as linhas antes e depois, e há teste varrendo as rotas contra um <code>DELETE FROM clinicas</code></em></span>
+        <span class="chip feito">Feito 14/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M3.3</span>
+        <span class="desc">Painel de uso, e os registros da instalação de volta
+          <em>números por clínica em 30 dias e, sobretudo, <strong>alertas</strong>: "sem atividade há 12 dias", "nenhum administrador ativo", "sem chave de captação". E o aviso que vale dinheiro: <strong>quantos leads foram recusados nos últimos 7 dias</strong> — o único sinal de que o site de alguém está com a chave errada agora</em></span>
+        <span class="chip feito">Feito 14/09</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>Os quatro papéis continuam quatro.</strong> A conversa de 04/09 mencionou dois níveis, gestor e vendedor; vale registrar por que os outros dois não são organograma. <code>profissional</code> é quem vê a faixa de contraindicação no compromisso da agenda, segundos antes de aplicar o produto, e é o papel que enxerga só a própria agenda. <code>vendedor</code> é o único barrado nas rotas de documento clínico. Reduzir a dois faria a anamnese não aparecer para quem aplica, ou o faturamento aparecer para quem vende.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>14/09: o ensaio achou o furo do lado que eu não tinha olhado</h3>
+      <p>A tarefa criou a identidade da plataforma e eu tratei o caso óbvio: <strong>token de plataforma pedindo dado de clínica</strong> — recusado por lista, com 12 rotas medidas, uma por família (ficha, anamnese, agenda, funil, financeiro, estoque, pontos, trilha, acessos).</p>
+      <p><strong>O caminho inverso ficou aberto.</strong> Não há regra de papel para <code>/api/plataforma</code> — nem deve haver, porque o operador não tem papel — e a tabela de autorização libera rota sem regra. O resultado, medido pelo ensaio: <strong>a administradora da Clínica A cadastrou uma clínica pela rota da plataforma, e recebeu 201.</strong> Quem administra um consultório criando inquilino na instalação, que é exatamente o que esta tarefa veio impedir.</p>
+      <p>A regra que sai: <strong>porta nova tem dois lados</strong>, e "A não alcança B" e "B não alcança A" são duas afirmações — fazer uma dá a sensação de ter feito as duas. E um corolário sobre o desenho: a lista que nega por padrão protege quem <em>tem</em> a identidade nova; quem não tem continua indo pelo caminho antigo, que é permissivo por decisão. <strong>Todo caminho novo ao lado de um permissivo transforma o permissivo na porta dos fundos.</strong></p>
+      <p><strong>E a conferência de navegador que eu escrevi para a Silvia mediu a camada errada.</strong> Pedi que ela chamasse a rota da plataforma pelo console do CRM esperando 403; veio 200, e não era furo — o interceptador do front escolhe o token <em>pelo endereço</em>, viu o caminho da plataforma e mandou a credencial certa, que mora no mesmo navegador. O comando que mede é o que <strong>nomeia a credencial sob teste</strong>; com o token do CRM forçado, veio o 403. Conferência de permissão que deixa a credencial ser escolhida por conveniência não confere nada.</p>
+    </div>
+
+    <div class="alerta-box">
+      <h3>O papel mais perigoso do sistema é o de vocês</h3>
+      <p>Um operador da Mulino com acesso irrestrito consegue abrir a anamnese de qualquer paciente de qualquer uma das 50 clínicas. Isso não é hipótese de segurança: é <strong>o desenho padrão</strong> de quem constrói administração de plataforma sem pensar, porque "o admin vê tudo" é o caminho de menor esforço.</p>
+      <p>O operador precisa poder criar clínica, suspender acesso e ver contagens — e precisa ser <strong>barrado nas rotas de documento clínico e de ficha de paciente</strong>, com teste que prove. Se um dia o suporte precisar entrar numa clínica para investigar um problema, isso é um acesso concedido pela clínica, com prazo e registro — não um poder permanente.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase M4 — Verificação adversarial <span class="conta">✅ fechada em 14/09</span></h2>
+    <p>As fases anteriores constroem. Esta tenta quebrar — e é a que autoriza a primeira clínica de verdade a entrar.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">M4.1</span>
+        <span class="desc">O teste das duas clínicas, rota por rota
+          <em>284 conferências, 0 vazamentos e 0 escritas cruzadas em ~45 tentativas — mas <strong>10 rotas respondiam 2xx para id de outra clínica</strong>, hoje 404. A pior devolvia <code>semAnamnese</code> sobre paciente alheia.</em></span>
+        <span class="chip feito">Feito 14/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M4.2</span>
+        <span class="desc">A trava contra consulta fora da camada
+          <em>entregue dentro da M0.4, e antecipada de propósito — ver a nota da fase M0</em></span>
+        <span class="chip feito">Feito 04/09</span>
+      </div>
+      <div class="t feito">
+        <span class="cod">M4.3</span>
+        <span class="desc">LGPD revisada para o novo desenho
+          <em>a Mulino deixou de ser <strong>controladora</strong> e virou <strong>operadora</strong> de 50 controladoras. E a tarefa achou, ao conferir se o documento dizia a verdade, que <strong>excluir paciente não deixava rastro havia cinco dias</strong>.</em></span>
+        <span class="chip feito">Feito 14/09</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>A M4.1 tinha um detalhe que decidia se ela valeria alguma coisa</strong> — as duas clínicas semeadas com dados <em>parecidos</em>, para que só o filtro correto as separe — e apareceu um segundo, maior: <strong>a varredura não podia continuar sendo "as rotas que eu lembrei"</strong>. Agora uma tabela única de rotas é lida pela varredura <em>e</em> por um teste que percorre todas as 135 rotas montadas e quebra se alguma rota com id não estiver nem varrida nem excluída com motivo escrito. Na primeira execução ele achou 3 rotas esquecidas.</p>
+      <p><strong>E a M4.3 encontrou a falha estrutural das próprias ferramentas.</strong> As 284 conferências perguntavam todas a mesma coisa: <em>a clínica A alcança a linha da B?</em> Uma rota que responde <strong>500 para todo mundo</strong> passa em cada uma delas — não entrega dado da vizinha porque não entrega dado nenhum. Foi assim que cadastrar, editar e excluir paciente ficaram cinco dias quebradas com a varredura verde, gravando no banco e devolvendo erro que a tela engolia em silêncio. A pergunta que faltava é a simétrica, e é barata: <strong>a clínica alcança a própria linha?</strong> Quem só mede que a porta tranca nunca descobre que ela parou de abrir.</p>
+      <p><strong>E três vezes a varredura acusou o código de algo que ela mesma mediu errado</strong> — o id enviado ecoado na resposta contado como vazamento, <code>WHERE id = ?</code> sem clínica virando ambíguo depois das chaves compostas, e um id que existe nas duas clínicas tratado como tentativa cruzada. Os três eram meus. Um detector que erra custa mais caro que a ausência dele, porque ensina a desconfiar do vermelho quando ele for verdadeiro.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>O que muda fora do código</h2>
+    <p>Três consequências de operação que não são tarefa de programação e que precisam de decisão de vocês.</p>
+
+    <div class="alerta-box">
+      <h3>Uma falha passa a atingir 50 clínicas ao mesmo tempo</h3>
+      <p>É o preço do banco único, e é o argumento honesto do outro lado da escolha. Hoje uma publicação ruim afeta uma clínica; depois, cinquenta. Isso não desfaz a decisão — muda o que ela exige: publicação com hora marcada, e a capacidade de voltar atrás rápido.</p>
+      <p><strong>E restaurar UMA clínica de um backup do banco inteiro não é trivial.</strong> Se a clínica X apagar por engano o cadastro de pacientes na terça, restaurar o backup de segunda devolve os dados dela e <em>apaga o que as outras 49 fizeram desde então</em>. Isso precisa ser resolvido antes da primeira clínica paga entrar, não depois do primeiro pedido de socorro.</p>
+    </div>
+
+    <div class="nota">
+      <p><strong>A Mulino muda de figura na LGPD.</strong> Hoje há um cliente e um sistema. Com 50 clínicas, cada clínica é dona dos dados das pacientes dela e a Mulino passa a tratá-los por conta dela — o que exige contrato de tratamento de dados com cada cliente, e define quem responde pelo quê quando uma paciente pedir os dados dela ou a exclusão. É trabalho jurídico, não técnico, e corre em paralelo às fases.</p>
+      <p><strong>O que este plano NÃO inclui</strong>, para não haver surpresa: cobrança e assinatura (nem cadastro de plano, nem integração com meio de pagamento), contratação pela própria clínica sem alguém da Mulino, personalização visual por clínica (logo e cores próprias) e qualquer aplicativo para a paciente. Cada um desses é um plano próprio.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fase M5 — o que o uso de verdade pediu <span class="conta">M5.1 feita · restam 2,5 a 4,5 dev-days</span></h2>
+    <p>Pedida em 14/09, depois de a M4 fechar. Nenhuma destas é dívida das fases anteriores: são o que aparece quando alguém usa o sistema para <em>vender, instalar e operar</em>, e não para construir. Nenhuma bloqueia o time comercial começar a negociar.</p>
+
+    <div class="tarefas">
+      <div class="t feito">
+        <span class="cod">M5.1</span>
+        <span class="desc">O tamanho das letras
+          <em>eram <strong>523 tamanhos abaixo de 12px</strong>. Hoje o rótulo miúdo é 14px no site e 13px no CRM, e o console ficou um passo abaixo do site <strong>sem que nenhuma das 65 telas fosse tocada</strong>.</em></span>
+        <span class="chip feito">Feito 15/09</span>
+      </div>
+      <div class="t chave">
+        <span class="cod">F5</span>
+        <span class="desc">O menu do site não cabe abaixo de 1366px
+          <em>achado ao medir a M5.1, e <strong>é anterior a ela</strong>: num notebook de 1280 o botão "AGENDAR AGORA" está cortado hoje, em produção.</em></span>
+        <span class="chip">0,5 d</span>
+      </div>
+      <div class="t">
+        <span class="cod">M5.2</span>
+        <span class="desc">O que cada aba faz — material para vendas
+          <em>não a descrição da tela, mas a consequência: que decisão cada cadastro controla, e quais abas se ligam a quais</em></span>
+        <span class="chip">1–1,5 d</span>
+      </div>
+      <div class="t">
+        <span class="cod">M5.3</span>
+        <span class="desc">O passo a passo de instalar uma clínica
+          <em>do cadastro em /plataforma ao primeiro login da cliente, incluindo quem digita a senha e como se presta suporte sem pedir a senha de ninguém</em></span>
+        <span class="chip">0,5–1 d</span>
+      </div>
+      <div class="t">
+        <span class="cod">M5.4</span>
+        <span class="desc">A faxina dos dois lados
+          <em>inventariar, classificar, e só então apagar — com a lista de exclusão aprovada antes</em></span>
+        <span class="chip">0,5–1,5 d</span>
+      </div>
+    </div>
+
+    <div class="nota">
+      <p><strong>A M5.1 não é questão de gosto, e o número mostra por quê.</strong> São 293 ocorrências de <code>text-[10px]</code>, 173 de <code>text-[11px]</code>, 56 de <code>text-[9px]</code> e mais 352 de <code>text-xs</code> (12px) — contra 87 do <code>text-base</code> (16px) para cima. A faixa confortável para leitura de interface começa em 14px. E <strong>aumentar a fonte-raiz não resolveria nada</strong>: pixel literal não escala com <code>rem</code>, então mexer no <code>html</code> moveria os títulos e deixaria os 523 rótulos onde estão, piorando a proporção. O caminho é uma camada de seis linhas que redefine as classes literais — desfazer é apagar as seis.</p>
+      <p><strong>O trabalho não foi a mudança, foi a conferência</strong> — e ela precisou de quatro rodadas, porque "ficou bom" é a única coisa deste plano que não se automatiza. A primeira subiu só os tamanhos em pixel; a segunda subiu tudo junto e ficou <em>grosseira</em>, porque <strong>aumentar título e rótulo na mesma proporção não é aumentar a fonte — é aproximar a tela do rosto</strong>; a terceira devolveu os títulos ao original; a quarta deixou o console 7% abaixo do site.</p>
+      <p><strong>E o ensaio visual estava rodando com a fonte errada.</strong> O ambiente de conferência bloqueia o Google Fonts, então o navegador caía num substituto — e substituto tem largura de letra diferente. Foi por isso que três resoluções passaram com "0 problemas" e o menu do site chegou quebrado no navegador da Silvia. Instaladas as fontes de verdade, a medição passou a ser a mesma dos dois lados. <strong>Ensaio visual só vale se a fonte, a largura e os dados forem os de verdade</strong> — e fonte que não carrega falha em silêncio: nada quebra, tudo mede errado.</p>
+      <p><strong>E a faxina pode pagar uma dívida antiga.</strong> O <code>.env</code> do servidor tem credenciais de banco defasadas, e é por isso que toda mudança de estrutura passa por uma rota HTTP em vez de SQL direto. O <code>.env.bak</code> que está lá pode ter as credenciais que funcionam — conferir isso vem antes de apagar qualquer coisa.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Totais e prazo</h2>
+
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr><th>Fase</th><th>Entrega</th><th class="num">Mín</th><th class="num">Máx</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>M0 — Fundação <em style="display:inline;font-style:normal;color:var(--feito)">✓</em></td><td>a coluna, o token e a camada de acesso</td><td class="num">—</td><td class="num">—</td></tr>
+          <tr><td>M1 — Conversão</td><td>o que sobrou: <strong>só</strong> as 22 relações sem chave estrangeira</td><td class="num">1,5</td><td class="num">3</td></tr>
+          <tr><td>M2 — Configuração <em style="display:inline;font-style:normal;color:var(--feito)">✓</em></td><td>fechada em 11/09 — WhatsApp, pontos, captação, configuração e o nascimento de uma clínica</td><td class="num">—</td><td class="num">—</td></tr>
+          <tr><td>M3 — Plataforma <em style="display:inline;font-style:normal;color:var(--feito)">✓</em></td><td>fechada em 14/09 — operador, cadastro, suporte com prazo, suspender/encerrar e o painel</td><td class="num">—</td><td class="num">—</td></tr>
+          <tr><td>M4 — Verificação <em style="display:inline;font-style:normal;color:var(--feito)">✓</em></td><td>fechada em 14/09 — a varredura adversarial e a LGPD do desenho novo</td><td class="num">—</td><td class="num">—</td></tr>
+          <tr><td>F — Telas</td><td>cadastro de produto, harness de navegação, limpeza do <code>dist</code></td><td class="num">1</td><td class="num">2</td></tr>
+          <tr><td>M5 — Uso de verdade</td><td>as letras ✓ · falta o material de vendas, o roteiro de instalação e a faxina</td><td class="num">2</td><td class="num">4</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Falta fazer</td><td>8 por fazer · 36 concluídas</td><td class="num">5</td><td class="num">9,5</td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="nota">
+      <p><strong>Prazo de calendário</strong>, a 75% de foco: o que resta são <strong>5 a 9,5 dev-days</strong> — de <strong>uma semana e meia a duas semanas com um desenvolvedor</strong>. As fases M0 a M4, que autorizam a primeira clínica pagante, foram entregues entre 04/09 e 14/09 e estão fechadas.</p>
+      <p><strong>Onde começar a vender — e a resposta mudou em 14/09.</strong> O plano dizia que dava para receber as primeiras cinco clínicas ao fim da M2 <em>desde que a M4.1 tivesse sido feita antes</em>, porque o teste de vazamento não é opcional em nenhum cenário. <strong>M0 a M4 estão fechadas.</strong> O sistema atende várias clínicas, a Mulino cadastra e suspende pela tela sem tocar em dado clínico, a separação foi medida em 291 conferências e o documento de LGPD descreve o desenho que existe. O time comercial pode negociar.</p>
+      <p><strong>O que continua aberto, e o que cada coisa impede.</strong> A M1.9 não impede vender: impede afirmar que a exclusão de uma paciente é completa, porque as conversas dela ficam. E duas dívidas são de <em>contrato</em>, não de código — não existe exportação da base inteira de uma clínica que sai, e o contrato com cada clínica (art. 39) precisa existir por escrito dizendo finalidade, duração, segurança e o que acontece no fim. O sistema dá a prova técnica; o contrato dá a previsão jurídica, e um não substitui o outro.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Regras da fila</h2>
+    <div class="nota">
+      <p><strong>1.</strong> Nenhuma tarefa da M1 fecha sem o teste de vazamento do seu módulo. "Testar tudo no fim" é como se descobre, em novembro, que uma consulta de agosto nunca filtrou.</p>
+      <p><strong>2.</strong> A camada de acesso vem antes de qualquer conversão. Converter consulta à mão antes de ela existir cria 220 lugares para revisitar.</p>
+      <p><strong>3.</strong> A migration de retrofit ensaia em cópia do banco de produção antes de valer, com contagem de linhas de cada tabela antes e depois.</p>
+      <p><strong>4.</strong> Consulta nova em rota não usa <code>pool.query</code> direto. Se a camada não expressa o que a consulta precisa, a camada cresce — a exceção não.</p>
+      <p><strong>5.</strong> <strong>Tarefa que mexe no banco não fecha sem exercitar uma GRAVAÇÃO de verdade.</strong> Conferir cinco rotas de leitura e declarar a tarefa pronta foi o que deixou o sistema uma hora sem conseguir inserir uma linha, em 04/09. Leitura e escrita são coisas diferentes.</p>
+      <p><strong>6.</strong> <code>clinica_id</code> nunca ganha valor padrão. Vazio falha fechado; padrão falha aberto.</p>
+      <p><strong>7.</strong> Toda tarefa herda o que já existe: migrations, autenticação, a tabela de papéis e <code>npm test</code>. Use, não reconstrua.</p>
+      <p><strong>8.</strong> <strong>Afirmação sobre comportamento de banco se mede, não se supõe.</strong> Meia hora com um MySQL descartável já desfez duas suposições minhas neste projeto — e cada uma delas teria custado uma fase na ordem errada.</p>
+      <p><strong>9.</strong> <strong>Lista de exceções só vale acompanhada da varredura que a preenche, e a varredura se confere contra o disco</strong> — não contra a expectativa de quem a escreveu. Toda varredura nova ganha um piso, para a queda brusca aparecer, e um caso negativo, para o padrão que aprova tudo aparecer também.</p>
+    </div>
+  </section>
+
+  <footer>
+    Estimativas em dev-days de um desenvolvedor sênior, cerca de 6 horas produtivas, e vêm de leitura do código — 28 tabelas, 220 chamadas ao banco, 4.310 linhas de rotas e 2.938 de serviços —, não da velocidade histórica do time. Calibre pela M0, que é a fase mais previsível. A decisão de produto sobre a entrada do usuário foi tomada em 04/09 — e-mail único no sistema inteiro — e já está refletida nestes números.
+  </footer>
+
+</div>

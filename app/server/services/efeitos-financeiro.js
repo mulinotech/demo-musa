@@ -1,10 +1,14 @@
 'use strict';
 /** Efeito FINANCEIRO do evento "atendimento realizado" — contexto 02, T1.4.
  *
- *  Este arquivo não conhece o pool. Recebe `conn` por parâmetro, e é sempre a
- *  mesma conexão da transação aberta pelo serviço central. Isso não é
+ *  Este arquivo não conhece o pool. Recebe `tx` por parâmetro, e é sempre o
+ *  mesmo escopo da transação aberta pelo serviço central. Isso não é
  *  preciosismo: é o que faz o estoque sem saldo desfazer a receita no mesmo
  *  rollback, e é o que permite testar o efeito inteiro sem banco nenhum.
+ *
+ *  M1.1c (08/09): o parâmetro era uma conexão crua e virou um **escopo de
+ *  clínica**. A receita passa a nascer com `clinica_id`. Antes ela nascia com a
+ *  clínica vazia — calada, e invisível para a clínica que a faturou.
  *
  *  DUAS DECISÕES QUE NÃO DEVEM SER REDECIDIDAS AQUI
  *
@@ -61,18 +65,34 @@ function receitaDe(ap, chave, nomeDoCliente) {
   };
 }
 
-async function lancarReceitaDeAtendimento(ap, conn, ctx) {
+async function lancarReceitaDeAtendimento(ap, tx, ctx) {
   ctx = ctx || {};
   const linha = receitaDe(ap, ctx.chave, ctx.nomeDoCliente);
   if (!linha) return { lancado: false, motivo: 'sem valor a faturar' };
 
+  // ==================================== A CATEGORIA E DA CLINICA (M1.2, 09/09)
+  //
+  // `cat_procedimentos` e um id FIXO da migration 008, e existe uma linha so no
+  // banco inteiro -- hoje da clinica `cl_1`. Gravar esse id na receita de outra
+  // clinica faria a linha dela apontar para a categoria de um negocio alheio:
+  // nao vaza dado, mas suja o relatorio das duas, e nenhum filtro de leitura
+  // acusa.
+  //
+  // Entao a categoria e CONFERIDA. Sem categoria propria, a receita nasce sem
+  // categoria -- visivel na tela, corrigivel num clique -- em vez de nascer
+  // apontando para a categoria da vizinha. Categoria por clinica e a M1.2b.
+  const [cat] = await tx.q(
+    'SELECT id FROM finance_categories WHERE clinica_id = :clinica AND id = ?',
+    [linha.category_id]);
+  if (!cat.length) linha.category_id = null;
+
   const id = novoId('ce');
   try {
-    await conn.query(
+    await tx.q(
       `INSERT INTO cash_entries
         (id, type, category_id, description, amount, entry_date, due_date, paid_at,
-         source, source_id, client_id, professional_id, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         source, source_id, client_id, professional_id, created_by, clinica_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, :clinica)`,
       [id, linha.type, linha.category_id, linha.description, linha.amount,
        linha.entry_date, linha.due_date, linha.paid_at, linha.source, linha.source_id,
        linha.client_id, linha.professional_id, ctx.usuarioId || null]
@@ -87,10 +107,13 @@ async function lancarReceitaDeAtendimento(ap, conn, ctx) {
 }
 
 /** Estorno: despesa espelho amarrada ao lançamento original. */
-async function estornarReceitaDeAtendimento(ap, conn, ctx) {
+async function estornarReceitaDeAtendimento(ap, tx, ctx) {
   ctx = ctx || {};
-  const [r] = await conn.query(
-    "SELECT * FROM cash_entries WHERE source = 'APPOINTMENT' AND source_id = ? AND type = 'RECEITA' LIMIT 1",
+  // O filtro de clinica aqui nao e formalidade: a chave de origem e o id do
+  // compromisso, e sem ele um id adivinhado estornaria a receita da vizinha.
+  const [r] = await tx.q(
+    "SELECT * FROM cash_entries WHERE clinica_id = :clinica AND source = 'APPOINTMENT' " +
+    "AND source_id = ? AND type = 'RECEITA' LIMIT 1",
     [ctx.chave]
   );
   if (!r.length) return { estornado: false, motivo: 'nao havia receita lancada' };
@@ -98,11 +121,11 @@ async function estornarReceitaDeAtendimento(ap, conn, ctx) {
 
   const id = novoId('ce');
   try {
-    await conn.query(
+    await tx.q(
       `INSERT INTO cash_entries
         (id, type, category_id, description, amount, entry_date, paid_at,
-         source, source_id, client_id, professional_id, notes, created_by)
-       VALUES (?, 'DESPESA', ?, ?, ?, ?, ?, 'REVERSAL', ?, ?, ?, ?, ?)`,
+         source, source_id, client_id, professional_id, notes, created_by, clinica_id)
+       VALUES (?, 'DESPESA', ?, ?, ?, ?, ?, 'REVERSAL', ?, ?, ?, ?, ?, :clinica)`,
       [id, original.category_id, ('Estorno - ' + original.description).slice(0, 255),
        original.amount, dia(ctx.hoje || new Date()), original.paid_at ? dia(ctx.hoje || new Date()) : null,
        original.id, original.client_id, original.professional_id,

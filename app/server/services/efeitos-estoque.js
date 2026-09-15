@@ -1,10 +1,15 @@
 'use strict';
 /** Efeito ESTOQUE do evento "atendimento realizado" — contexto 02 + T3.4.
  *
- *  Este arquivo era um stub vazio desde a T1.4. O encaixe não mudou: recebe a
- *  MESMA `conn` da transação, não abre transação própria, não usa o pool. É
- *  isso que faz a receita ser desfeita no mesmo rollback quando o insumo
- *  falta — e é isso que permite testar tudo sem banco.
+ *  Este arquivo era um stub vazio desde a T1.4. O encaixe não mudou: recebe o
+ *  MESMO `tx` da transação, não abre transação própria, não usa o pool. É isso
+ *  que faz a receita ser desfeita no mesmo rollback quando o insumo falta — e é
+ *  isso que permite testar tudo sem banco.
+ *
+ *  M1.1c (08/09): o parâmetro virou um **escopo de clínica**, e as sete
+ *  consultas ganharam o filtro. Duas delas mereciam atenção especial e estão
+ *  comentadas no lugar: a ficha técnica (junta duas tabelas) e o `UPDATE` do
+ *  saldo do lote (subtrai quantidade de uma linha achada por id).
  *
  *  A DECISÃO DE PRODUTO QUE ESTE ARQUIVO IMPLEMENTA
  *
@@ -32,39 +37,43 @@ function novoId(p) {
 /** Já existe baixa desta origem? O `completed_at` do contexto 02 já protege,
  *  mas esta checagem protege de chamada direta ao serviço — e é ela que
  *  garante a exigência do módulo: concluir duas vezes gera uma baixa só. */
-async function jaBaixado(conn, chave) {
-  const [r] = await conn.query(
+async function jaBaixado(tx, chave) {
+  const [r] = await tx.q(
     `SELECT COUNT(*) AS n FROM stock_movements
-      WHERE source = 'APPOINTMENT' AND source_id = ? AND type = 'SAIDA'`,
+      WHERE clinica_id = :clinica AND source = 'APPOINTMENT' AND source_id = ? AND type = 'SAIDA'`,
     [chave]
   );
   return Number(r[0] && r[0].n) > 0;
 }
 
-async function fichaDoServico(conn, catalogId) {
-  const [r] = await conn.query(
+async function fichaDoServico(tx, catalogId) {
+  // DUAS tabelas, DOIS filtros. Filtrar so `service_supplies` deixaria a
+  // juncao alcancar o produto da vizinha: a ficha traria o nome e a unidade
+  // dela, e a baixa sairia do estoque errado. E o caso exato que a camada
+  // avisa que ela NAO pega sozinha.
+  const [r] = await tx.q(
     `SELECT s.product_id, s.quantity, p.name, p.unit
        FROM service_supplies s
-       JOIN products p ON p.id = s.product_id
-      WHERE s.catalog_id = ? AND p.active = 1`,
+       JOIN products p ON p.id = s.product_id AND p.clinica_id = :clinica
+      WHERE s.clinica_id = :clinica AND s.catalog_id = ? AND p.active = 1`,
     [catalogId]
   );
   return r;
 }
 
-async function lotesDoProduto(conn, productId) {
-  const [r] = await conn.query(
+async function lotesDoProduto(tx, productId) {
+  const [r] = await tx.q(
     `SELECT id, product_id, batch_number, quantity, unit_cost,
             DATE_FORMAT(expiry_date, '%Y-%m-%d') AS expiry_date,
             DATE_FORMAT(received_at, '%Y-%m-%d') AS received_at
        FROM stock_batches
-      WHERE product_id = ? AND quantity > 0`,
+      WHERE clinica_id = :clinica AND product_id = ? AND quantity > 0`,
     [productId]
   );
   return r;
 }
 
-async function baixarInsumosDoAtendimento(ap, conn, ctx) {
+async function baixarInsumosDoAtendimento(ap, tx, ctx) {
   ctx = ctx || {};
   const chave = ctx.chave || (ap && ap.id);
 
@@ -75,16 +84,16 @@ async function baixarInsumosDoAtendimento(ap, conn, ctx) {
     return { baixado: false, motivo: 'compromisso sem servico do catalogo' };
   }
 
-  if (await jaBaixado(conn, chave)) return { baixado: false, motivo: 'ja baixado' };
+  if (await jaBaixado(tx, chave)) return { baixado: false, motivo: 'ja baixado' };
 
-  const ficha = await fichaDoServico(conn, ap.catalog_id);
+  const ficha = await fichaDoServico(tx, ap.catalog_id);
   if (!ficha.length) return { baixado: false, motivo: 'servico sem ficha tecnica cadastrada' };
 
   const movimentos = [];
   let custoTotal = 0;
 
   for (const item of ficha) {
-    const lotes = await lotesDoProduto(conn, item.product_id);
+    const lotes = await lotesDoProduto(tx, item.product_id);
     const plano = est.escolherLotes(lotes, item.quantity, { hoje: ctx.hoje });
 
     if (!plano.ok) {
@@ -97,14 +106,18 @@ async function baixarInsumosDoAtendimento(ap, conn, ctx) {
     }
 
     for (const c of plano.consumo) {
-      await conn.query(
-        'UPDATE stock_batches SET quantity = quantity - ? WHERE id = ? AND quantity >= ?',
+      // O `AND quantity >= ?` continua sendo a trava contra saldo negativo em
+      // concorrencia; o filtro de clinica e o que impede subtrair do lote da
+      // vizinha se um id de lote vier errado.
+      await tx.q(
+        'UPDATE stock_batches SET quantity = quantity - ? ' +
+        'WHERE clinica_id = :clinica AND id = ? AND quantity >= ?',
         [c.quantidade, c.batchId, c.quantidade]
       );
-      await conn.query(
+      await tx.q(
         `INSERT INTO stock_movements
-          (id, product_id, batch_id, type, quantity, unit_cost, reason, source, source_id, created_by)
-         VALUES (?,?,?,'SAIDA',?,?,?, 'APPOINTMENT', ?, ?)`,
+          (id, product_id, batch_id, type, quantity, unit_cost, reason, source, source_id, created_by, clinica_id)
+         VALUES (?,?,?,'SAIDA',?,?,?, 'APPOINTMENT', ?, ?, :clinica)`,
         [novoId('mov'), item.product_id, c.batchId, c.quantidade, c.unitCost,
          'Atendimento: ' + (ap.title || ap.id), chave, ctx.usuarioId || null]
       );
@@ -130,26 +143,26 @@ function mensagemDeFalta(item, plano) {
          '. Ajuste o estoque antes de concluir o atendimento.';
 }
 
-async function devolverInsumosDoAtendimento(ap, conn, ctx) {
+async function devolverInsumosDoAtendimento(ap, tx, ctx) {
   ctx = ctx || {};
   const chave = ctx.chave || (ap && ap.id);
 
-  const [saidas] = await conn.query(
+  const [saidas] = await tx.q(
     `SELECT product_id, batch_id, quantity, unit_cost FROM stock_movements
-      WHERE source = 'APPOINTMENT' AND source_id = ? AND type = 'SAIDA'`,
+      WHERE clinica_id = :clinica AND source = 'APPOINTMENT' AND source_id = ? AND type = 'SAIDA'`,
     [chave]
   );
   if (!saidas.length) return { devolvido: false, motivo: 'nao havia baixa para estornar' };
 
   for (const s of saidas) {
-    await conn.query(
-      'UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?',
+    await tx.q(
+      'UPDATE stock_batches SET quantity = quantity + ? WHERE clinica_id = :clinica AND id = ?',
       [est.q(s.quantity), s.batch_id]
     );
-    await conn.query(
+    await tx.q(
       `INSERT INTO stock_movements
-        (id, product_id, batch_id, type, quantity, unit_cost, reason, source, source_id, created_by)
-       VALUES (?,?,?,'ESTORNO',?,?,?, 'APPOINTMENT', ?, ?)`,
+        (id, product_id, batch_id, type, quantity, unit_cost, reason, source, source_id, created_by, clinica_id)
+       VALUES (?,?,?,'ESTORNO',?,?,?, 'APPOINTMENT', ?, ?, :clinica)`,
       [novoId('mov'), s.product_id, s.batch_id, est.q(s.quantity), est.centavos(s.unit_cost),
        'Estorno: ' + (ctx.motivo || 'conclusao desfeita'), chave, ctx.usuarioId || null]
     );

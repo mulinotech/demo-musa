@@ -32,27 +32,13 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return ['admin', 'gerente'].includes(papelDoToken()) || sessionStorage.getItem('evolution_admin_auth') === 'true';
   });
-  const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
-  const handleVerifyPassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (['admin', 'gerente'].includes(papelDoToken())) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('evolution_admin_auth', 'true');
-      setErrorMsg('');
-    } else {
-      setErrorMsg('Senha incorreta! Acesso negado.');
-      setPassword('');
-    }
-  };
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(false);
   
   // Create Instance States
-  const [newInstanceName, setNewInstanceName] = useState('');
   const [creatingInstance, setCreatingInstance] = useState(false);
 
   // Connection/QR Code States
@@ -88,27 +74,35 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
     fetchInstances();
   }, []);
 
-  const handleCreateInstance = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newInstanceName.trim()) return;
+  /* ================= O NOME DA INSTÂNCIA NÃO VEM DAQUI, E NUNCA VINHA
+   *
+   * Havia um campo de texto pedindo "nome da nova instância". Desde a M2.1a o
+   * servidor **deriva** o nome do identificador da clínica e ignora o que vem
+   * no corpo — então o que a pessoa digitasse era descartado em silêncio.
+   *
+   * Campo que não faz nada é pior do que campo que falta: ele convida a
+   * escolher, e a escolha não vale. (Foi o terceiro deles encontrado em 10/09,
+   * junto com a senha desta aba e com o lápis de editar vendedor.)
+   *
+   * E o nome derivado não é preciosismo: é ele que liga a mensagem que chega
+   * pelo webhook a uma clínica. Nome escolhido a dedo é uma chance de duas
+   * clínicas caírem na mesma instância — e aí a mensagem da paciente teria
+   * dois donos. */
+  const handleCreateInstance = async () => {
     setCreatingInstance(true);
-
     try {
-      const response = await fetch('/api/evolution/instances', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instanceName: newInstanceName }),
-      });
-
+      const response = await fetch('/api/evolution/instances', { method: 'POST' });
       const data = await response.json();
       if (response.ok) {
-        setNewInstanceName('');
         fetchInstances();
+        // Já abre o QR: criar sem conectar não serve para nada, e é aqui que a
+        // pessoa está com o celular na mão.
+        if (data.instance) handleConnectInstance(data.instance);
       } else {
-        alert(data.error || 'Erro ao criar instância');
+        setErrorMsg(data.error || 'Erro ao criar a instância de WhatsApp.');
       }
     } catch (e) {
-      alert('Erro ao se conectar com o servidor.');
+      setErrorMsg('Erro ao se conectar com o servidor.');
     } finally {
       setCreatingInstance(false);
     }
@@ -125,10 +119,10 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
       if (response.ok) {
         setQrCodeUrl(data.qrcode);
       } else {
-        alert(data.error || 'Erro ao carregar QR Code');
+        setErrorMsg(data.error || 'Erro ao carregar o QR Code.');
       }
     } catch (e) {
-      alert('Erro ao carregar conexão.');
+      setErrorMsg('Erro ao carregar a conexão.');
     } finally {
       setLoadingQr(false);
     }
@@ -165,7 +159,26 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
 
   const handleSendWebhook = async () => {
     if (!simName.trim() || !simPhone.trim() || !simText.trim()) {
-      alert('Por favor, preencha o Nome, Telefone e Mensagem no simulador.');
+      setErrorMsg('Preencha o nome, o telefone e a mensagem no simulador.');
+      return;
+    }
+    /* ============ A INSTÂNCIA DO SIMULADOR É A DESTA CLÍNICA
+     *
+     * Estava escrita à mão: `'Musa_Estetica_Oficial'`. Desde a M2.1a é a
+     * instância que diz **de quem é** a mensagem que chega — então um nome fixo
+     * aqui faria o simulador de qualquer clínica injetar uma conversa na
+     * primeira. Ferramenta de teste escrevendo na clínica errada é o defeito
+     * que este projeto inteiro existe para impedir, entrando pela porta de
+     * serviço.
+     *
+     * Sem instância não há chute: o webhook responderia `sem-clinica` e a
+     * mensagem iria para os registros da plataforma. Melhor dizer isso agora. */
+    const minhaInstancia = instances.length === 1 ? instances[0].name : null;
+    if (!minhaInstancia) {
+      setErrorMsg(
+        instances.length === 0
+          ? 'Conecte o WhatsApp desta clínica antes de simular: é a instância que diz de quem é a mensagem.'
+          : 'Há mais de uma instância nesta clínica. Isso não deveria acontecer — me avise.');
       return;
     }
     setSendingWebhook(true);
@@ -174,7 +187,7 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
     // Mock Evolution API Webhook Payload
     const payload = {
       event: 'messages.upsert',
-      instance: 'Musa_Estetica_Oficial',
+      instance: minhaInstancia,
       data: {
         key: {
           remoteJid: `${simPhone}@s.whatsapp.net`,
@@ -247,6 +260,23 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
                 </button>
               </div>
 
+              {/* O erro de criar/conectar aparece AQUI.
+                *
+                * Ele usava `alert()`, e o `errorMsg` só era desenhado dentro do
+                * bloqueio de senha — que não existe mais. Estado que se escreve
+                * e não se desenha é erro que acontece e ninguém vê. */}
+              {errorMsg && (
+                <div className="text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 py-2 px-3 rounded-xl flex items-start justify-between gap-3">
+                  <span>{errorMsg}</span>
+                  <button
+                    onClick={() => setErrorMsg('')}
+                    className="shrink-0 text-red-700/60 hover:text-red-700 cursor-pointer font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               {/* List */}
               <div className="space-y-4">
                 {instances.length === 0 ? (
@@ -254,7 +284,7 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
                     <p className="text-xs text-brand-brown/50">
                       {loadingInstances
                         ? 'Carregando instâncias...'
-                        : 'Nenhuma instância encontrada na Evolution API. Crie uma abaixo para começar.'}
+                        : 'Nenhum WhatsApp conectado nesta clínica.'}
                     </p>
                   </div>
                 ) : (
@@ -303,29 +333,31 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
                 )}
               </div>
 
-              {/* Create Instance Form */}
-              <form onSubmit={handleCreateInstance} className="pt-4 border-t border-brand-beige flex gap-3">
-                <input
-                  type="text"
-                  required
-                  value={newInstanceName}
-                  onChange={(e) => setNewInstanceName(e.target.value)}
-                  placeholder="Nome da nova instância..."
-                  className="flex-1 px-3 py-2 rounded-xl border border-brand-gold/20 bg-white text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold"
-                />
-                <button
-                  type="submit"
-                  disabled={creatingInstance}
-                  className="bg-brand-brown hover:bg-brand-brown/95 disabled:bg-brand-brown/40 text-brand-beige text-xs font-semibold px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer font-serif"
-                >
-                  {creatingInstance ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-gold" />
-                  ) : (
-                    <Plus className="h-3.5 w-3.5 text-brand-gold" />
-                  )}
-                  <span>Criar</span>
-                </button>
-              </form>
+              {/* Conectar o WhatsApp desta clínica.
+                *
+                * Só aparece quando ela não tem instância: a rota responde 409 se
+                * já houver uma, e botão que só sabe dar erro é ruído. */}
+              {instances.length === 0 && !loadingInstances && (
+                <div className="pt-4 border-t border-brand-beige space-y-2.5">
+                  <p className="text-[11px] text-brand-brown/70 leading-relaxed">
+                    Esta clínica ainda não tem WhatsApp conectado. O nome da instância é criado
+                    automaticamente a partir da clínica — não há o que escolher, e é isso que
+                    garante que a mensagem que chega tenha um dono só.
+                  </p>
+                  <button
+                    onClick={handleCreateInstance}
+                    disabled={creatingInstance}
+                    className="bg-brand-brown hover:bg-brand-brown/95 disabled:bg-brand-brown/40 text-brand-beige text-xs font-semibold px-4 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer font-serif"
+                  >
+                    {creatingInstance ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-gold" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5 text-brand-gold" />
+                    )}
+                    <span>Conectar o WhatsApp desta clínica</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* QR Display box */}
@@ -495,65 +527,44 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
         </div>
       </div>
 
-      {/* Security Overlay Modal */}
+      {/* ================= A SENHA QUE NUNCA FOI CONFERIDA
+        *
+        * Aqui havia um campo pedindo "senha de administrador", e ele **não
+        * conferia senha nenhuma**: a função de verificação olhava o papel no
+        * token e ignorava o que fosse digitado. Quem não era admin recebia
+        * "Senha incorreta! Acesso negado." — uma mensagem falsa sobre a causa,
+        * já que nenhuma senha teria funcionado.
+        *
+        * Pior: treinava a pessoa a digitar a senha real de administrador num
+        * campo que a jogava no estado do componente e no gerenciador de senhas
+        * do navegador, sem uso nenhum. Senha que não é conferida não é
+        * segurança, é hábito ruim ensaiado.
+        *
+        * A permissão de verdade está no servidor (as regras de papel), que é o
+        * único lugar onde ela vale. Aqui a tela só precisa dizer a verdade sobre
+        * por que está fechada. */}
       {!isAuthenticated && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-brand-brown/5 backdrop-blur-xs min-h-[500px]">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-            className="w-full max-w-lg bg-white/95 border border-red-200 shadow-2xl rounded-2xl p-6 md:p-10 text-center relative z-10 flex flex-col items-center justify-center space-y-6"
+            className="w-full max-w-lg bg-white/95 border border-brand-gold/25 shadow-2xl rounded-2xl p-6 md:p-10 text-center relative z-10 flex flex-col items-center justify-center space-y-5"
           >
-            {/* Warning Icon */}
-            <div className="bg-red-50 text-red-600 p-4 rounded-full flex items-center justify-center shadow-inner">
-              <Lock className="h-8 w-8 text-red-600 animate-pulse" />
+            <div className="bg-brand-beige text-brand-brown p-4 rounded-full flex items-center justify-center shadow-inner">
+              <Lock className="h-8 w-8 text-brand-brown" />
             </div>
-            
             <div className="space-y-3">
-              <h2 className="text-xl md:text-2xl font-serif font-black text-red-600 tracking-wide uppercase leading-snug">
-                ACESSO PERMITIDO APENAS AO ADMINISTRADOR DO SISTEMA
+              <h2 className="text-lg md:text-xl font-serif font-bold text-brand-brown tracking-wide leading-snug">
+                Esta aba é de administrador ou gerente
               </h2>
               <p className="text-xs md:text-sm text-brand-brown/70 leading-relaxed font-sans max-w-md mx-auto">
-                Nesta aba, <strong>apenas e unicamente</strong> o usuário com a senha de acesso.
+                Aqui se conecta o WhatsApp da clínica — e quem lê o QR Code passa a receber e a
+                enviar as mensagens dela. Não é uma senha que abre esta aba: é o seu cargo. Se você
+                precisa de acesso, peça a quem administra o sistema para mudar o seu cargo em
+                <strong> Usuários</strong>.
               </p>
             </div>
-
-            <form onSubmit={handleVerifyPassword} className="w-full space-y-4 max-w-sm">
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Insira a senha de administrador..."
-                  className="w-full px-4 py-3 rounded-xl border border-red-200 bg-red-50/20 text-xs focus:outline-none focus:ring-2 focus:ring-red-500 text-brand-brown text-center tracking-widest font-mono placeholder:tracking-normal placeholder:font-sans"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-brand-brown/50 hover:text-brand-brown transition-colors cursor-pointer text-[10px] font-bold uppercase tracking-wider font-sans select-none"
-                >
-                  {showPassword ? "Ocultar" : "Mostrar"}
-                </button>
-              </div>
-
-              {errorMsg && (
-                <motion.div
-                  initial={{ opacity: 0, y: -5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-xxs font-semibold text-red-600 bg-red-50 border border-red-150 py-1.5 px-3 rounded-lg"
-                >
-                  {errorMsg}
-                </motion.div>
-              )}
-
-              <button
-                type="submit"
-                className="w-full flex items-center justify-center space-x-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white py-3 rounded-xl text-xs font-bold transition-all shadow-md uppercase tracking-wider font-serif cursor-pointer"
-              >
-                <span>Verificar Acesso</span>
-              </button>
-            </form>
           </motion.div>
         </div>
       )}

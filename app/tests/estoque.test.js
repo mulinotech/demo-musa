@@ -164,20 +164,45 @@ test('sem ficha tecnica, usa o valor digitado e ADMITE que foi digitado', functi
 
 /* --------------------------------------- o efeito no atendimento (T3.4) */
 
+/** O escopo de mentira da M1.1c.
+ *
+ *  O serviço deixou de receber uma conexão crua e passou a receber um **escopo
+ *  de clínica**. Então o de mentira também é um escopo de verdade
+ *  (`escopo.fazerEscopo`) montado sobre um executor de mentira — o analisador
+ *  da camada roda, e é isso que faz estes testes provarem que a consulta
+ *  carrega o filtro, em vez de apenas tolerarem a mudança.
+ *
+ *  `semClinica(params)` devolve os parâmetros ORIGINAIS, na ordem em que o
+ *  serviço os escreveu, tirando o valor da clínica que a camada injetou. É o
+ *  jeito de o teste não depender da POSIÇÃO em que `:clinica` aparece na SQL —
+ *  se dependesse, mover a marca dentro da consulta quebraria o teste sem nada
+ *  ter piorado. E é a mesma armadilha que a camada existe para evitar:
+ *  parâmetro que desliza uma casa não dá erro, dá resultado errado. */
+const escopo = require('../server/db/escopo');
+const CL = 'cl_ensaio';
+const semClinica = (params) => (params || []).filter((x) => x !== CL);
+
 function fakeConn(estado) {
-  return {
+  return escopo.fazerEscopo(CL, {
     async query(sql, params) {
       const s = String(sql).replace(/\s+/g, ' ').trim();
       estado.sqls = estado.sqls || [];
       estado.sqls.push(s);
+
+      // A conferencia que transforma este teste em prova da conversao: toda
+      // consulta do servico tem de ter chegado com o valor da clinica.
+      assert.ok((params || []).indexOf(CL) !== -1,
+        'consulta sem o valor da clinica nos parametros: ' + s.slice(0, 90));
+
+      const p = semClinica(params);
       if (/FROM stock_movements/.test(s)) return [estado.jaBaixado ? [{ n: 3 }] : [{ n: 0 }]];
       if (/FROM service_supplies/.test(s)) return [estado.ficha || []];
       if (/FROM stock_batches/.test(s)) {
-        return [(estado.lotes || []).filter((l) => l.product_id === params[0])];
+        return [(estado.lotes || []).filter((l) => l.product_id === p[0])];
       }
       if (/UPDATE stock_batches/.test(s)) {
-        const l = (estado.lotes || []).find((x) => x.id === params[1]);
-        if (l) l.quantity = String(e.q(Number(l.quantity) - Number(params[0])));
+        const l = (estado.lotes || []).find((x) => x.id === p[1]);
+        if (l) l.quantity = String(e.q(Number(l.quantity) - Number(p[0])));
         return [{ affectedRows: 1 }];
       }
       if (/INSERT INTO stock_movements/.test(s)) {
@@ -186,7 +211,7 @@ function fakeConn(estado) {
       }
       return [[]];
     }
-  };
+  });
 }
 
 const AP = { id: 'ap_1', catalog_id: 'cat_1', kind: 'ATENDIMENTO', title: 'Botox' };
@@ -267,12 +292,13 @@ test('estorno devolve ao MESMO lote de onde saiu', async function () {
     saidas: [{ batch_id: 'l1', product_id: 'p1', quantity: '2.000', unit_cost: '980.00' }],
     lotes: [{ id: 'l1', product_id: 'p1', quantity: '2.000', expiry_date: '2027-01-01', unit_cost: '980.00', received_at: '2026-01-01' }]
   };
-  const conn = {
+  const conn = escopo.fazerEscopo(CL, {
     async query(sql, params) {
       const s = String(sql).replace(/\s+/g, ' ').trim();
       if (/FROM stock_movements/.test(s) && /SAIDA/.test(s)) return [estado.saidas];
       if (/UPDATE stock_batches/.test(s)) {
-        estado.devolvido = { lote: params[1], qtd: Number(params[0]) };
+        const p = semClinica(params);
+        estado.devolvido = { lote: p[1], qtd: Number(p[0]) };
         return [{ affectedRows: 1 }];
       }
       if (/INSERT INTO stock_movements/.test(s)) {
@@ -281,7 +307,7 @@ test('estorno devolve ao MESMO lote de onde saiu', async function () {
       }
       return [[]];
     }
-  };
+  });
   const r = await efeitos.devolverInsumosDoAtendimento(AP, conn, { chave: 'ap_1' });
   assert.strictEqual(r.devolvido, true);
   assert.deepStrictEqual(estado.devolvido, { lote: 'l1', qtd: 2 });

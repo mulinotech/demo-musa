@@ -18,8 +18,26 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const ac = require('../server/services/atendimento-concluido');
 const ef = require('../server/services/efeitos-financeiro');
+const escopo = require('../server/db/escopo');
 
-/* ----------------------------------------------------- banco de mentira */
+/* ----------------------------------------------------- banco de mentira
+ *
+ * M1.1c: o serviço deixou de receber o `pool` e passou a receber um **escopo de
+ * clínica**. Então o de mentira é um escopo de verdade (`fazerEscopo`) montado
+ * sobre um executor de mentira — o analisador da camada roda de verdade, e as
+ * consultas registradas em `estado.queries` já vêm com o `?` no lugar da marca
+ * e o valor da clínica na posição dela.
+ *
+ * Isso é o que faz estes testes provarem a conversão em vez de tolerá-la: a
+ * conferência abaixo derruba qualquer consulta do serviço que chegue sem o
+ * valor da clínica nos parâmetros.
+ *
+ * A clínica de ensaio não se chama `cl_1` de propósito — o compromisso de teste
+ * tem `client_id: 'cl_1'`, e valor repetido entre coisas diferentes é como um
+ * teste passa medindo outra coisa.
+ */
+
+const CL = 'cl_ensaio';
 
 function fakeConn(estado) {
   const linhas = estado.linhas || {};
@@ -31,6 +49,8 @@ function fakeConn(estado) {
     release() { estado.released = true; },
     async query(sql, params) {
       estado.queries.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params });
+      assert.ok((params || []).indexOf(CL) !== -1,
+        'consulta sem o valor da clinica: ' + String(sql).replace(/\s+/g, ' ').slice(0, 90));
       if (estado.erroEm && estado.erroEm.test(sql)) throw new Error('falha simulada');
       for (const chave of Object.keys(linhas)) {
         if (new RegExp(chave, 'i').test(sql)) return [linhas[chave]];
@@ -40,10 +60,16 @@ function fakeConn(estado) {
   };
 }
 
+/** O escopo que o serviço recebe. O executor tem `getConnection` porque é dele
+ *  que `db.transacao` tira a conexão — e é por isso que este teste não precisa
+ *  de MySQL. */
 function fakePool(estado) {
   const conn = fakeConn(estado);
   estado.conn = conn;
-  return { getConnection: async () => conn };
+  return escopo.fazerEscopo(CL, {
+    query: (sql, params) => conn.query(sql, params),
+    getConnection: async () => conn
+  });
 }
 
 const COMPROMISSO = {
@@ -122,7 +148,7 @@ test('bloqueio, cortesia e retorno nao viram receita', function () {
 /* --------------------------------------------- 1. concluir duas vezes */
 
 test('concluir aplica os efeitos e fecha a transacao', async function () {
-  const estado = { queries: [], linhas: { 'FROM appointments WHERE id': [COMPROMISSO], 'FROM clients': [{ name: 'Ana' }] } };
+  const estado = { queries: [], linhas: { 'FROM appointments WHERE clinica_id': [COMPROMISSO], 'FROM clients': [{ name: 'Ana' }] } };
   const saida = await ac.concluirAtendimento(fakePool(estado), 'ap_teste', { usuarioId: 'u_musa' });
 
   assert.strictEqual(saida.acao, 'CONCLUIDO');
@@ -138,7 +164,7 @@ test('concluir aplica os efeitos e fecha a transacao', async function () {
 
 test('concluir de novo nao lanca receita outra vez', async function () {
   const jaFeito = { ...COMPROMISSO, completed_at: '2026-09-01 15:00:00', completions: 1 };
-  const estado = { queries: [], linhas: { 'FROM appointments WHERE id': [jaFeito] } };
+  const estado = { queries: [], linhas: { 'FROM appointments WHERE clinica_id': [jaFeito] } };
   const saida = await ac.concluirAtendimento(fakePool(estado), 'ap_teste', {});
 
   assert.strictEqual(saida.jaConcluido, true);
@@ -150,9 +176,15 @@ test('concluir de novo nao lanca receita outra vez', async function () {
 test('clique duplo simultaneo esbarra no indice unico e nao duplica', async function () {
   // O `if` do completed_at nao segura duas requisicoes no mesmo milissegundo.
   // Quem segura e o banco. Aqui o INSERT devolve ER_DUP_ENTRY.
-  const conn = {
-    async query() { const e = new Error('dup'); e.code = 'ER_DUP_ENTRY'; throw e; }
-  };
+  // So o INSERT esbarra no indice; a M1.2 acrescentou antes dele uma leitura da
+  // categoria, e o de mentira precisa deixar essa leitura passar. Fake que
+  // erra em TUDO testa outra coisa: o caminho de erro generico.
+  const conn = escopo.fazerEscopo(CL, {
+    async query(sql) {
+      if (/INSERT/i.test(sql)) { const e = new Error('dup'); e.code = 'ER_DUP_ENTRY'; throw e; }
+      return [[{ id: 'cat_procedimentos' }]];
+    }
+  });
   const r = await ef.lancarReceitaDeAtendimento(COMPROMISSO, conn, { chave: 'ap_teste' });
   assert.strictEqual(r.lancado, false);
   assert.strictEqual(r.motivo, 'ja lancado');
@@ -163,7 +195,7 @@ test('clique duplo simultaneo esbarra no indice unico e nao duplica', async func
 test('erro em um efeito desfaz o atendimento inteiro', async function () {
   const estado = {
     queries: [],
-    linhas: { 'FROM appointments WHERE id': [COMPROMISSO], 'FROM clients': [{ name: 'Ana' }] },
+    linhas: { 'FROM appointments WHERE clinica_id': [COMPROMISSO], 'FROM clients': [{ name: 'Ana' }] },
     erroEm: /INSERT INTO cash_entries/
   };
   await assert.rejects(() => ac.concluirAtendimento(fakePool(estado), 'ap_teste', {}), /falha simulada/);
@@ -184,7 +216,7 @@ test('reverter cria estorno e nao apaga o lancamento errado', async function () 
                      professional_id: 'u_musa' };
   const estado = {
     queries: [],
-    linhas: { 'FROM appointments WHERE id': [jaFeito], 'FROM cash_entries': [original] }
+    linhas: { 'FROM appointments WHERE clinica_id': [jaFeito], 'FROM cash_entries': [original] }
   };
   const saida = await ac.reverterConclusao(fakePool(estado), 'ap_teste', {
     usuarioId: 'u_musa', motivo: 'marcado por engano'
@@ -204,13 +236,13 @@ test('reverter cria estorno e nao apaga o lancamento errado', async function () 
 
 test('reverter nao devolve completions, para a chave nunca se repetir', async function () {
   const jaFeito = { ...COMPROMISSO, completed_at: '2026-09-01 15:00:00', completions: 1 };
-  const estado = { queries: [], linhas: { 'FROM appointments WHERE id': [jaFeito], 'FROM cash_entries': [] } };
+  const estado = { queries: [], linhas: { 'FROM appointments WHERE clinica_id': [jaFeito], 'FROM cash_entries': [] } };
   await ac.reverterConclusao(fakePool(estado), 'ap_teste', { motivo: 'engano' });
   assert.ok(!houve(estado, /completions/), 'o contador so cresce, e cresce na conclusao');
 });
 
 test('estorno sem receita lancada nao inventa despesa', async function () {
-  const conn = { async query() { return [[]]; } };
+  const conn = escopo.fazerEscopo(CL, { async query() { return [[]]; } });
   const r = await ef.estornarReceitaDeAtendimento(COMPROMISSO, conn, { chave: 'ap_teste' });
   assert.strictEqual(r.estornado, false);
 });
@@ -225,9 +257,9 @@ test('modulo nao instalado nao impede concluir atendimento', async function () {
   // rodar as migrations.
   const estoque = require('../server/services/efeitos-estoque');
   const fidelidade = require('../server/services/efeitos-fidelidade');
-  const semTabela = {
+  const semTabela = escopo.fazerEscopo(CL, {
     async query() { const e = new Error('table missing'); e.code = 'ER_NO_SUCH_TABLE'; throw e; }
-  };
+  });
   assert.strictEqual((await fidelidade.creditarPontos(COMPROMISSO, semTabela, {})).creditado, false);
 
   // O estoque e diferente de proposito: sem catalog_id nao existe ficha para

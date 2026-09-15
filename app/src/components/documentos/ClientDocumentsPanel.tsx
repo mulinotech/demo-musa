@@ -15,6 +15,7 @@ import DocumentForm from "./DocumentForm";
 import SignaturePad from "./SignaturePad";
 import AlertasClinicos from "./AlertasClinicos";
 import { Documento, Modelo, ESTILO_STATUS_DOC, ROTULO_TIPO, dataHoraBR } from "./comum";
+import { abrirDaApi, baixarDaApi } from "../../lib/api";
 
 export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPaciente?: string }) {
   const [docs, setDocs] = useState<Documento[]>([]);
@@ -225,14 +226,20 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
                 {m.type === "ANAMNESE" ? "Anamnese" : m.type === "TERMO_CONSENTIMENTO" ? "Termo" : m.name}
               </button>
             ))}
-            <a
-              href={"/api/clients/" + p.clientId + "/export"}
-              className="flex items-center gap-1 border border-brand-gold/30 text-brand-brown/75 px-2.5 py-1.5 rounded-xl text-[10px] font-semibold hover:border-brand-brown"
+            <button
+              onClick={async () => {
+                setErro("");
+                const nome = (p.nomeDoPaciente || p.clientId).replace(/[^\w-]+/g, "_");
+                const e = await baixarDaApi(
+                  "/api/clients/" + p.clientId + "/export", "dados-" + nome + ".json");
+                if (e) setErro(e);
+              }}
+              className="flex items-center gap-1 border border-brand-gold/30 text-brand-brown/75 px-2.5 py-1.5 rounded-xl text-[10px] font-semibold hover:border-brand-brown cursor-pointer"
               title="Exportar todos os dados deste paciente (LGPD)"
             >
               <Download className="h-3 w-3" />
               Exportar dados
-            </a>
+            </button>
           </div>
         </div>
 
@@ -251,15 +258,17 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
                 {ESTILO_STATUS_DOC[doc.status].rotulo}
               </span>
               {doc.status !== "RASCUNHO" && (
-                <a
-                  href={"/api/documents/" + doc.id + "/view"}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  onClick={async () => {
+                    setErro("");
+                    const e = await abrirDaApi("/api/documents/" + doc.id + "/view");
+                    if (e) setErro(e);
+                  }}
                   title="Abrir para ler ou imprimir"
-                  className="shrink-0 p-1.5 rounded-lg text-brand-brown/70 hover:bg-brand-beige"
+                  className="shrink-0 p-1.5 rounded-lg text-brand-brown/70 hover:bg-brand-beige cursor-pointer"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                </button>
               )}
               {doc.status !== "CANCELADO" && (
                 <button
@@ -390,15 +399,17 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
             )}
 
             {aberto.status !== "RASCUNHO" && (
-              <a
-                href={"/api/documents/" + aberto.id + "/view"}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-semibold text-brand-brown/80 border border-brand-gold/30 hover:border-brand-brown"
+              <button
+                onClick={async () => {
+                  setErro("");
+                  const e = await abrirDaApi("/api/documents/" + aberto.id + "/view");
+                  if (e) setErro(e);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-semibold text-brand-brown/80 border border-brand-gold/30 hover:border-brand-brown cursor-pointer"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 Abrir / imprimir
-              </a>
+              </button>
             )}
           </div>
         </div>

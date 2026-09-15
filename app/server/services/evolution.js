@@ -514,8 +514,27 @@ const EvolutionService = {
 
 // Envia uma mensagem de texto e, em caso de falha, explica o motivo real
 // (o mais comum é a instância desconectada do WhatsApp).
-async function sendWhatsappText(number, content) {
-  const instance = await EvolutionService.getInstanceName();
+async function sendWhatsappText(number, content, instancia) {
+  // A INSTANCIA E DE QUEM MANDA, e nao da instalacao.
+  //
+  // Com uma clinica, resolver a instancia sozinho estava certo. Com 50, a
+  // mensagem sairia do numero de WhatsApp de outro consultorio -- e a paciente
+  // responderia para a clinica errada, que e a unica pessoa que nunca vai
+  // entender o que aconteceu.
+  //
+  // O terceiro argumento passa a ser o caminho certo. A resolucao global segue
+  // como queda, porque tira-la hoje quebraria os tres pontos de chamada que
+  // ainda nao sabem a clinica -- mas ela GRITA no console, e ha teste contando
+  // quem ainda depende dela (`SEM_INSTANCIA` em tests/camada.test.js). Essa
+  // lista tem de chegar a zero na M2.1b; enquanto nao chegar, a queda existe.
+  let instance = instancia;
+  if (!instance) {
+    instance = await EvolutionService.getInstanceName();
+    console.error(
+      '[Evolution] ATENCAO: envio para ' + number + ' sem instancia informada. ' +
+      'Usando "' + instance + '", resolvida globalmente. Com mais de uma clinica ' +
+      'isso manda a mensagem pelo numero do consultorio errado. Ver a M2.1b.');
+  }
   try {
     return await EvolutionService.sendText(instance, number, content);
   } catch (err) {

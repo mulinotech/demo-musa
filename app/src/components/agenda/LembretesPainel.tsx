@@ -41,7 +41,14 @@ interface Previa {
 }
 
 interface Config {
+  /** Já leva a instância em conta: `ligadoNaConfiguracao && tem instância`.
+   *  "Ligado" sem instância seria prometer um envio que não acontece. */
   ativo: boolean;
+  /** O que a pessoa escolheu no interruptor, independente de haver WhatsApp. */
+  ligadoNaConfiguracao: boolean;
+  /** A instância de WhatsApp desta clínica, ou `null` — e `null` não é
+   *  "use a padrão": é **não mande**. */
+  instancia: string | null;
   template: string;
   antecedenciaH: number;
 }
@@ -159,7 +166,42 @@ export default function LembretesPainel(p: { aoFechar: () => void; aoMudar: () =
             </div>
           )}
 
-          {cfg && (
+          {/* ============================ TRÊS ESTADOS, E NÃO DOIS
+            *
+            * Eram dois — Ligado e Desligado — e faltava o que a Silvia
+            * encontrou em 10/09: **"não vejo qual instância está ligada"**.
+            *
+            * O terceiro estado é o que morde. Sem instância de WhatsApp, o
+            * servidor devolve `ativo: false` mesmo com o interruptor ligado, de
+            * propósito: "ligado" sem instância seria prometer um envio que não
+            * acontece. Só que a tela mostrava isso como um "Desligado" comum —
+            * então clicar em "Ligar" salvava a escolha e o rótulo continuava
+            * dizendo Desligado, sem explicar por quê. Duas partes do sistema
+            * discordando sobre se algo está ligado é pior do que qualquer uma
+            * das duas estar errada.
+            *
+            * E o nome da instância aparece porque é a única coisa na tela que
+            * responde "por qual número isso vai sair?". Mensagem enviada para
+            * paciente real, pelo número do consultório errado, não tem desfazer. */}
+          {cfg && !cfg.instancia && (
+            <div className="rounded-xl border px-4 py-3 bg-amber-50 border-amber-200">
+              <p className="text-xs font-bold text-brand-brown">Sem WhatsApp conectado</p>
+              <p className="text-[11px] text-brand-brown/75 leading-relaxed mt-0.5">
+                Nenhuma mensagem sai — não há por onde. O interruptor abaixo guarda a sua escolha, e
+                os lembretes começam a sair sozinhos no momento em que o WhatsApp desta clínica for
+                conectado, em <strong>Integração</strong>.
+              </p>
+              <button
+                onClick={() => salvar({ ativo: !cfg.ligadoNaConfiguracao })}
+                disabled={ocupado}
+                className="mt-2.5 px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest cursor-pointer transition-colors disabled:opacity-50 bg-white border border-brand-gold/30 text-brand-brown/80 hover:border-brand-brown"
+              >
+                {cfg.ligadoNaConfiguracao ? "Deixar desligado" : "Deixar ligado para depois"}
+              </button>
+            </div>
+          )}
+
+          {cfg && cfg.instancia && (
             <div
               className={
                 "rounded-xl border px-4 py-3 flex items-start justify-between gap-4 " +
@@ -174,6 +216,9 @@ export default function LembretesPainel(p: { aoFechar: () => void; aoMudar: () =
                   {cfg.ativo
                     ? "As mensagens saem sozinhas, " + cfg.antecedenciaH + " h antes de cada horário, entre 08:00 e 20:00."
                     : "Nenhuma mensagem sai sozinha. A lista abaixo mostra o que sairia se você ligar."}
+                </p>
+                <p className="text-[10px] text-brand-brown/55 mt-1.5">
+                  Sai pelo WhatsApp <strong className="font-mono">{cfg.instancia}</strong>
                 </p>
               </div>
               <button

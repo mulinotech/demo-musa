@@ -145,17 +145,37 @@ test('FRASE QUE CONTEM O NUMERO NAO CONFIRMA NADA', function () {
 
 /* ---------------------------------------------------------- o worker */
 
-function fakePool(linhas, estado) {
+/** Escopo de mentira: `q` e `minhaClinica`, e mais nada.
+ *
+ *  ============================== O QUE MUDOU NA M2.1b, E POR QUE FICOU MELHOR
+ *
+ *  Antes isto era um `pool` falso e o worker recebia `pool`. Agora ele recebe o
+ *  **escopo de uma clínica**, e o fingimento tem de incluir a coluna: as
+ *  consultas do worker passaram a trazer `clinica_id = :clinica`, então o
+ *  reconhecimento aqui exige a cláusula. Um worker que voltasse a consultar sem
+ *  filtrar deixaria de casar com estes `if` e os testes quebrariam — o que é
+ *  exatamente o que se quer. */
+function fakeEscopo(linhas, estado) {
   return {
-    async query(sql, params) {
-      const s = String(sql).replace(/\s+/g, ' ').trim();
-      if (/FROM system_settings/.test(s)) {
+    clinicaId: 'cl_teste',
+    autor: 'Sistema',
+    ip: null,
+    async minhaClinica() {
+      return { id: 'cl_teste', nome: 'Clinica de Teste',
+               evolution_instance: estado.instancia === undefined ? 'inst-teste' : estado.instancia };
+    },
+    async q(sql, params) {
+      const t = String(sql).replace(/\s+/g, ' ').trim();
+      if (/FROM clinica_settings/.test(t)) {
+        assert.match(t, /clinica_id = :clinica/, 'a leitura de configuracao tem de filtrar clinica');
         return [[{ chave: 'lembretes_ativos', valor: estado.ativo ? '1' : '0' }]];
       }
-      if (/^SELECT a.id, a.title/.test(s)) {
+      if (/^SELECT a.id, a.title/.test(t)) {
+        assert.match(t, /a\.clinica_id = :clinica/, 'a busca de candidatos tem de filtrar clinica');
         return [linhas.filter((c) => !c.reminder_sent_at)];
       }
-      if (/UPDATE appointments SET reminder_sent_at/.test(s)) {
+      if (/UPDATE appointments SET reminder_sent_at/.test(t)) {
+        assert.match(t, /clinica_id = :clinica/, 'a marca do lembrete tem de filtrar clinica');
         const c = linhas.find((x) => x.id === params[0]);
         if (c) c.reminder_sent_at = '2026-09-01 14:05:00';
         estado.marcados = (estado.marcados || 0) + 1;
@@ -166,23 +186,50 @@ function fakePool(linhas, estado) {
   };
 }
 
+/** A configuracao como `clinica-config.lerLembrete` a devolveria. */
+function cfg(estado) {
+  const instancia = estado.instancia === undefined ? 'inst-teste' : estado.instancia;
+  return {
+    proprio: true,
+    instancia: instancia,
+    ativo: !!estado.ativo && !!instancia,
+    ligadoNaConfiguracao: !!estado.ativo,
+    template: estado.template || l.TEMPLATE_PADRAO,
+    antecedenciaH: 24
+  };
+}
+
 test('desligado, nao envia nada mesmo com compromisso vencido', async function () {
   // O banco de demonstracao tem telefone de gente real. Subir ligado seria
   // disparar WhatsApp para essas pessoas sem ninguem ter pedido.
   const estado = { ativo: false };
   const enviadas = [];
-  const r = await worker.rodarUmaVez(fakePool([compromisso()], estado), {
-    agora: '2026-09-01 14:05:00', enviar: async (t, m) => enviadas.push([t, m])
+  const r = await worker.umaClinica(fakeEscopo([compromisso()], estado), cfg(estado), {
+    agora: '2026-09-01 14:05:00', enviar: async (t, m, i) => enviadas.push([t, m, i])
   });
   assert.strictEqual(r.enviados, 0);
   assert.strictEqual(enviadas.length, 0);
   assert.match(r.aviso, /desligados/);
 });
 
+test('SEM INSTANCIA nao envia, mesmo com a configuracao ligada', async function () {
+  // A configuracao diz "eu quero"; a instancia diz "eu tenho por onde". Sem as
+  // duas, enviar seria mandar do numero de outro consultorio -- e a paciente
+  // responderia para a clinica errada.
+  const estado = { ativo: true, instancia: null };
+  const enviadas = [];
+  const r = await worker.umaClinica(fakeEscopo([compromisso()], estado), cfg(estado), {
+    agora: '2026-09-01 14:05:00', enviar: async (t, m, i) => enviadas.push([t, m, i])
+  });
+  assert.strictEqual(enviadas.length, 0, 'sem instancia, nada sai');
+  assert.match(r.aviso, /instancia de WhatsApp/,
+    'o motivo tem de dizer que falta instancia, e nao so "desligado"');
+});
+
 test('a previa mostra o que sairia e nao envia', async function () {
   const estado = { ativo: false };
   const enviadas = [];
-  const r = await worker.rodarUmaVez(fakePool([compromisso()], estado), {
+  const r = await worker.umaClinica(fakeEscopo([compromisso()], estado), cfg(estado), {
     agora: '2026-09-01 14:05:00', simular: true, enviar: async (t, m) => enviadas.push([t, m])
   });
   assert.strictEqual(enviadas.length, 0, 'previa nao envia');
@@ -196,7 +243,7 @@ test('envio que falha NAO marca o compromisso como avisado', async function () {
   // enviou, a paciente nunca recebe, e ninguem descobre.
   const estado = { ativo: true };
   const linhas = [compromisso()];
-  const r = await worker.rodarUmaVez(fakePool(linhas, estado), {
+  const r = await worker.umaClinica(fakeEscopo(linhas, estado), cfg(estado), {
     agora: '2026-09-01 14:05:00',
     enviar: async () => { throw new Error('Evolution fora do ar'); }
   });
@@ -210,14 +257,27 @@ test('RODAR DUAS VEZES SEGUIDAS NAO ENVIA DUAS MENSAGENS', async function () {
   // para o disparo externo rodando juntos, que e o caso real.
   const estado = { ativo: true };
   const linhas = [compromisso()];
-  const pool = fakePool(linhas, estado);
+  const db = fakeEscopo(linhas, estado);
   const enviadas = [];
-  const envio = async (t, m) => { enviadas.push([t, m]); };
+  const envio = async (t, m, i) => { enviadas.push([t, m, i]); };
 
-  const a = await worker.rodarUmaVez(pool, { agora: '2026-09-01 14:05:00', enviar: envio });
-  const b = await worker.rodarUmaVez(pool, { agora: '2026-09-01 14:20:00', enviar: envio });
+  const a = await worker.umaClinica(db, cfg(estado), { agora: '2026-09-01 14:05:00', enviar: envio });
+  const b = await worker.umaClinica(db, cfg(estado), { agora: '2026-09-01 14:20:00', enviar: envio });
 
   assert.strictEqual(a.enviados, 1);
   assert.strictEqual(b.enviados, 0, 'a segunda passada nao acha mais nada para enviar');
   assert.strictEqual(enviadas.length, 1, 'uma mensagem, uma so');
+});
+
+test('a instancia da clinica vai junto em cada envio', async function () {
+  // O terceiro argumento e o que impede a mensagem de sair pelo numero de outro
+  // consultorio. Sem ele, `sendWhatsappText` resolve uma instancia globalmente.
+  const estado = { ativo: true, instancia: 'instancia-desta-clinica' };
+  const enviadas = [];
+  await worker.umaClinica(fakeEscopo([compromisso()], estado), cfg(estado), {
+    agora: '2026-09-01 14:05:00', enviar: async (t, m, i) => enviadas.push([t, m, i])
+  });
+  assert.strictEqual(enviadas.length, 1);
+  assert.strictEqual(enviadas[0][2], 'instancia-desta-clinica',
+    'a instancia tem de chegar ao envio; `undefined` aqui e a queda global de volta');
 });

@@ -219,3 +219,13 @@ module.exports = async function up(conn) {
   }
   console.log('   + ' + criados + ' anamnese(s) migrada(s) como rascunho; clients.anamnese PRESERVADA');
 };
+
+/* Exportados para o nascimento de uma clinica (M2.4) semear os MESMOS dois
+ * modelos, no estado original.
+ *
+ * E "no estado original" e deliberado: copiar os modelos de uma clinica que ja
+ * existe levaria as edicoes clinicas dela para dentro da clinica nova -- que e
+ * conteudo de saude de outro consultorio, escrito por outra profissional. */
+module.exports.ANAMNESE = ANAMNESE;
+module.exports.TERMO = TERMO;
+module.exports.CORPO_TERMO = CORPO_TERMO;

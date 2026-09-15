@@ -328,9 +328,22 @@ export default function CrmSettings() {
                             setSPassword('');
                             setIsAddingSalesperson(true);
                           }}
-                          className="p-1 text-brand-brown/50 hover:text-brand-brown rounded cursor-pointer"
+                          /* ============ POR QUE ESTE BOTAO GANHOU UMA PALAVRA
+                           *
+                           * Ele era so o lapis, com 14 pixels e 50% de
+                           * opacidade, do lado de um "Excluir" escrito com
+                           * letras. Em 10/09 a Silvia procurou como editar o
+                           * nome de alguem da equipe e concluiu que nao dava --
+                           * o campo de nome estava aqui dentro o tempo todo.
+                           *
+                           * O que ela achou foi o botao que APAGA a pessoa. Uma
+                           * tela em que a acao destrutiva tem rotulo e a acao
+                           * segura e um icone apagado esta convidando o erro
+                           * mais caro dos dois. */
+                          className="flex items-center gap-1 text-[10px] uppercase font-semibold text-brand-brown/70 hover:text-brand-brown rounded px-1 py-0.5 cursor-pointer"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
+                          Editar
                         </button>
                         <button onClick={() => handleDeleteSalesperson(s.id)} className="text-[10px] uppercase text-red-500/80 hover:text-red-600 font-semibold cursor-pointer">Excluir</button>
                       </div>

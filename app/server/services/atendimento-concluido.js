@@ -68,43 +68,48 @@ function decidirReversao(ap, motivo) {
   return { acao: 'REVERTER', chave: chaveDeOrigem(ap.id, Number(ap.completions) || 1) };
 }
 
-/* --------------------------------------------------- transacional */
+/* --------------------------------------------------- transacional
+ *
+ * ============================================ O QUE MUDOU NA M1.1c (08/09)
+ *
+ * O primeiro parâmetro era o `pool`; agora é um **escopo de clínica**
+ * (`server/db/escopo.js`), e a `conn` que os três efeitos recebem passou a ser
+ * o `tx` desse escopo. Toda consulta daqui para baixo carrega `:clinica`.
+ *
+ * Antes disso, cada linha que esta cadeia gravava — a receita do atendimento, a
+ * baixa do insumo, o ponto da paciente — nascia com a clínica **vazia**. Não
+ * dava erro: a linha simplesmente não pertencia a ninguém, e desapareceria da
+ * clínica que a criou. Era o buraco maior da M1, e ele não aparecia na catraca
+ * porque a varredura só olhava `server/routes/`.
+ *
+ * `comTransacao` deixou de existir como função própria: `db.transacao(fn)` faz
+ * o mesmo e ainda recusa transação aninhada. Duas implementações do mesmo
+ * begin/commit/rollback é como uma delas para de receber correção.
+ */
 
-async function comTransacao(pool, tarefa) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const saida = await tarefa(conn);
-    await conn.commit();
-    return saida;
-  } catch (e) {
-    try { await conn.rollback(); } catch (_) { /* a conexão já pode ter caído */ }
-    throw e;
-  } finally {
-    conn.release();
-  }
-}
-
-async function carregar(conn, id) {
-  const [r] = await conn.query('SELECT * FROM appointments WHERE id = ? FOR UPDATE', [id]);
+async function carregar(tx, id) {
+  const [r] = await tx.q(
+    'SELECT * FROM appointments WHERE clinica_id = :clinica AND id = ? FOR UPDATE', [id]);
   return r.length ? r[0] : null;
 }
 
-async function nomeDoCliente(conn, clientId) {
+async function nomeDoCliente(tx, clientId) {
   if (!clientId) return null;
-  const [r] = await conn.query('SELECT name FROM clients WHERE id = ? LIMIT 1', [clientId]);
+  const [r] = await tx.q(
+    'SELECT name FROM clients WHERE clinica_id = :clinica AND id = ? LIMIT 1', [clientId]);
   return r.length ? r[0].name : null;
 }
 
 /**
- * concluirAtendimento(pool, id, { usuarioId })
- * Um passo de cada vez, tudo na mesma transação. Qualquer erro em qualquer
- * efeito derruba o conjunto — inclusive a mudança de status.
+ * concluirAtendimento(db, id, { usuarioId })
+ * `db` é um escopo de clínica. Um passo de cada vez, tudo na mesma transação.
+ * Qualquer erro em qualquer efeito derruba o conjunto — inclusive a mudança de
+ * status.
  */
-async function concluirAtendimento(pool, id, opcoes) {
+async function concluirAtendimento(db, id, opcoes) {
   const op = opcoes || {};
-  return comTransacao(pool, async function (conn) {
-    const ap = await carregar(conn, id);
+  return db.transacao(async function (tx) {
+    const ap = await carregar(tx, id);
     const d = decidirConclusao(ap);
 
     if (d.acao === 'NAO_ENCONTRADO') return d;
@@ -114,65 +119,70 @@ async function concluirAtendimento(pool, id, opcoes) {
     }
 
     if (d.acao === 'SO_STATUS') {
-      await conn.query("UPDATE appointments SET status = 'REALIZADO' WHERE id = ?", [id]);
+      await tx.q("UPDATE appointments SET status = 'REALIZADO' " +
+                 'WHERE clinica_id = :clinica AND id = ?', [id]);
       return { acao: 'SO_STATUS', jaConcluido: false, efeitos: {} };
     }
 
-    await conn.query(
-      "UPDATE appointments SET status = 'REALIZADO', completed_at = NOW(), completions = ? WHERE id = ?",
+    await tx.q(
+      "UPDATE appointments SET status = 'REALIZADO', completed_at = NOW(), completions = ? " +
+      'WHERE clinica_id = :clinica AND id = ?',
       [(Number(ap.completions) || 0) + 1, id]
     );
 
     // A sessão clínica acompanha o compromisso, quando existe vínculo. A data
     // da sessão sai do compromisso: `appointments` é a fonte de verdade sobre
     // hora, e duplicar isso é como as duas datas passam a divergir.
-    await conn.query(
-      "UPDATE treatment_sessions SET status = 'REALIZADA', session_date = DATE(?) WHERE appointment_id = ?",
+    await tx.q(
+      "UPDATE treatment_sessions SET status = 'REALIZADA', session_date = DATE(?) " +
+      'WHERE clinica_id = :clinica AND appointment_id = ?',
       [ap.starts_at, id]
     );
 
     const ctx = {
       chave: d.chave,
       usuarioId: op.usuarioId || null,
-      nomeDoCliente: await nomeDoCliente(conn, ap.client_id)
+      nomeDoCliente: await nomeDoCliente(tx, ap.client_id)
     };
 
     const efeitos = {};
-    efeitos.financeiro = await efeitosFinanceiro.lancarReceitaDeAtendimento(ap, conn, ctx);
-    efeitos.estoque = await efeitosEstoque.baixarInsumosDoAtendimento(ap, conn, ctx);
-    efeitos.fidelidade = await efeitosFidelidade.creditarPontos(ap, conn, ctx);
+    efeitos.financeiro = await efeitosFinanceiro.lancarReceitaDeAtendimento(ap, tx, ctx);
+    efeitos.estoque = await efeitosEstoque.baixarInsumosDoAtendimento(ap, tx, ctx);
+    efeitos.fidelidade = await efeitosFidelidade.creditarPontos(ap, tx, ctx);
 
     return { acao: 'CONCLUIDO', jaConcluido: false, chave: d.chave, efeitos: efeitos };
   });
 }
 
 /**
- * reverterConclusao(pool, id, { usuarioId, motivo })
+ * reverterConclusao(db, id, { usuarioId, motivo })
  * Estorna os três efeitos, limpa `completed_at` e volta o status para AGENDADO.
  * `completions` NÃO volta — ver o comentário do topo.
  */
-async function reverterConclusao(pool, id, opcoes) {
+async function reverterConclusao(db, id, opcoes) {
   const op = opcoes || {};
-  return comTransacao(pool, async function (conn) {
-    const ap = await carregar(conn, id);
+  return db.transacao(async function (tx) {
+    const ap = await carregar(tx, id);
     const d = decidirReversao(ap, op.motivo);
     if (d.acao !== 'REVERTER') return d;
 
-    await conn.query(
-      "UPDATE appointments SET status = 'AGENDADO', completed_at = NULL WHERE id = ?",
+    await tx.q(
+      "UPDATE appointments SET status = 'AGENDADO', completed_at = NULL " +
+      'WHERE clinica_id = :clinica AND id = ?',
       [id]
     );
-    await conn.query(
-      "UPDATE treatment_sessions SET status = 'AGENDADA' WHERE appointment_id = ?",
+    await tx.q(
+      "UPDATE treatment_sessions SET status = 'AGENDADA' " +
+      'WHERE clinica_id = :clinica AND appointment_id = ?',
       [id]
     );
 
     const ctx = { chave: d.chave, usuarioId: op.usuarioId || null, motivo: String(op.motivo).trim() };
 
     const efeitos = {};
-    efeitos.financeiro = await efeitosFinanceiro.estornarReceitaDeAtendimento(ap, conn, ctx);
-    efeitos.estoque = await efeitosEstoque.devolverInsumosDoAtendimento(ap, conn, ctx);
-    efeitos.fidelidade = await efeitosFidelidade.estornarPontos(ap, conn, ctx);
+    efeitos.financeiro = await efeitosFinanceiro.estornarReceitaDeAtendimento(ap, tx, ctx);
+    efeitos.estoque = await efeitosEstoque.devolverInsumosDoAtendimento(ap, tx, ctx);
+    efeitos.fidelidade = await efeitosFidelidade.estornarPontos(ap, tx, ctx);
 
     return { acao: 'REVERTIDO', chave: d.chave, motivo: ctx.motivo, efeitos: efeitos };
   });
@@ -183,6 +193,5 @@ module.exports = {
   reverterConclusao: reverterConclusao,
   decidirConclusao: decidirConclusao,
   decidirReversao: decidirReversao,
-  chaveDeOrigem: chaveDeOrigem,
-  comTransacao: comTransacao
+  chaveDeOrigem: chaveDeOrigem
 };

@@ -1,0 +1,150 @@
+'use strict';
+/** A VOLTA DA M1.8 — desligada de propósito. Só use se algo quebrar.
+ *
+ *  ============================================================ COMO LIGAR
+ *
+ *  Este arquivo termina em `.js.desligada`, e o `db/run-migrations.js` só olha
+ *  arquivos que terminam em `.js` ou `.sql`. Ou seja: **ele não roda, e nem
+ *  aparece como pendente**, enquanto tiver esse nome.
+ *
+ *  Para usar, no terminal SSH:
+ *
+ *      cd /srv/demo-musa.2d384ff2.configr.cloud/www
+ *      mv db/migrations/028_reverter_m18.js.desligada \
+ *         db/migrations/028_reverter_m18.js
+ *
+ *  e depois rodar a migration pelo console do navegador, como sempre.
+ *
+ *  ======================================================= QUANDO USAR ISTO
+ *
+ *  Depois da 027, alguma gravação passou a falhar com erro de chave
+ *  estrangeira. No console do navegador a resposta 500 traz uma destas:
+ *
+ *      Cannot add or update a child row: a foreign key constraint fails
+ *      Cannot delete or update a parent row: a foreign key constraint fails
+ *
+ *  A **primeira** significa que algum caminho grava um filho apontando para pai
+ *  de outra clínica — ou carimba a linha com uma clínica que não existe. É a
+ *  terceira barreira funcionando, e o defeito é no código que grava.
+ *
+ *  A **segunda** significa que alguma tela apaga um pai e o `ON DELETE` da
+ *  relação não é o que aquela tela esperava. Caso mais provável: apagar clínica
+ *  (que agora é recusado de propósito).
+ *
+ *  ==================================================== O QUE ELE NÃO RESOLVE
+ *
+ *  Ele devolve as chaves de uma coluna e tira as de clínica. As gravações
+ *  voltam — e voltam a poder criar a linha cruzada, que é o dado que aparece na
+ *  tela da clínica errada. Não é "voltar ao normal": é trocar um problema alto
+ *  (não grava) por um problema baixo (grava errado e ninguém vê), para ganhar
+ *  tempo.
+ *
+ *  Depois é preciso achar o caminho culpado — a mensagem de erro nomeia a
+ *  restrição, e o nome dela nomeia a tabela e a coluna — corrigir, e rodar a
+ *  027 de novo. Ela é idempotente e confere tudo antes.
+ *
+ *  ================================================== A ORDEM, DE NOVO
+ *
+ *  Mesma regra da 027, ao contrário: **acrescenta a chave antiga primeiro, e só
+ *  depois apaga a composta.** Assim nenhum instante deixa a relação sem chave
+ *  nenhuma. Os dados de hoje satisfazem a composta, que é mais exigente que a
+ *  de uma coluna, então acrescentar a antiga nunca falha por causa dos dados.
+ */
+
+const LISTAS = require('./018_clinicas.js').LISTAS;
+const ALVOS = LISTAS.OBRIGATORIA;
+
+async function chavesDe(conn) {
+  const [l] = await conn.query(
+    'SELECT k.CONSTRAINT_NAME AS nome, k.TABLE_NAME AS tab, k.COLUMN_NAME AS col,' +
+    ' k.REFERENCED_TABLE_NAME AS pai, k.REFERENCED_COLUMN_NAME AS paiCol,' +
+    ' rc.DELETE_RULE AS del, rc.UPDATE_RULE AS upd' +
+    ' FROM information_schema.KEY_COLUMN_USAGE k' +
+    ' JOIN information_schema.REFERENTIAL_CONSTRAINTS rc' +
+    '   ON rc.CONSTRAINT_NAME = k.CONSTRAINT_NAME' +
+    '  AND rc.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA' +
+    ' WHERE k.TABLE_SCHEMA = DATABASE() AND k.REFERENCED_TABLE_NAME IS NOT NULL' +
+    ' ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION');
+  const porNome = new Map();
+  for (const f of l) {
+    const chave = f.tab + '|' + f.nome;
+    if (!porNome.has(chave)) {
+      porNome.set(chave, { nome: f.nome, tab: f.tab, pai: f.pai, cols: [], paiCols: [],
+                           del: f.del, upd: f.upd });
+    }
+    porNome.get(chave).cols.push(f.col);
+    porNome.get(chave).paiCols.push(f.paiCol);
+  }
+  return Array.from(porNome.values());
+}
+
+function regra(r) { return (r === 'NO ACTION' || !r) ? 'RESTRICT' : r; }
+
+module.exports = async function up(conn) {
+  const todas = await chavesDe(conn);
+  const voltaram = [];
+  const tiradas = [];
+
+  // ------------------------------------- metade B ao contrario: compostas -> uma coluna
+  const compostas = todas.filter((f) =>
+    f.cols.length === 2 &&
+    f.cols.indexOf('clinica_id') !== -1 &&
+    ALVOS.indexOf(f.tab) !== -1 &&
+    ALVOS.indexOf(f.pai) !== -1);
+
+  for (const f of compostas) {
+    const i = f.cols[0] === 'clinica_id' ? 1 : 0;
+    const col = f.cols[i];
+    const paiCol = f.paiCols[i];
+    const antiga = 'fk_' + f.tab + '_' + col + '_de_volta';
+
+    const jaTem = todas.some((x) => x.tab === f.tab && x.nome === antiga);
+    if (!jaTem) {
+      // 1. acrescenta a de uma coluna. Nunca falha pelos dados: a composta e
+      //    mais exigente, e os dados de hoje passam por ela.
+      await conn.query(
+        'ALTER TABLE `' + f.tab + '` ADD CONSTRAINT `' + antiga + '`' +
+        ' FOREIGN KEY (`' + col + '`) REFERENCES `' + f.pai + '` (`' + paiCol + '`)' +
+        ' ON DELETE ' + regra(f.del) + ' ON UPDATE ' + regra(f.upd));
+    }
+    // 2. e so agora apaga a composta.
+    await conn.query('ALTER TABLE `' + f.tab + '` DROP FOREIGN KEY `' + f.nome + '`');
+    voltaram.push(f.tab + '.' + col + ' -> ' + f.pai);
+  }
+
+  // ------------------------------------- metade A ao contrario: fora a chave de clinica
+  for (const f of todas) {
+    if (f.pai !== 'clinicas') continue;
+    if (ALVOS.indexOf(f.tab) === -1) continue;      // clinica_settings fica como esta
+    if (f.cols.length !== 1 || f.cols[0] !== 'clinica_id') continue;
+    await conn.query('ALTER TABLE `' + f.tab + '` DROP FOREIGN KEY `' + f.nome + '`');
+    tiradas.push(f.tab);
+  }
+
+  console.log('   ! M1.8 REVERTIDA: ' + voltaram.length + ' chave(s) voltaram a ser de uma ' +
+              'coluna, ' + tiradas.length + ' tabela(s) perderam a chave de clinica');
+  console.log('   ! as gravacoes voltam, MAS linha cruzada volta a ser possivel:');
+  console.log('     dado da clinica B apontando para o paciente da clinica A, que aparece');
+  console.log('     na tela errada. Ache o caminho culpado -- o nome da restricao no erro');
+  console.log('     diz a tabela e a coluna -- corrija, e rode a 027 de novo.');
+
+  await conn.query(
+    'INSERT INTO system_logs (id, action_type, description, author, created_at, clinica_id)' +
+    ' VALUES (?, ?, ?, ?, NOW(), NULL)',
+    ['lg_028_' + Date.now().toString(36), 'MIGRATION',
+     'Migration 028: M1.8 REVERTIDA. ' + voltaram.length + ' chave(s) estrangeira(s) ' +
+     'voltaram a ser de uma coluna e ' + tiradas.length + ' tabela(s) perderam a chave ' +
+     'clinica_id -> clinicas. A terceira barreira saiu: linha de uma clinica apontando para ' +
+     'o pai de outra volta a ser aceita pelo banco. Isto e ganho de tempo, nao conserto -- ' +
+     'ache o caminho que grava cruzado, corrija, e rode a 027 de novo.',
+     'Sistema']);
+
+  return {
+    voltaramAUmaColuna: voltaram,
+    perderamChaveDeClinica: tiradas,
+    observacao: 'As gravacoes voltam. Mas linha cruzada volta a ser aceita pelo banco, e ela ' +
+      'aparece na tela da clinica errada ou em nenhuma. O nome da restricao que apareceu no ' +
+      'erro nomeia a tabela e a coluna do caminho culpado. Corrija e rode a 027 outra vez ' +
+      '(ela e idempotente e confere tudo antes).'
+  };
+};

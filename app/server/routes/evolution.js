@@ -1,112 +1,220 @@
 'use strict';
+/** O Gerenciador de WhatsApp — instância, conversas e envio pela tela.
+ *
+ *  ================================================= O QUE A M1.6b MUDOU AQUI
+ *
+ *  O webhook saiu para `routes/webhook-whatsapp.js` (chega sem sessão, ver o
+ *  cabeçalho de lá). O que ficou são rotas autenticadas, e as duas que falam com
+ *  o banco passaram a filtrar:
+ *
+ *  - **histórico da conversa** (`/messages`) casava o contato por telefone em
+ *    `leads` e `clients` **sem filtro**, e trazia as interações dele. Telefone
+ *    repetido entre clínicas é caso real — a mesma pessoa pode ser paciente de
+ *    dois consultórios —, então a clínica A lia a conversa que a clínica B teve
+ *    com a mesma pessoa;
+ *  - **envio** (`/send`) fazia a mesma busca por telefone e, não achando,
+ *    **criava um lead**. Sem filtro, ela achava o contato da vizinha e gravava a
+ *    mensagem enviada na conversa dela.
+ *
+ *  ============================ O QUE FILTRO DE BANCO NAO RESOLVE, E POR ISSO
+ *                                        ESTAS ROTAS PASSAM A RECUSAR
+ *
+ *  **A instância de WhatsApp é UMA para as 50 clínicas.** O número, o QR code, a
+ *  lista de conversas e a lista de contatos vêm da Evolution, não do nosso
+ *  banco. Então `/chats`, `/contacts` e a parte de `/messages` que vem do
+ *  WhatsApp mostram **a caixa de entrada compartilhada** — a conversa da clínica
+ *  B aparece na tela da clínica A porque é literalmente o mesmo WhatsApp.
+ *
+ *  Nenhum `WHERE clinica_id` conserta isso: o dado não está no banco. E é o tipo
+ *  de vazamento que passaria por qualquer conferência de filtro, porque não há
+ *  filtro envolvido.
+ *
+ *  Por isso as rotas que leem da instância **recusam com 503 quando existe mais
+ *  de uma clínica cadastrada** — a mesma escolha da captação pública de lead, e
+ *  pela mesma razão: com uma clínica está correto; com duas, mostrar é vazar, e
+ *  recusar alto é a única resposta honesta enquanto a **M2.1** não der uma
+ *  instância por clínica.
+ *
+ *  O `/send` NÃO recusa: ele já filtra o destinatário pelo banco, e a mensagem
+ *  sai correta em conteúdo e em destino. O que continua errado ali é o
+ *  **remetente** — a paciente recebe do número da instalação, não do
+ *  consultório dela. Isso é identidade, não vazamento, e também é M2.1.
+ */
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
+const escopo = require('../db/escopo');
+const cfgSvc = require('../services/clinica-config');
+const logs = require('../services/logs');
 const { SIMULATED_INSTANCES, EvolutionService, sendWhatsappText, getEvolutionManagerUrl, normalizeWhatsappNumber, jidToNumber } = require('../services/evolution');
 
-const lembretes = require('../services/lembretes');
-const { logSystemEvent } = require('../services/logs');
+const MOTIVO_CARIMBAR_INSTANCIA =
+  'gravar a instancia recem-criada na propria clinica: `clinicas` nao tem coluna ' +
+  'clinica_id (ela E a lista de clinicas), entao a camada nao consegue filtrar aqui';
 
-/** Resposta a um lembrete de compromisso (T1.5).
+/** A instância desta clínica, ou uma recusa pronta.
  *
- *  O compromisso alvo é o próximo desta paciente nas próximas 48 h que já
- *  recebeu lembrete. A janela existe para não confirmar o horário errado de
- *  quem tem três sessões marcadas no mês — e "já recebeu lembrete" é o que
- *  garante que a resposta é resposta, e não uma mensagem solta.
+ *  ================================== O QUE SUBSTITUIU A RECUSA DA M2.1a
  *
- *  "2" NÃO REMARCA NADA. Registra o pedido e sinaliza na agenda; remarcar
- *  sozinho, sem saber para quando, trocaria um horário incerto por outro
- *  inventado. Quem remarca é gente, olhando os horários livres.
- */
-async function responderLembrete(phone, texto) {
-  const intencao = lembretes.interpretarResposta(texto);
-  if (!intencao) return null;
-
-  const digitos = String(phone || '').replace(/\D/g, '');
-  if (!digitos) return null;
-
-  try {
-    const [r] = await pool.query(`
-      SELECT a.id, a.title, a.status,
-             DATE_FORMAT(a.starts_at, '%Y-%m-%d %H:%i:%s') AS starts_at,
-             c.name AS client_name
-        FROM appointments a
-        JOIN clients c ON c.id = a.client_id
-       WHERE REPLACE(REPLACE(REPLACE(REPLACE(c.phone,'+',''),'-',''),' ',''),'(','') LIKE ?
-         AND a.kind = 'ATENDIMENTO'
-         AND a.status IN ('AGENDADO','CONFIRMADO')
-         AND a.reminder_sent_at IS NOT NULL
-         AND a.starts_at > NOW()
-         AND a.starts_at < DATE_ADD(NOW(), INTERVAL 48 HOUR)
-       ORDER BY a.starts_at
-       LIMIT 1
-    `, ['%' + digitos.slice(-8)]);
-
-    if (!r.length) return null;
-    const c = r[0];
-
-    if (intencao === 'CONFIRMAR') {
-      await pool.query(
-        "UPDATE appointments SET status = 'CONFIRMADO', confirmed_at = NOW() WHERE id = ? AND status = 'AGENDADO'",
-        [c.id]
-      );
-      await logSystemEvent('AGENDA', c.client_name + ' confirmou "' + c.title + '" pelo WhatsApp.', 'Paciente');
-      return { compromisso: c.id, acao: 'CONFIRMADO' };
-    }
-
-    // REMARCAR: sinaliza e para por aqui.
-    await pool.query(
-      "UPDATE appointments SET notes = CONCAT(COALESCE(notes,''), ?) WHERE id = ?",
-      ['\n[' + new Date().toISOString().slice(0, 10) + '] Paciente pediu remarcacao pelo WhatsApp.', c.id]
-    );
-    await logSystemEvent('AGENDA', c.client_name + ' pediu remarcacao de "' + c.title + '" pelo WhatsApp.', 'Paciente');
-    return { compromisso: c.id, acao: 'PEDIU_REMARCACAO' };
-  } catch (e) {
-    // Uma falha aqui nao pode derrubar o webhook: a mensagem ja foi gravada.
-    console.error('[Webhook] Falha ao tratar resposta de lembrete:', e.message);
+ *  Na M2.1a estas rotas recusavam com 503 quando existia mais de uma clínica,
+ *  porque a instância era **uma para todas** e mostrar a caixa de entrada
+ *  compartilhada seria entregar a conversa de uma clínica para outra — sem que
+ *  nenhum filtro pudesse ajudar, porque o dado não está no nosso banco.
+ *
+ *  Com a instância virando campo da clínica, a recusa deixa de ser necessária:
+ *  cada uma lê a caixa de entrada **dela**. O que sobra é o caso da clínica
+ *  **sem** instância, e aí a resposta é 409 com o que fazer — não uma lista
+ *  vazia, que pareceria "você não tem conversa nenhuma". */
+async function instanciaOuRecusa(db, res) {
+  const instancia = await cfgSvc.instancia(db);
+  if (!instancia) {
+    res.status(409).json({
+      error: 'Esta clinica ainda nao tem WhatsApp conectado.',
+      semInstancia: true
+    });
     return null;
   }
+  return instancia;
 }
 
-router.get('/api/evolution/instances', async function(req, res) {
+/** A instância DESTA clínica, e mais nada.
+ *
+ *  ============================ POR QUE "LIVRE" NAO E CRITERIO -- MEDIDO EM 10/09
+ *
+ *  A primeira versão desta rota devolvia a instância da clínica **mais as
+ *  livres**, com o raciocínio de que "instância livre, por definição, não é de
+ *  outra clínica". Está certo dentro do sistema e **errado no mundo**.
+ *
+ *  A tela de produção mostrou três instâncias no servidor da Evolution, e uma
+ *  delas era `Nathi Estética Avançada_Oficial` — outro negócio, no mesmo
+ *  servidor. "Livre" só quer dizer "não vinculada a nenhuma clínica DESTE CRM";
+ *  não quer dizer "de ninguém". Com 50 clínicas, cada admin veria o nome e o
+ *  número de WhatsApp dos outros projetos hospedados ali.
+ *
+ *  Ninguém teria descoberto isso com dados inventados: no ensaio, toda instância
+ *  ou é de uma clínica ou é livre-de-verdade. Foi a instalação real que mostrou
+ *  a terceira categoria.
+ *
+ *  Então a lista ficou **mais restrita**: só a dela. E a clínica nova não precisa
+ *  mais da lista — `POST` cria a instância dela e devolve o QR. Quem precisa
+ *  enxergar o servidor inteiro é a plataforma, e isso é M3. */
+router.get('/api/evolution/instances', async function (req, res) {
+  const db = escopo(req);
   try {
-    const list = await EvolutionService.listInstances();
-    res.json(list);
+    const minha = await cfgSvc.instancia(db);
+    if (!minha) return res.json([]);
+
+    const lista = await EvolutionService.listInstances();
+    res.json(lista
+      .filter((i) => i.name === minha)
+      .map((i) => Object.assign({}, i, { minha: true })));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[evolution]', error && error.message);
+    res.status(500).json({ error: 'Falha ao consultar a instancia de WhatsApp.' });
   }
 });
 
 
-router.post('/api/evolution/instances', async function(req, res) {
-  const { instanceName } = req.body;
+/** Vincular uma instância que JÁ EXISTE é operação da plataforma, não da clínica.
+ *
+ *  Para escolher entre instâncias existentes é preciso enxergar o servidor da
+ *  Evolution — e ele hospeda outros negócios além das clínicas deste CRM (ver a
+ *  rota acima). Uma clínica que pudesse vincular por nome poderia tomar a
+ *  instância de qualquer coisa que estivesse ali, bastando adivinhar o nome.
+ *
+ *  A clínica conecta o WhatsApp dela **criando** a instância dela (`POST`
+ *  abaixo), que é o caminho que não exige ver nada de ninguém. Vincular uma
+ *  existente fica para a M3, com o papel de plataforma. */
+router.put('/api/evolution/instance', async function (req, res) {
+  return res.status(403).json({
+    error: 'Vincular uma instancia existente e operacao da plataforma. ' +
+           'Para conectar o WhatsApp desta clinica, use "Conectar meu WhatsApp".'
+  });
+});
+
+
+/** Cria a instância desta clínica na Evolution e já a vincula.
+ *
+ *  O NOME E DERIVADO DA CLINICA, e não vem do corpo da requisição. Aceitar o
+ *  nome de fora deixaria uma clínica criar uma instância com o nome que a outra
+ *  usaria depois — não vaza nada hoje, e amanhã é uma briga por nome que ninguém
+ *  vai entender. Derivado, o nome é previsível e não colide. */
+router.post('/api/evolution/instances', async function (req, res) {
+  const db = escopo(req);
   try {
-    const created = await EvolutionService.createInstance(instanceName);
-    res.status(201).json(created);
+    const jaTem = await cfgSvc.instancia(db);
+    if (jaTem) {
+      return res.status(409).json({
+        error: 'Esta clinica ja tem uma instancia: "' + jaTem + '".', instance: jaTem });
+    }
+    const nome = 'musa-' + String(db.clinicaId).replace(/[^A-Za-z0-9_-]/g, '');
+    const created = await EvolutionService.createInstance(nome);
+
+    const cru = escopo.todasAsClinicas(MOTIVO_CARIMBAR_INSTANCIA);
+    await cru.q('UPDATE clinicas SET evolution_instance = ? WHERE id = ?', [nome, db.clinicaId]);
+    await logs.registrar(db, 'WHATSAPP', 'Instancia de WhatsApp criada: "' + nome + '".');
+
+    res.status(201).json(Object.assign({ instance: nome }, created));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Esta instancia nao esta disponivel.' });
+    }
+    console.error('[evolution]', error && error.message);
+    res.status(500).json({ error: 'Falha ao criar a instancia de WhatsApp.' });
   }
 });
 
 
-router.get('/api/evolution/instances/connect/:name', async function(req, res) {
+/** O QR Code — lido pela própria clínica (decisão da Silvia em 09/09).
+ *
+ *  WhatsApp desconecta sozinho com frequência. Centralizar a releitura do QR na
+ *  Mulino transformaria cada desconexão num chamado, com a clínica sem lembrete
+ *  até alguém atender. Então a tela é dela.
+ *
+ *  **Só a instância dela.** O QR de outra instância é a sessão de WhatsApp de
+ *  outro consultório: quem o lê passa a receber e a enviar as mensagens daquela
+ *  clínica. É o pior objeto deste módulo para servir sem conferir dono. */
+router.get('/api/evolution/instances/connect/:name', async function (req, res) {
+  const db = escopo(req);
   try {
-    const connection = await EvolutionService.connectInstance(req.params.name);
+    const minha = await cfgSvc.instancia(db);
+    if (!minha) return res.status(409).json({ error: 'Esta clinica ainda nao tem instancia.' });
+    if (req.params.name !== minha) {
+      return res.status(404).json({ error: 'Instancia nao encontrada.' });
+    }
+    const connection = await EvolutionService.connectInstance(minha);
     res.json(connection);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[evolution]', error && error.message);
+    res.status(502).json({ error: 'Falha ao obter o QR Code do WhatsApp.' });
   }
 });
 
 // 13.1. Status resumido da integração (usado pelo Gerenciador WhatsApp nativo)
 
-router.get('/api/evolution/status', async function(req, res) {
+router.get('/api/evolution/status', async function (req, res) {
+  const db = escopo(req);
   try {
     const configured = EvolutionService.isConfigured();
+    const instance = await cfgSvc.instancia(db);
+
+    // Tres estados, e a tela precisa distinguir os tres: o servidor da Evolution
+    // nao configurado (problema da instalacao, e da Mulino), a clinica sem
+    // instancia (problema dela, e ela resolve), e a instancia desconectada
+    // (problema dela, e o QR resolve). Antes os dois primeiros viravam o mesmo
+    // "close", e ninguem sabia a quem recorrer.
     if (!configured) {
-      return res.json({ configured: false, instance: null, state: 'close', managerUrl: getEvolutionManagerUrl() });
+      // A INSTANCIA DA CLINICA VAI JUNTO MESMO ASSIM. A versao anterior
+      // devolvia `instance: null` aqui, e com isso "a plataforma nao esta
+      // configurada" ficava indistinguivel de "esta clinica nao conectou o
+      // WhatsApp" -- os dois problemas se resolvem em lugares diferentes, por
+      // pessoas diferentes. Foi o proprio ensaio que apontou.
+      return res.json({ configured: false, instance: instance, state: 'close',
+                        semInstancia: !instance, managerUrl: getEvolutionManagerUrl() });
     }
-    const instance = await EvolutionService.getInstanceName(req.query.refresh === '1');
+    if (!instance) {
+      return res.json({ configured: true, instance: null, state: 'close',
+                        semInstancia: true, managerUrl: getEvolutionManagerUrl() });
+    }
     let state = 'close';
     try {
       const st = await EvolutionService.connectionState(instance);
@@ -114,17 +222,24 @@ router.get('/api/evolution/status', async function(req, res) {
     } catch (e) {
       state = 'close';
     }
-    res.json({ configured: true, instance, state, managerUrl: getEvolutionManagerUrl() });
+    res.json({ configured: true, instance: instance, state: state,
+               semInstancia: false, managerUrl: getEvolutionManagerUrl() });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao consultar status da Evolution API', details: error.message });
+    console.error('[evolution]', error && error.message);
+    res.status(500).json({ error: 'Erro ao consultar o status do WhatsApp.' });
   }
 });
 
 // 13.2. Conversas reais da instância do WhatsApp
 
-router.get('/api/evolution/chats', async function(req, res) {
+router.get('/api/evolution/chats', async function (req, res) {
+  const db = escopo(req);
   try {
-    const instance = req.query.instance || await EvolutionService.getInstanceName();
+    // A instancia vem da CLINICA, e nao de `req.query.instance`. Aceitar da
+    // requisicao era o furo mais barato de todos: bastava trocar um nome na URL
+    // para ler a caixa de entrada do consultorio vizinho.
+    const instance = await instanciaOuRecusa(db, res);
+    if (!instance) return;
     const chats = await EvolutionService.findChats(instance);
     res.json(chats);
   } catch (error) {
@@ -134,9 +249,14 @@ router.get('/api/evolution/chats', async function(req, res) {
 
 // 13.3. Contatos salvos na instância do WhatsApp
 
-router.get('/api/evolution/contacts', async function(req, res) {
+router.get('/api/evolution/contacts', async function (req, res) {
+  const db = escopo(req);
   try {
-    const instance = req.query.instance || await EvolutionService.getInstanceName();
+    // A instancia vem da CLINICA, e nao de `req.query.instance`. Aceitar da
+    // requisicao era o furo mais barato de todos: bastava trocar um nome na URL
+    // para ler a caixa de entrada do consultorio vizinho.
+    const instance = await instanciaOuRecusa(db, res);
+    if (!instance) return;
     const contacts = await EvolutionService.findContacts(instance);
     res.json(contacts);
   } catch (error) {
@@ -155,20 +275,32 @@ router.get('/api/evolution/messages', async function(req, res) {
   }
   const limit = Number(req.query.limit) || 60;
 
+  const db = escopo(req);
+
   // 1) Histórico registrado no próprio CRM (sempre disponível)
   let crmMessages = [];
   if (number) {
     try {
       const last8 = number.slice(-8);
-      const [rows] = await pool.query(
+      // O FILTRO ENTRA NAS DUAS SUBCONSULTAS, e nao so na de fora.
+      //
+      // `interactions.clinica_id` sozinho protegeria a linha; as subconsultas
+      // resolvem QUEM e o contato daquele telefone, e telefone repetido entre
+      // clinicas e caso real. Sem filtro nelas, o `IN` recebe o id do contato da
+      // vizinha -- e as interacoes daquele id que forem desta clinica saem, o que
+      // e raro, mas o conjunto de ids ja teria vazado a existencia do contato.
+      const [rows] = await db.q(
         `SELECT i.id, i.content, i.direction, i.type, i.created_at AS createdAt
            FROM interactions i
-          WHERE i.client_id IN (
+          WHERE i.clinica_id = :clinica
+            AND i.client_id IN (
                   SELECT id FROM leads
-                   WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(whatsapp, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ?
+                   WHERE clinica_id = :clinica
+                     AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(whatsapp, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ?
                   UNION
                   SELECT id FROM clients
-                   WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ?
+                   WHERE clinica_id = :clinica
+                     AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ?
                 )
           ORDER BY i.created_at ASC
           LIMIT ?`,
@@ -190,7 +322,8 @@ router.get('/api/evolution/messages', async function(req, res) {
   let waMessages = [];
   let waError = null;
   try {
-    const instance = req.query.instance || await EvolutionService.getInstanceName();
+    const instance = await cfgSvc.instancia(db);
+    if (!instance) throw new Error('esta clinica ainda nao tem WhatsApp conectado');
     waMessages = await EvolutionService.findMessages(instance, remoteJid, limit);
   } catch (error) {
     waError = error.message;
@@ -217,6 +350,7 @@ router.get('/api/evolution/messages', async function(req, res) {
 // 13.5. Envio direto pelo Gerenciador WhatsApp (também registra no CRM)
 
 router.post('/api/evolution/send', async function(req, res) {
+  const db = escopo(req);
   const { number, text, name, jid } = req.body || {};
   const targetNumber = normalizeWhatsappNumber(number || jidToNumber(jid));
 
@@ -228,18 +362,27 @@ router.post('/api/evolution/send', async function(req, res) {
   }
 
   try {
-    const result = await sendWhatsappText(targetNumber, String(text));
+    const instancia = await cfgSvc.instancia(db);
+    if (!instancia) {
+      return res.status(409).json({
+        error: 'Conecte o WhatsApp desta clinica antes de enviar. ' +
+               'Sem instancia, a mensagem sairia do numero de outro consultorio.'
+      });
+    }
+    const result = await sendWhatsappText(targetNumber, String(text), instancia);
 
     // Espelhar a mensagem no CRM: localizar (ou criar) o lead correspondente
     let clientId = null;
     try {
       const last8 = targetNumber.slice(-8);
-      const [clients] = await pool.query(
-        "SELECT id FROM clients WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ? LIMIT 1",
+      const [clients] = await db.q(
+        "SELECT id FROM clients WHERE clinica_id = :clinica" +
+        " AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ? LIMIT 1",
         [last8]
       );
-      const [leads] = await pool.query(
-        "SELECT id FROM leads WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(whatsapp, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ? LIMIT 1",
+      const [leads] = await db.q(
+        "SELECT id FROM leads WHERE clinica_id = :clinica" +
+        " AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(whatsapp, '+', ''), '-', ''), ' ', ''), '(', ''), 8) = ? LIMIT 1",
         [last8]
       );
 
@@ -248,15 +391,21 @@ router.post('/api/evolution/send', async function(req, res) {
       } else if (leads.length > 0) {
         clientId = leads[0].id;
       } else {
+        // Sem filtro, esta busca ACHAVA o contato da vizinha e a mensagem
+        // enviada era gravada na conversa dela. Com filtro, nao achando, nasce
+        // um lead DESTA clinica -- que e o certo: quem mandou a mensagem foi
+        // esta clinica, e o contato e dela.
         clientId = 'l_' + Math.random().toString(36).substring(2, 9);
-        await pool.query(
-          'INSERT INTO leads (id, name, whatsapp, treatment, message, source, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        await db.q(
+          'INSERT INTO leads (id, name, whatsapp, treatment, message, source, status, clinica_id)' +
+          ' VALUES (?, ?, ?, ?, ?, ?, ?, :clinica)',
           [clientId, (name && String(name).trim()) || `WhatsApp ${targetNumber.slice(-4)}`, targetNumber, 'Atendimento Geral', 'Conversa iniciada pelo Gerenciador WhatsApp.', 'site', 'contatado']
         );
       }
 
-      await pool.query(
-        'INSERT INTO interactions (id, client_id, type, content, direction) VALUES (?, ?, ?, ?, ?)',
+      await db.q(
+        'INSERT INTO interactions (id, client_id, type, content, direction, clinica_id)' +
+        ' VALUES (?, ?, ?, ?, ?, :clinica)',
         ['i_' + Math.random().toString(36).substring(2, 9), clientId, 'whatsapp', String(text), 'out']
       );
     } catch (dbErr) {
@@ -281,81 +430,5 @@ router.post('/api/evolution/instances/simulate-connect', function(req, res) {
   }
   res.json({ success: true });
 });
-
-// 14. Webhook WhatsApp Evolution
-
-router.post('/api/webhook/whatsapp', async function(req, res) {
-  const payload = req.body;
-  const messageData = payload.data || payload;
-  const key = messageData.key;
-  if (key && key.fromMe) {
-    return res.json({ status: 'ignored' });
-  }
-  const senderJid = key?.remoteJid || '';
-  const phone = senderJid.split('@')[0];
-  const contactName = messageData.pushName || 'Contato WhatsApp';
-  
-  const messageType = messageData.messageType || 'conversation';
-  let content = '';
-  if (messageType === 'conversation' || messageType === 'extendedTextMessage') {
-    content = messageData.message?.conversation || messageData.message?.extendedTextMessage?.text || '';
-  } else if (messageType === 'imageMessage') {
-    const caption = messageData.message?.imageMessage?.caption || '';
-    content = caption ? `[Imagem]: ${caption}` : '[Imagem Recebida]';
-  } else {
-    return res.json({ status: 'unsupported' });
-  }
-
-  if (!phone) return res.status(400).json({ error: 'No phone' });
-
-  try {
-    // Buscar se cliente ou lead já existe
-    let [clients] = await pool.query('SELECT id FROM clients WHERE REPLACE(phone, "+", "") = ?', [phone]);
-    let [leads] = await pool.query('SELECT id FROM leads WHERE REPLACE(whatsapp, "+", "") = ?', [phone]);
-    
-    let targetId = '';
-    if (clients.length > 0) {
-      targetId = clients[0].id;
-    } else if (leads.length > 0) {
-      targetId = leads[0].id;
-    } else {
-      // Capturar como novo lead automaticamente
-      targetId = 'l_' + Math.random().toString(36).substring(2, 9);
-      await pool.query('INSERT INTO leads (id, name, whatsapp, treatment, status) VALUES (?, ?, ?, ?, ?)', [
-        targetId, contactName, phone, 'Geral', 'novo'
-      ]);
-      const welcome = `Seja muito bem-vinda à Dra. Musa Estética de Elite! ✨\n\nRecebemos sua mensagem por aqui e nosso concierge de beleza já está ciente de seu contato. Como podemos ajudar no seu dia de beleza e cuidados? 🌸`;
-      // Uma falha no envio da saudação não deve derrubar o webhook (a mensagem
-      // recebida precisa ser registrada de qualquer forma).
-      try {
-        await sendWhatsappText(phone, welcome);
-      } catch (welcomeErr) {
-        console.error('[Webhook] Falha ao enviar saudação automática:', welcomeErr.message);
-      }
-
-      const interactionId = 'i_' + Math.random().toString(36).substring(2, 9);
-      await pool.query('INSERT INTO interactions (id, client_id, type, content, direction) VALUES (?, ?, ?, ?, ?)', [
-        interactionId, targetId, 'whatsapp', welcome, 'out'
-      ]);
-    }
-
-    const newInteractionId = 'i_' + Math.random().toString(36).substring(2, 9);
-    await pool.query('INSERT INTO interactions (id, client_id, type, content, direction) VALUES (?, ?, ?, ?, ?)', [
-      newInteractionId, targetId, 'whatsapp', content, 'in'
-    ]);
-
-    // A mensagem PODE ser resposta a um lembrete. Se for exatamente "1" ou "2",
-    // o compromisso reage; qualquer outro texto segue o fluxo humano normal,
-    // que ja foi registrado acima.
-    const agenda = await responderLembrete(phone, content);
-
-    res.json({ success: true, agenda: agenda });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-
-// 15. PDF Report Generation Endpoint
 
 module.exports = router;

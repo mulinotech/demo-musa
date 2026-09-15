@@ -187,21 +187,45 @@ test('compromisso sem paciente nao resgata', function () {
 
 /* ----------------------------------------- 4. idempotencia do acumulo */
 
+/** Escopo de mentira (M1.1c). Ver a nota igual em tests/estoque.test.js: o
+ *  serviço passou a receber um escopo de clínica, e o de mentira é um escopo de
+ *  verdade sobre um executor de mentira — o analisador da camada roda, e a
+ *  conferência abaixo faz este teste provar que a consulta leva o filtro.
+ *
+ *  A clínica de ensaio NÃO se chama `cl_1` de propósito: o compromisso destes
+ *  testes tem `client_id: 'cl_1'`, e um nome igual faria `semClinica` tirar o
+ *  parâmetro errado. Coincidência de valor entre coisas diferentes é como um
+ *  teste passa medindo outra coisa. */
+const escopo = require('../server/db/escopo');
+const CL = 'cl_ensaio';
+const semClinica = (params) => (params || []).filter((x) => x !== CL);
+
+const CFG_ATIVA = { points_per_real: 1, redemption_value: 0.1, expiry_days: 90,
+                    min_points_to_redeem: 100 };
+
 function fakeConn(estado) {
-  return {
+  return escopo.fazerEscopo(CL, {
     async query(sql, params) {
       const s = String(sql).replace(/\s+/g, ' ').trim();
-      if (/FROM loyalty_settings/.test(s)) return [[{ active: estado.ativo === false ? 0 : 1,
-        points_per_real: 1, redemption_value: 0.1, expiry_days: 90, min_points_to_redeem: 100 }]];
+      assert.ok((params || []).indexOf(CL) !== -1,
+        'consulta sem o valor da clinica nos parametros: ' + s.slice(0, 90));
+      const p = semClinica(params);
+
+      if (/FROM loyalty_settings/.test(s)) {
+        // Clinica sem linha de configuracao NAO pontua (M1.1c). O estado
+        // `semPrograma` finge exatamente esse caso.
+        if (estado.semPrograma) return [[]];
+        return [[Object.assign({ active: estado.ativo === false ? 0 : 1 }, CFG_ATIVA)]];
+      }
       if (/INSERT INTO loyalty_transactions/.test(s)) {
         if (estado.duplicado) { const e = new Error('dup'); e.code = 'ER_DUP_ENTRY'; throw e; }
-        estado.inseridos = (estado.inseridos || []).concat([{ tipo: /'(\w+)'/.exec(s.split('VALUES')[0].includes('type') ? s : s), pontos: params[2] }]);
+        estado.inseridos = (estado.inseridos || []).concat([{ pontos: p[2] }]);
         return [{ affectedRows: 1 }];
       }
       if (/FROM loyalty_transactions/.test(s)) return [estado.acumulos || []];
       return [[]];
     }
-  };
+  });
 }
 
 test('CONCLUIR DUAS VEZES CREDITA UMA VEZ SO', async function () {
@@ -225,29 +249,56 @@ test('programa desligado nao credita, e nao e erro', async function () {
 });
 
 test('fidelizacao nao instalada nao impede concluir atendimento', async function () {
-  const conn = { async query() { const e = new Error('no table'); e.code = 'ER_NO_SUCH_TABLE'; throw e; } };
+  const conn = escopo.fazerEscopo(CL, {
+    async query() { const e = new Error('no table'); e.code = 'ER_NO_SUCH_TABLE'; throw e; } });
   const r = await efeitos.creditarPontos(ap(), conn, {});
   assert.strictEqual(r.creditado, false);
-  assert.match(r.motivo, /nao instalada/);
+  assert.match(r.motivo, /nao configurado nesta clinica/);
+});
+
+test('a VALIDADE sai certa quando a data vem como objeto Date do driver', async function () {
+  // Defeito real, achado em 08/09 pela ferramenta de vazamento. O mysql2
+  // devolve DATETIME como Date; `String(Date).slice(0,10)` da "Mon Sep 08", e
+  // a validade saia `NaN-NaN-NaN`. O MySQL RECUSAVA o INSERT e a conclusao do
+  // atendimento morria com uma mensagem que nao dizia nada.
+  const estado = {};
+  const comDate = Object.assign(ap(), { starts_at: new Date('2026-09-08T09:00:00') });
+  const r = await efeitos.creditarPontos(comDate, fakeConn(estado), { chave: 'ap_date' });
+  assert.strictEqual(r.creditado, true);
+  assert.match(String(r.expiraEm), /^\d{4}-\d{2}-\d{2}$/,
+    'validade tem de ser uma data, e veio: ' + r.expiraEm);
+  assert.strictEqual(r.expiraEm, '2026-12-07', '90 dias depois de 08/09/2026');
+});
+
+test('CLINICA SEM PROGRAMA CONFIGURADO NAO PONTUA, e nao herda o da vizinha', async function () {
+  // A mudanca de comportamento da M1.1c, e a razao dela: herdar a configuracao
+  // da clinica 1 daria a regra de pontos de OUTRO negocio valendo dinheiro na
+  // recepcao desta. Falhar fechado aqui e visivel no primeiro atendimento.
+  const estado = { semPrograma: true };
+  const r = await efeitos.creditarPontos(ap(), fakeConn(estado), { chave: 'ap_1' });
+  assert.strictEqual(r.creditado, false);
+  assert.match(r.motivo, /nao configurado nesta clinica/);
+  assert.strictEqual(estado.inseridos, undefined, 'nao pode ter gravado ponto nenhum');
 });
 
 test('estorno de conclusao lanca pontos negativos e nao apaga o credito', async function () {
   const estado = { acumulos: [{ id: 'lt1', client_id: 'cl_1', points: 250 }] };
-  const conn = {
-    consultas: [],
+  const consultas = [];
+  const conn = escopo.fazerEscopo(CL, {
     async query(sql, params) {
       const s = String(sql).replace(/\s+/g, ' ').trim();
-      this.consultas.push(s);
-      if (/FROM loyalty_settings/.test(s)) return [[{ active: 1, points_per_real: 1, redemption_value: 0.1, expiry_days: 90, min_points_to_redeem: 100 }]];
+      consultas.push(s);
+      const p = semClinica(params);
+      if (/FROM loyalty_settings/.test(s)) return [[Object.assign({ active: 1 }, CFG_ATIVA)]];
       if (/SELECT id, client_id, points FROM loyalty_transactions/.test(s)) return [estado.acumulos];
-      if (/INSERT INTO loyalty_transactions/.test(s)) { estado.pontosGravados = params[2]; return [{ affectedRows: 1 }]; }
+      if (/INSERT INTO loyalty_transactions/.test(s)) { estado.pontosGravados = p[2]; return [{ affectedRows: 1 }]; }
       return [[]];
     }
-  };
+  });
   const r = await efeitos.estornarPontos(ap(), conn, { chave: 'ap_1', motivo: 'engano' });
   assert.strictEqual(r.estornado, true);
   assert.strictEqual(estado.pontosGravados, -250, 'negativo: desfaz um credito');
-  assert.ok(!conn.consultas.some((s) => /DELETE/.test(s)), 'o credito errado fica no extrato');
+  assert.ok(!consultas.some((s) => /DELETE/.test(s)), 'o credito errado fica no extrato');
 });
 
 /* -------------------------------------------------- 5. expiracao */
@@ -258,28 +309,45 @@ test('WORKER RODANDO DUAS VEZES NO MESMO DIA NAO EXPIRA EM DOBRO', async functio
       expires_at: '2026-08-01', expired: 0, created_at: '2025-08-01 10:00:00', description: 'x' }
   ];
   const estado = { chaves: new Set(), inseridos: 0 };
-  const pool = {
+  // ESCOPO, e nao pool: desde a M2.3 o worker recebe o escopo de UMA clinica, e
+  // o laco sobre as clinicas fica em `rodarUmaVez`. O reconhecimento abaixo
+  // exige a clausula de clinica -- um worker que voltasse a consultar sem
+  // filtrar deixaria de casar com os `if` e o teste quebraria, que e o que se
+  // quer.
+  //
+  // ATENCAO A DIFERENCA, que custou um teste vermelho: o EXECUTOR de baixo
+  // recebe o SQL **preparado**, ja com `:clinica` trocada por `?`. Quem ve a
+  // marca literal e o `q` do escopo -- e por isso os testes de lembrete, que
+  // fingem o proprio `q`, procuram `:clinica`, e este, que finge o executor,
+  // procura `clinica_id = ?`.
+  const db = escopo.fazerEscopo(CL, {
     async query(sql, params) {
-      const s = String(sql).replace(/\s+/g, ' ').trim();
-      if (/FROM loyalty_transactions t JOIN clients/.test(s)) return [linhas];
-      if (/INSERT INTO loyalty_transactions/.test(s)) {
-        const chave = 'WORKER|' + params[4] + '|EXPIRACAO';
+      const t = String(sql).replace(/\s+/g, ' ').trim();
+      const p = semClinica(params);
+      if (/FROM loyalty_transactions t JOIN clients/.test(t)) {
+        assert.match(t, /t\.clinica_id = \?/, 'a leitura do extrato tem de filtrar clinica');
+        return [linhas];
+      }
+      if (/INSERT INTO loyalty_transactions/.test(t)) {
+        assert.match(t, /clinica_id/, 'a transacao de expiracao tem de carimbar a clinica');
+        const chave = 'WORKER|' + p[4] + '|EXPIRACAO';
         if (estado.chaves.has(chave)) { const e = new Error('dup'); e.code = 'ER_DUP_ENTRY'; throw e; }
         estado.chaves.add(chave);
         estado.inseridos += 1;
         return [{ affectedRows: 1 }];
       }
-      if (/UPDATE loyalty_transactions SET expired/.test(s)) {
-        const l = linhas.find((x) => x.id === params[0]);
+      if (/UPDATE loyalty_transactions SET expired/.test(t)) {
+        assert.match(t, /clinica_id = \?/, 'a marca de expirado tem de filtrar clinica');
+        const l = linhas.find((x) => x.id === p[0]);
         if (l) l.expired = 1;
         return [{ affectedRows: 1 }];
       }
       return [[]];
     }
-  };
+  });
 
-  const a = await worker.rodarUmaVez(pool, { hoje: HOJE });
-  const b = await worker.rodarUmaVez(pool, { hoje: HOJE });
+  const a = await worker.umaClinica(db, { hoje: HOJE });
+  const b = await worker.umaClinica(db, { hoje: HOJE });
 
   assert.strictEqual(a.expirados, 1);
   assert.strictEqual(a.pontos, 100);

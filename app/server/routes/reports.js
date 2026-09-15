@@ -1,9 +1,24 @@
 'use strict';
+/** Relatórios do painel — convertido para a camada por clínica na M1.2.
+ *
+ *  ================================== POR QUE ESTE ARQUIVO É O MAIS PERIGOSO
+ *
+ *  Todas as treze consultas daqui são `SUM` e `COUNT`. Uma listagem sem filtro
+ *  mostra a linha da vizinha e alguém estranha o nome; uma **soma** sem filtro
+ *  devolve um número maior, e número não tem nome. "Faturamento total: R$
+ *  184.320" com o dinheiro de duas clínicas somado é indistinguível de um mês
+ *  bom — até alguém conferir com o extrato do banco, semanas depois.
+ *
+ *  Por isso aqui não há junção sem filtro em NENHUMA das tabelas: onde a
+ *  consulta cruza paciente, plano e sessão, as três filtram. Filtrar só a
+ *  primeira faria a soma atravessar pela junção.
+ */
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
+const escopo = require('../db/escopo');
 
 router.post('/api/reports/generate', async function(req, res) {
+  const db = escopo(req);
   const { aba, periodo } = req.body;
   
   const now = new Date();
@@ -15,8 +30,9 @@ router.post('/api/reports/generate', async function(req, res) {
     
     if (tabName === 'DASHBOARD' || tabName === 'VISÃO GERAL') {
       // 1. Faturamento Total (treatment_sessions)
-      const [sessionsFat] = await pool.query(
-        'SELECT SUM(price) as total, COUNT(*) as count FROM treatment_sessions WHERE status = "REALIZADA" AND session_date BETWEEN ? AND ?',
+      const [sessionsFat] = await db.q(
+        'SELECT SUM(price) as total, COUNT(*) as count FROM treatment_sessions ' +
+        'WHERE clinica_id = :clinica AND status = "REALIZADA" AND session_date BETWEEN ? AND ?',
         [start, end]
       );
       const faturamentoTotal = Number(sessionsFat[0]?.total || 0);
@@ -24,8 +40,9 @@ router.post('/api/reports/generate', async function(req, res) {
       const ticketMedio = sessionsCount > 0 ? faturamentoTotal / sessionsCount : 0;
 
       // 2. Taxa de Conversão de Leads
-      const [leadsConv] = await pool.query(
-        'SELECT COUNT(*) as total, SUM(IF(status = "agendado", 1, 0)) as conv FROM leads WHERE date BETWEEN ? AND ?',
+      const [leadsConv] = await db.q(
+        'SELECT COUNT(*) as total, SUM(IF(status = "agendado", 1, 0)) as conv FROM leads ' +
+        'WHERE clinica_id = :clinica AND date BETWEEN ? AND ?',
         [start, end]
       );
       const totalLeads = Number(leadsConv[0]?.total || 0);
@@ -33,14 +50,17 @@ router.post('/api/reports/generate', async function(req, res) {
       const taxaConversao = totalLeads > 0 ? (convLeads / totalLeads) * 100 : 0;
 
       // 3. Pacientes Ativos
-      const [plansAct] = await pool.query(
-        'SELECT COUNT(DISTINCT client_id) as count FROM treatment_plans WHERE status = "ATIVO"'
+      const [plansAct] = await db.q(
+        'SELECT COUNT(DISTINCT client_id) as count FROM treatment_plans ' +
+        'WHERE clinica_id = :clinica AND status = "ATIVO"'
       );
       const totalPacientesAtivos = Number(plansAct[0]?.count || 0);
 
       // 4. Top 3 Procedimentos
-      const [topProcs] = await pool.query(
-        'SELECT session_type as procedureName, SUM(price) as total FROM treatment_sessions WHERE status = "REALIZADA" AND session_date BETWEEN ? AND ? GROUP BY session_type ORDER BY total DESC LIMIT 3',
+      const [topProcs] = await db.q(
+        'SELECT session_type as procedureName, SUM(price) as total FROM treatment_sessions ' +
+        'WHERE clinica_id = :clinica AND status = "REALIZADA" AND session_date BETWEEN ? AND ? ' +
+        'GROUP BY session_type ORDER BY total DESC LIMIT 3',
         [start, end]
       );
 
@@ -61,8 +81,9 @@ router.post('/api/reports/generate', async function(req, res) {
       
     } else if (tabName === 'PIPELINE' || tabName === 'FUNIL' || tabName === 'FUNIL & LEADS') {
       // 1. Distribuição por estágio
-      const [stages] = await pool.query(
-        'SELECT status, COUNT(*) as count FROM leads WHERE date BETWEEN ? AND ? GROUP BY status',
+      const [stages] = await db.q(
+        'SELECT status, COUNT(*) as count FROM leads ' +
+        'WHERE clinica_id = :clinica AND date BETWEEN ? AND ? GROUP BY status',
         [start, end]
       );
       const distribuicaoPorEstagio = stages.map(s => ({
@@ -71,8 +92,9 @@ router.post('/api/reports/generate', async function(req, res) {
       }));
 
       // 2. Performance por canal
-      const [channels] = await pool.query(
-        'SELECT source, COUNT(*) as total, SUM(IF(status = "agendado", 1, 0)) as conv FROM leads WHERE date BETWEEN ? AND ? GROUP BY source',
+      const [channels] = await db.q(
+        'SELECT source, COUNT(*) as total, SUM(IF(status = "agendado", 1, 0)) as conv FROM leads ' +
+        'WHERE clinica_id = :clinica AND date BETWEEN ? AND ? GROUP BY source',
         [start, end]
       );
       const performancePorCanal = channels.map(c => ({
@@ -93,41 +115,52 @@ router.post('/api/reports/generate', async function(req, res) {
 
     } else if (tabName === 'CLIENTS' || tabName === 'PACIENTES') {
       // 1. Taxa de Retorno
-      const [retPlan] = await pool.query(
-        'SELECT COUNT(DISTINCT client_id) as count FROM treatment_plans'
+      const [retPlan] = await db.q(
+        'SELECT COUNT(DISTINCT client_id) as count FROM treatment_plans WHERE clinica_id = :clinica'
       );
-      const [retPlanMulti] = await pool.query(
-        'SELECT COUNT(*) as count FROM (SELECT client_id FROM treatment_plans GROUP BY client_id HAVING COUNT(*) > 1) t'
+      // O filtro vai DENTRO da subconsulta: no lado de fora ele nao existe, a
+      // coluna nem esta na projecao. Filtro em subconsulta e o lugar mais facil
+      // de esquecer, e o resultado sai maior sem nada dar erro.
+      const [retPlanMulti] = await db.q(
+        'SELECT COUNT(*) as count FROM (SELECT client_id FROM treatment_plans ' +
+        'WHERE clinica_id = :clinica GROUP BY client_id HAVING COUNT(*) > 1) t'
       );
       const totalClients = Number(retPlan[0]?.count || 1);
       const multiClients = Number(retPlanMulti[0]?.count || 0);
       const taxaRetorno = (multiClients / (totalClients || 1)) * 100;
 
       // 2. Lista Inativos (Top 10)
-      const [inativos] = await pool.query(
-        `SELECT c.id, c.name, c.phone, MAX(s.session_date) as lastSessionDate 
-         FROM clients c 
-         LEFT JOIN treatment_plans p ON c.id = p.client_id 
-         LEFT JOIN treatment_sessions s ON p.id = s.plan_id 
-         GROUP BY c.id 
-         HAVING lastSessionDate IS NULL OR lastSessionDate < DATE_SUB(NOW(), INTERVAL 60 DAY) 
+      // Tres tabelas, tres filtros -- e os dois dos LEFT JOIN ficam no ON, nao
+      // no WHERE: no WHERE eles virariam INNER JOIN e a paciente que NUNCA fez
+      // sessao desapareceria da lista de inativas. Ela e justamente a mais
+      // inativa que existe.
+      const [inativos] = await db.q(
+        `SELECT c.id, c.name, c.phone, MAX(s.session_date) as lastSessionDate
+         FROM clients c
+         LEFT JOIN treatment_plans p ON c.id = p.client_id AND p.clinica_id = :clinica
+         LEFT JOIN treatment_sessions s ON p.id = s.plan_id AND s.clinica_id = :clinica
+         WHERE c.clinica_id = :clinica
+         GROUP BY c.id
+         HAVING lastSessionDate IS NULL OR lastSessionDate < DATE_SUB(NOW(), INTERVAL 60 DAY)
          ORDER BY lastSessionDate ASC LIMIT 10`
       );
 
       // 3. Top 10 Maiores Investidores
-      const [investidores] = await pool.query(
-        `SELECT c.id, c.name, SUM(s.price) as totalInvestido 
-         FROM clients c 
-         JOIN treatment_plans p ON c.id = p.client_id 
-         JOIN treatment_sessions s ON p.id = s.plan_id 
-         WHERE s.status = "REALIZADA" AND s.session_date BETWEEN ? AND ? 
-         GROUP BY c.id 
+      const [investidores] = await db.q(
+        `SELECT c.id, c.name, SUM(s.price) as totalInvestido
+         FROM clients c
+         JOIN treatment_plans p ON c.id = p.client_id AND p.clinica_id = :clinica
+         JOIN treatment_sessions s ON p.id = s.plan_id AND s.clinica_id = :clinica
+         WHERE c.clinica_id = :clinica AND s.status = "REALIZADA"
+           AND s.session_date BETWEEN ? AND ?
+         GROUP BY c.id
          ORDER BY totalInvestido DESC LIMIT 10`,
         [start, end]
       );
 
       // 4. Alertas de Aniversário (simulado para o mês atual)
-      const [clientsData] = await pool.query('SELECT name, phone FROM clients LIMIT 5');
+      const [clientsData] = await db.q(
+        'SELECT name, phone FROM clients WHERE clinica_id = :clinica LIMIT 5');
       const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
       const mesAtualNome = meses[now.getMonth()];
       const alertasAniversario = clientsData.map((c, i) => ({
@@ -156,15 +189,18 @@ router.post('/api/reports/generate', async function(req, res) {
 
     } else if (tabName === 'CHAT' || tabName === 'ATENDIMENTO') {
       // 1. Total Mensagens
-      const [msgCount] = await pool.query(
-        'SELECT COUNT(*) as count FROM interactions WHERE created_at BETWEEN ? AND ?',
+      const [msgCount] = await db.q(
+        'SELECT COUNT(*) as count FROM interactions ' +
+        'WHERE clinica_id = :clinica AND created_at BETWEEN ? AND ?',
         [start, end]
       );
       const totalMensagens = Number(msgCount[0]?.count || 0);
 
       // 2. Horário de Pico
-      const [peakHour] = await pool.query(
-        'SELECT HOUR(created_at) as hour, COUNT(*) as count FROM interactions WHERE created_at BETWEEN ? AND ? GROUP BY hour ORDER BY count DESC LIMIT 1',
+      const [peakHour] = await db.q(
+        'SELECT HOUR(created_at) as hour, COUNT(*) as count FROM interactions ' +
+        'WHERE clinica_id = :clinica AND created_at BETWEEN ? AND ? ' +
+        'GROUP BY hour ORDER BY count DESC LIMIT 1',
         [start, end]
       );
       const peakHourVal = peakHour[0] ? `${peakHour[0].hour}:00 - ${peakHour[0].hour + 1}:00` : '14:00 - 15:00';

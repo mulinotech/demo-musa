@@ -1,7 +1,31 @@
 'use strict';
+/** As duas rotas de IA: laudo de avaliacao facial e sugestao de resposta.
+ *
+ *  ================================================= O QUE A M1.6b MUDOU AQUI
+ *
+ *  Era uma consulta so, e vazava do jeito mais dificil de perceber:
+ *  `suggest-reply` lia o historico de conversa por `client_id` **sem filtro** e
+ *  mandava esse historico para a IA como contexto. Ou seja: a clinica A pedia
+ *  uma sugestao de resposta e recebia um texto **construido sobre a conversa da
+ *  paciente da clinica B** -- com nome, valores negociados, o que a pessoa
+ *  contou. E o vazamento chegava reescrito, o que e pior: nao ha id nem marca na
+ *  resposta, so um texto plausivel que alguem copia e manda no WhatsApp.
+ *
+ *  Agora o historico e lido pela camada, e contato que nao e desta clinica
+ *  devolve 404 antes de qualquer chamada externa. A ordem importa aqui pelo
+ *  mesmo motivo da rota de interacoes: o dado sai do sistema quando a chamada e
+ *  feita, e conferir depois nao traz de volta.
+ *
+ *  ============================================ O QUE AINDA NAO MUDOU (M2)
+ *
+ *  O nome da clinica esta **escrito no proprio prompt** ("Dra. Musa Estetica de
+ *  Elite", "Dra. Musa"). Com 50 clinicas, a IA sugere resposta assinada pela
+ *  clinica errada e o laudo sai com o nome da especialista de outro consultorio.
+ *  Nao e vazamento -- e identidade visual e textual por clinica, que e M2.
+ */
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
+const escopo = require('../db/escopo');
 const path = require('path');
 const https = require('https');
 
@@ -94,6 +118,7 @@ Responda apenas com o texto do laudo, bem formatado e profissional.`;
 
 
 router.post('/api/gemini/suggest-reply', async function(req, res) {
+  const db = escopo(req);
   const { clientId } = req.body;
   const apiKey = process.env.GEMINI_API_KEY || '';
 
@@ -102,7 +127,19 @@ router.post('/api/gemini/suggest-reply', async function(req, res) {
   }
 
   try {
-    const [interactions] = await pool.query('SELECT content, direction FROM interactions WHERE client_id = ? ORDER BY created_at ASC LIMIT 10', [clientId]);
+    // O DONO DO CONTATO, ANTES DE QUALQUER CHAMADA EXTERNA. Sem isto, o
+    // historico da paciente da vizinha viraria contexto de prompt -- e voltaria
+    // reescrito, sem id e sem marca, so um texto que alguem copia e envia.
+    const [dono] = await db.q(
+      'SELECT id FROM leads WHERE clinica_id = :clinica AND id = ?' +
+      ' UNION SELECT id FROM clients WHERE clinica_id = :clinica AND id = ?',
+      [clientId, clientId]);
+    if (!dono.length) return res.status(404).json({ error: 'Contato nao encontrado.' });
+
+    const [interactions] = await db.q(
+      'SELECT content, direction FROM interactions' +
+      ' WHERE clinica_id = :clinica AND client_id = ? ORDER BY created_at ASC LIMIT 10',
+      [clientId]);
     let historicoTexto = interactions.map(i => `${i.direction === 'in' ? 'Cliente' : 'Clínica'}: ${i.content}`).join('\n');
     if (!historicoTexto) historicoTexto = "(Nenhum histórico de mensagens ainda)";
 

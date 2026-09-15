@@ -1,26 +1,37 @@
 'use strict';
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
-const { logSystemEvent } = require('../services/logs');
+const escopo = require('../db/escopo');
+const logs = require('../services/logs');
 
 router.get('/api/clients', async function(req, res) {
   const userRole = req.usuario ? req.usuario.papel : '';
   const salespersonId = req.usuario ? req.usuario.vendedorId : null;
 
+  const db = escopo(req);
+
   try {
     if (userRole === 'vendedor' && salespersonId) {
+      // AS DUAS TABELAS DA JUNCAO SAO FILTRADAS, nao so a principal.
+      //
+      // Com `c.clinica_id = :clinica` sozinho, esta consulta casaria a paciente
+      // da clinica A com um lead da clinica B pelo telefone -- e telefone
+      // repetido entre clinicas nao e hipotese remota: e a mesma pessoa
+      // atendida em dois lugares. O filtro do lado de la nao e redundancia.
       const query = `
         SELECT DISTINCT c.id, c.name, c.email, c.phone, c.anamnese, c.image_base64 as imageBase64, c.laudo, c.created_at as createdAt, c.updated_at as updatedAt 
         FROM clients c
         INNER JOIN leads l ON REPLACE(l.whatsapp, "+", "") = REPLACE(c.phone, "+", "")
-        WHERE l.salesperson_id = ?
+                          AND l.clinica_id = :clinica
+        WHERE c.clinica_id = :clinica AND l.salesperson_id = ?
         ORDER BY c.name ASC
       `;
-      const [rows] = await pool.query(query, [salespersonId]);
+      const [rows] = await db.q(query, [salespersonId]);
       return res.json(rows);
     }
-    const [rows] = await pool.query('SELECT id, name, email, phone, anamnese, image_base64 as imageBase64, laudo, created_at as createdAt, updated_at as updatedAt FROM clients ORDER BY name ASC');
+    const [rows] = await db.q(
+      'SELECT id, name, email, phone, anamnese, image_base64 as imageBase64, laudo, created_at as createdAt, updated_at as updatedAt' +
+      ' FROM clients WHERE clinica_id = :clinica ORDER BY name ASC', []);
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: 'Erro ao buscar clientes', details: error.message });
@@ -37,8 +48,10 @@ router.post('/api/clients', async function(req, res) {
   }
   const id = 'c_' + Math.random().toString(36).substring(2, 9);
   try {
-    await pool.query('INSERT INTO clients (id, name, email, phone) VALUES (?, ?, ?, ?)', [id, name, email || '', phone]);
-    await logSystemEvent(
+    await escopo(req).q(
+      'INSERT INTO clients (id, name, email, phone, clinica_id) VALUES (?, ?, ?, ?, :clinica)',
+      [id, name, email || '', phone]);
+    await logs.registrar(db, 
       'CLIENT_CREATE',
       `Novo paciente cadastrado: "${name}" (${phone})`,
       authorName,
@@ -66,8 +79,9 @@ router.patch('/api/clients/:id', async function(req, res) {
   const pLaudo = laudo === undefined ? null : laudo;
 
   try {
-    await pool.query(
-      'UPDATE clients SET name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone), anamnese = COALESCE(?, anamnese), image_base64 = COALESCE(?, image_base64), laudo = COALESCE(?, laudo) WHERE id = ?', 
+    await escopo(req).q(
+      'UPDATE clients SET name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone), anamnese = COALESCE(?, anamnese), image_base64 = COALESCE(?, image_base64), laudo = COALESCE(?, laudo)' +
+      ' WHERE clinica_id = :clinica AND id = ?',
       [pName, pEmail, pPhone, pAnamnese, pImageBase64, pLaudo, id]
     );
 
@@ -75,7 +89,7 @@ router.patch('/api/clients/:id', async function(req, res) {
     if (anamnese !== undefined) desc = `Anamnese do paciente ID ${id} atualizada`;
     if (laudo !== undefined) desc = `Laudo Digital do paciente ID ${id} atualizado`;
 
-    await logSystemEvent(
+    await logs.registrar(db, 
       'CLIENT_UPDATE',
       desc,
       authorName,
@@ -94,8 +108,10 @@ router.delete('/api/clients/:id', async function(req, res) {
   const { id } = req.params;
   const authorName = (req.usuario && req.usuario.nome) || 'Sistema';
   try {
-    await pool.query('DELETE FROM clients WHERE id = ?', [id]);
-    await logSystemEvent(
+    // O filtro no DELETE nao e formalidade: sem ele, um id adivinhado apaga a
+    // paciente de OUTRA clinica. Com ele, a linha simplesmente nao casa.
+    await escopo(req).q('DELETE FROM clients WHERE clinica_id = :clinica AND id = ?', [id]);
+    await logs.registrar(db, 
       'CLIENT_DELETE',
       `Paciente ID ${id} foi excluído do sistema`,
       authorName,

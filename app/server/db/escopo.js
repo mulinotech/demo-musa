@@ -197,13 +197,21 @@ function exigirFiltro(sql) {
 
 /* ------------------------------------------------------------------ o escopo */
 
-function fazerEscopo(clinicaId, executor) {
+function fazerEscopo(clinicaId, executor, identidade) {
   if (!clinicaId) {
     throw new Error('escopo: sem clinica na sessao. O porteiro deveria ter barrado antes.');
   }
 
+  const quem = identidade || {};
+
   const eu = {
     clinicaId: clinicaId,
+
+    /** Quem está fazendo, e de onde. Vem do token e do socket, nunca do corpo
+     *  da requisição — cabeçalho de autor enviado pelo cliente é assinatura
+     *  falsificável, e trilha que aceita autor falsificado não é trilha. */
+    autor: quem.autor || 'Sistema',
+    ip: quem.ip || null,
 
     /** Uma consulta, com o filtro obrigatório. */
     q: async function (sql, params) {
@@ -212,17 +220,61 @@ function fazerEscopo(clinicaId, executor) {
       return executor.query(p.sql, p.params);
     },
 
+    /** A linha da PRÓPRIA clínica, em `clinicas`.
+     *
+     *  ===================================== POR QUE ISTO E UM METODO, E NAO SQL
+     *
+     *  `clinicas` é a única tabela de dado que **não tem** coluna `clinica_id`
+     *  — ela É a lista de clínicas. Então `db.q` recusa qualquer leitura dela,
+     *  e com razão: a conferência exige a coluna, e a coluna não existe.
+     *
+     *  Sem esta porta, quem precisa do nome ou da instância da própria clínica
+     *  cairia em `todasAsClinicas` — que não filtra nada — para ler uma linha
+     *  que é dela. Seria abrir a exceção mais larga do sistema para o caso mais
+     *  estreito que existe.
+     *
+     *  Aqui não há como pedir a clínica errada: o `id` vem do escopo, e não de
+     *  argumento. É segura por construção, e não por conferência. */
+    minhaClinica: async function () {
+      const [r] = await executor.query(
+        'SELECT * FROM clinicas WHERE id = ? LIMIT 1', [clinicaId]);
+      return r[0] || null;
+    },
+
     /** Uma transação inteira dentro da mesma clínica.
      *
      *  A função recebe um escopo igual a este, amarrado à conexão da transação.
      *  Não há como pegar a conexão crua daqui: seria um buraco permanente na
      *  camada, aberto "só para o caso de". Quando a M1 precisar encaixar os
-     *  serviços que hoje recebem `conn`, a camada cresce -- a exceção não. */
+     *  serviços que hoje recebem `conn`, a camada cresce -- a exceção não.
+     *
+     *  ================================ POR QUE A CONEXÃO VEM DO `executor`
+     *
+     *  A primeira versão chamava `pool.getConnection()` -- o pool do módulo,
+     *  não o executor deste escopo. Dois defeitos, e o segundo é grave:
+     *
+     *  1. Escopo montado sobre um executor de mentira (os testes de serviço,
+     *     que não encostam no MySQL) abria conexão de verdade e travava a
+     *     suíte. Já aconteceu duas vezes neste projeto.
+     *
+     *  2. **Transação dentro de transação rodaria FORA da transação de fora.**
+     *     O escopo de dentro pegaria outra conexão do pool, e um rollback lá
+     *     fora não desfaria nada do que ela gravou. Silencioso: nenhum erro,
+     *     metade do efeito aplicada. Agora isto é recusado alto -- escopo
+     *     amarrado a conexão não tem `getConnection`. */
     transacao: async function (fn) {
-      const conn = await pool.getConnection();
+      if (!executor || typeof executor.getConnection !== 'function') {
+        throw new Error(
+          'escopo: transacao dentro de transacao (ou executor sem getConnection).\n' +
+          'Este escopo ja esta amarrado a uma conexao. Abrir outra faria as gravacoes ' +
+          'de dentro rodarem FORA da transacao de fora, e um rollback nao as desfaria.\n' +
+          'Passe adiante o `tx` que voce ja recebeu, em vez de abrir outra transacao.'
+        );
+      }
+      const conn = await executor.getConnection();
       try {
         await conn.beginTransaction();
-        const dentro = fazerEscopo(clinicaId, conn);
+        const dentro = fazerEscopo(clinicaId, conn, quem);
         const r = await fn(dentro);
         await conn.commit();
         return r;
@@ -249,7 +301,10 @@ function escopo(req) {
       'servico, ela nao deveria estar usando escopo(req).'
     );
   }
-  return fazerEscopo(clinicaId, pool);
+  return fazerEscopo(clinicaId, pool, {
+    autor: (req.usuario && req.usuario.nome) || 'Sistema',
+    ip: req.ip || null
+  });
 }
 
 /** A saída para quem PRECISA atravessar clínicas. Exige motivo escrito, e o
@@ -262,19 +317,88 @@ escopo.todasAsClinicas = function (motivo) {
       'Atravessar clinicas e excecao; excecao sem justificativa vira regra.'
     );
   }
-  return {
-    motivo: motivo,
-    q: async function (sql, params) {
-      // Sem exigirFiltro, de proposito: e o unico caminho do sistema em que a
-      // ausencia do filtro e deliberada.
-      try {
-        return await pool.query(sql, params || []);
-      } catch (e) {
-        e.message = '[todasAsClinicas: ' + motivo + '] ' + e.message;
-        throw e;
+  /** O executor cru, com o motivo colado em qualquer erro. `executor` e o pool
+   *  ou uma conexao de transacao. */
+  function cruCom(executor) {
+    return {
+      motivo: motivo,
+      q: async function (sql, params) {
+        // Sem exigirFiltro, de proposito: e o unico caminho do sistema em que a
+        // ausencia do filtro e deliberada.
+        try {
+          return await executor.query(sql, params || []);
+        } catch (e) {
+          e.message = '[todasAsClinicas: ' + motivo + '] ' + e.message;
+          throw e;
+        }
+      },
+
+      /** ============================ POR QUE A TRAVESSIA TAMBEM PRECISA DISTO
+       *
+       *  Acrescentado em 11/09, no nascimento de uma clinica (M2.4) -- e a falta
+       *  apareceu do jeito mais direto: `cru.transacao is not a function`.
+       *
+       *  A operacao que mais precisa de "tudo ou nada" e justamente a que
+       *  atravessa clinicas. Criar uma clinica grava em seis tabelas (a clinica,
+       *  o primeiro acesso, as categorias, preco, pontos, modelos) e **meia
+       *  clinica gravada e pior do que nenhuma**: a pessoa entra, encontra telas
+       *  que funcionam e telas que recusam, e ninguem sabe dizer o que faltou.
+       *
+       *  A alternativa seria abrir a transacao por fora e passar a conexao
+       *  adiante -- que e exatamente o que a camada existe para nao precisar. */
+      transacao: async function (fn) {
+        if (!executor || typeof executor.getConnection !== 'function') {
+          throw new Error(
+            '[todasAsClinicas: ' + motivo + '] transacao dentro de transacao.\n' +
+            'Este executor ja esta amarrado a uma conexao. Abrir outra faria as gravacoes ' +
+            'de dentro rodarem FORA da transacao de fora, e um rollback nao as desfaria.'
+          );
+        }
+        const conn = await executor.getConnection();
+        try {
+          await conn.beginTransaction();
+          const r = await fn(cruCom(conn));
+          await conn.commit();
+          return r;
+        } catch (e) {
+          try { await conn.rollback(); } catch (e2) { /* a conexao ja morreu */ }
+          throw e;
+        } finally {
+          conn.release();
+        }
       }
-    }
-  };
+    };
+  }
+
+  return cruCom(pool);
+};
+
+/** O escopo de uma clínica conhecida, SEM requisição.
+ *
+ *  Existe para os caminhos que sabem de quem é o trabalho, mas não têm sessão
+ *  de onde tirar: o webhook do WhatsApp (a clínica sai da instância que recebeu
+ *  a mensagem) e, na M2.3, as varreduras automáticas (que descobrem a clínica
+ *  de cada linha que processam).
+ *
+ *  ============================================ POR QUE ISTO E MELHOR QUE O POOL
+ *
+ *  Antes destes casos, quem não tinha sessão importava `pool` e falava com o
+ *  banco direto — e por isso ficava na catraca, indistinguível de código que
+ *  ainda não foi convertido. Com esta porta, "não tenho sessão" deixa de
+ *  significar "não uso a camada": a consulta continua obrigada a filtrar, e o
+ *  arquivo sai da lista de exceções.
+ *
+ *  Não é uma saída para atravessar clínicas — para isso existe
+ *  `todasAsClinicas`, que exige motivo escrito. Aqui a clínica é UMA, e quem
+ *  chama tem de saber dizer qual. */
+escopo.paraClinica = function (clinicaId, identidade) {
+  if (!clinicaId) {
+    throw new Error(
+      'escopo.paraClinica exige a clinica. Se voce nao sabe de quem e o trabalho, ' +
+      'nao invente: ou descubra antes, ou use escopo.todasAsClinicas com o motivo escrito.'
+    );
+  }
+  return fazerEscopo(clinicaId, pool, identidade);
 };
 
 escopo.MARCA = MARCA;
