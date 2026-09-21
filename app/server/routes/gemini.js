@@ -33,15 +33,39 @@ router.post('/api/gemini/analyze-skin', async function(req, res) {
   const { anamneseText, imageBase64, clientName } = req.body;
   const apiKey = process.env.GEMINI_API_KEY || '';
 
+  /* SEM CHAVE, ESTA ROTA RECUSA. ANTES ELA INVENTAVA UM LAUDO (M5.12, 21/09).
+   *
+   * ======================================================= O QUE ESTAVA AQUI
+   *
+   * Quando a clínica não tinha a chave do Gemini configurada, esta rota
+   * respondia **200** com um texto montado no código:
+   *
+   *     ## LAUDO DE AVALIAÇÃO FACIAL DIGITAL - CLÍNICA PREMIUM
+   *     **Paciente:** <nome da paciente>
+   *     **Data da Avaliação:** <hoje>
+   *     **Dermatologista / Especialista em Estética Avançada:** Dra. Musa
+   *
+   * Três coisas erradas ao mesmo tempo, e todas graves:
+   *
+   * 1. É um **documento clínico fabricado**. Não veio de IA nenhuma nem de
+   *    avaliação nenhuma — foi escrito aqui dentro, com o nome da paciente
+   *    preenchido para parecer um laudo de verdade.
+   * 2. Vem **assinado por "Dra. Musa"**, que é a profissional de UMA das 50
+   *    clínicas. Qualquer outra clínica recebia um laudo com o nome de uma
+   *    profissional que não é a dela e que nunca viu aquela paciente.
+   * 3. A tela **gravava na ficha** assim que chegava (o PATCH automático que
+   *    saiu de `ClientDirectory` nesta mesma tarefa). Ou seja: bastava clicar
+   *    em "Gerar Laudo Clínico IA" numa clínica sem chave para o prontuário
+   *    ganhar um laudo falso, assinado por outra pessoa, sem um único aviso.
+   *
+   * Recusar é a única resposta honesta. A tela já sabe o que fazer com o 400:
+   * mostra onde configurar a chave e oferece escrever o laudo à mão. */
   if (!apiKey) {
-    const defaultResponse = `
-## LAUDO DE AVALIAÇÃO FACIAL DIGITAL - CLÍNICA PREMIUM
-
-**Paciente:** ${clientName || 'Paciente Premium'}
-**Data da Avaliação:** ${new Date().toLocaleDateString('pt-BR')}
-**Dermatologista / Especialista em Estética Avançada:** Dra. Musa
-`;
-    return res.json({ report: defaultResponse });
+    return res.status(400).json({
+      error: 'A análise por IA não está configurada para esta clínica.',
+      details: 'Peça a um administrador para informar a chave do Gemini. ' +
+        'Enquanto isso, o laudo pode ser escrito manualmente.'
+    });
   }
 
   try {

@@ -60,7 +60,11 @@ const FAMILIAS = [
   ]],
   ['planos', 'treatment_plans', [
     ['PATCH',  '/api/treatment-plans/{ID}', { status: 'CANCELADO' }],
-    ['DELETE', '/api/treatment-plans/{ID}', null]
+    ['DELETE', '/api/treatment-plans/{ID}', null],
+    /* M5.12: programar as datas do plano da vizinha reescreveria o calendario
+       de tratamento de pacientes de outra clinica. */
+    ['POST',   '/api/treatment-plans/{ID}/programar',
+      { inicio: '2030-01-07', periodicidade: 'Semanal' }]
   ]],
   ['atendimentos', 'treatments', [
     ['PATCH',  '/api/treatments/{ID}', { notes: 'invadido' }]

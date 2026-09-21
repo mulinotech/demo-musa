@@ -18,7 +18,8 @@ import {
   Pencil,
   Check,
   Save,
-  Trash2
+  Trash2,
+  AlertCircle
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { comDdi, temNumero, DDI_PADRAO } from '../lib/telefone.mjs';
@@ -67,6 +68,18 @@ export default function ClientDirectory({
   const [showAddTreatment, setShowAddTreatment] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditingLaudo, setIsEditingLaudo] = useState(false);
+  /* O LAUDO DE IA PRECISA DE REVISAO ANTES DE ENTRAR NA FICHA (M5.12).
+   *
+   * Ate aqui o texto gerado era GRAVADO NA FICHA na mesma hora, com um PATCH
+   * logo depois da resposta da IA. Ninguem tinha lido ainda. Documento clinico
+   * que entra no prontuario sem passar por olho de profissional e' o pior caso
+   * desta semana inteira: a tela fica coerente, o laudo parece emitido, e a
+   * conduta e' de quem assina -- nao da IA.
+   *
+   * Agora o texto aparece em modo de edicao, marcado como NAO SALVO, e so entra
+   * na ficha quando alguem clica em Salvar. */
+  const [laudoNaoSalvo, setLaudoNaoSalvo] = useState(false);
+  const [erroLaudo, setErroLaudo] = useState('');
   const [editingTreatmentId, setEditingTreatmentId] = useState<string | null>(null);
   const [editTreatmentData, setEditTreatmentData] = useState<{procedure: string, sessionDate: string, notes: string, price?: number | string}>({procedure: '', sessionDate: '', notes: '', price: ''});
 
@@ -174,13 +187,25 @@ export default function ClientDirectory({
       setAnalysisImage(selectedClient.imageBase64 || null);
       setAnalysisResult(selectedClient.laudo || null);
       setIsEditingLaudo(false);
+      setLaudoNaoSalvo(false);
+      setErroLaudo('');
       setEditingTreatmentId(null);
     } else {
       setAnamneseText('');
       setAnalysisImage(null);
       setAnalysisResult(null);
     }
-  }, [selectedClient]);
+    /* DEPENDE DO `id`, E NAO DO OBJETO (M5.12).
+     *
+     * Com o objeto, qualquer recarga da lista trocava a identidade de
+     * `selectedClient` e este efeito rodava de novo -- APAGANDO o aviso de erro
+     * que acabara de ser escrito. Era por isso que a falha do laudo nao
+     * aparecia: ela era posta na tela e limpa meio segundo depois, pela recarga
+     * disparada dentro da propria funcao. Quem pegou foi o ensaio de navegador.
+     *
+     * Trocar de paciente e' o que tem de zerar o formulario; recarregar os
+     * dados da MESMA paciente, nao. */
+  }, [selectedClient?.id]);
 
   const handleSendWhatsAppClient = (client: Client) => {
     let clean = client.phone.replace(/\D/g, "");
@@ -288,6 +313,7 @@ export default function ClientDirectory({
     if (!selectedClient) return;
     const clientIdAtStart = selectedClient.id;
     setAnalyzingSkin(true);
+    setErroLaudo('');
 
     try {
       // Auto-save anamnese text and image to the client first
@@ -317,28 +343,35 @@ export default function ClientDirectory({
       if (response.ok) {
         if (selectedClient && selectedClient.id === clientIdAtStart) {
           setAnalysisResult(data.report);
-          setIsEditingLaudo(true); // Open edit mode immediately after generation
+          setIsEditingLaudo(true);
+          /* O PATCH que gravava o laudo aqui SAIU (M5.12). Ver o comentario em
+             `laudoNaoSalvo`, la em cima. */
+          setLaudoNaoSalvo(true);
         }
-        
-        // Auto-save generated report
-        await fetch(`/api/clients/${clientIdAtStart}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ laudo: data.report })
-        });
-        
+
         if (onUpdateClientData) onUpdateClientData();
-        
+
         // Refresh local treatment history trigger or simply inform
         if (data.treatment) {
           treatments.push(data.treatment);
         }
       } else {
-        alert(data.error + (data.details ? '\nDetalhes: ' + data.details : ''));
+        /* O `alert()` saiu daqui: ele trava a aba, some ao ser fechado e nao
+           deixa a pessoa ler o motivo junto com a tela. E, sobretudo, nao dizia
+           O QUE FAZER -- diagnostico sem proximo passo so troca uma duvida por
+           outra (a mesma regra da M5.9). */
+        const motivo = data.details || data.error || `erro ${response.status}`;
+        setErroLaudo(
+          response.status === 400
+            ? 'A IA não está configurada para esta clínica. Um administrador precisa informar a chave do Gemini em Cadastros. Enquanto isso, use "Escrever Laudo Manualmente".'
+            : `Não foi possível gerar o laudo: ${motivo}. Tente de novo em alguns instantes; se continuar, escreva o laudo manualmente — o texto da anamnese já foi salvo.`
+        );
       }
     } catch (error) {
       console.error(error);
-      alert('Erro ao se conectar ao servidor.');
+      setErroLaudo(
+        'Falha de rede ao falar com o servidor. A anamnese que você escreveu já foi salva; ' +
+        'tente gerar de novo ou use "Escrever Laudo Manualmente".');
     } finally {
       setAnalyzingSkin(false);
     }
@@ -591,6 +624,16 @@ export default function ClientDirectory({
                 </button>
               </div>
 
+              {/* A FALHA FICA NA TELA, COM O QUE FAZER (M5.12).
+                * Antes era um `alert()`: travava a aba, sumia ao ser fechado e
+                * nao dizia o proximo passo. */}
+              {erroLaudo && (
+                <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 leading-relaxed">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{erroLaudo}</span>
+                </div>
+              )}
+
               {/* Analysis Result Drawer */}
               {analysisResult && (
                 <motion.div 
@@ -604,13 +647,25 @@ export default function ClientDirectory({
                       <span>Laudo de Estética Integrativa Premium</span>
                     </span>
                     <div className="flex items-center space-x-3">
-                      <span className="text-xxs font-mono text-brand-brown/60">
-                        Emitido em {new Date().toLocaleDateString('pt-BR')}
-                      </span>
+                      {/* Aqui dizia "Emitido em {hoje}" -- SEMPRE a data de hoje,
+                         * inclusive num laudo salvo em marco. A ficha nao guarda
+                         * data de emissao, entao a tela inventava uma. Trocado
+                         * pelo unico estado que da para afirmar: ja esta na ficha
+                         * ou ainda nao. */}
+                      {laudoNaoSalvo ? (
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                          Gerado pela IA · ainda não salvo
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-brand-brown/50">
+                          salvo na ficha
+                        </span>
+                      )}
                       {isEditingLaudo ? (
                         <button
                           onClick={async () => {
                             setIsEditingLaudo(false);
+                            setLaudoNaoSalvo(false);
                             await fetch(`/api/clients/${selectedClient.id}`, {
                               method: 'PATCH',
                               headers: { 'Content-Type': 'application/json' },
@@ -638,6 +693,15 @@ export default function ClientDirectory({
                       )}
                     </div>
                   </div>
+                  {/* A CONDUTA E DE QUEM ASSINA, E NAO DA IA.
+                     * O aviso fica DENTRO do painel do laudo, e nao no rodape da
+                     * tela: quem le o texto tem de ler isto junto. */}
+                  <p className="text-[10px] text-brand-brown/70 bg-brand-beige/60 border border-brand-gold/20 rounded-lg px-3 py-2 leading-relaxed">
+                    Texto gerado por inteligência artificial a partir da anamnese e da foto.
+                    <strong> Ele não substitui avaliação clínica</strong> — a profissional responsável
+                    revisa, corrige o que for necessário e só então salva na ficha da paciente.
+                  </p>
+
                   {isEditingLaudo ? (
                     <textarea
                       value={analysisResult}

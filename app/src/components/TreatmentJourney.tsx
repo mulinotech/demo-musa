@@ -15,7 +15,8 @@ import {
   Edit3,
   Coins,
   Clipboard,
-  Trash2
+  Trash2,
+  CalendarClock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SeletorUnico, SeletorMultiplo } from './CamposDeSelecao';
@@ -119,6 +120,73 @@ export default function TreatmentJourney({
     return () => { vivo = false; };
   }, []);
   const [price, setPrice] = useState('');
+
+  /* PROGRAMAR AS DATAS DO PLANO (M5.12).
+   *
+   * O plano JA guardava data de inicio e periodicidade e criava as sessoes sem
+   * data nenhuma -- dez janelas e dez datas digitadas a mao. Este modal e a
+   * porta para os planos que nasceram antes disso, e para quando o tratamento
+   * muda de ritmo no meio. */
+  const [programando, setProgramando] = useState<TreatmentPlan | null>(null);
+  const [progInicio, setProgInicio] = useState('');
+  const [progPeriodo, setProgPeriodo] = useState('Quinzenal');
+  const [progIntervalo, setProgIntervalo] = useState('21');
+  const [progResposta, setProgResposta] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [progPrecisaRecarregar, setProgPrecisaRecarregar] = useState(false);
+
+  const fecharProgramacao = async () => {
+    const recarregar = progPrecisaRecarregar;
+    const id = programando?.id;
+    setProgramando(null);
+    setProgPrecisaRecarregar(false);
+    if (recarregar && id) await onUpdatePlan(id, {});
+  };
+
+  const abrirProgramacao = (plan: TreatmentPlan) => {
+    setProgramando(plan);
+    setProgInicio(plan.startDate ? String(plan.startDate).split('T')[0]
+      : new Date().toISOString().split('T')[0]);
+    const conhecida = ['Semanal', 'Quinzenal', 'Mensal'].includes(plan.periodicity || '');
+    setProgPeriodo(conhecida ? (plan.periodicity as string) : 'Customizado');
+    setProgResposta(null);
+  };
+
+  const programar = async () => {
+    if (!programando) return;
+    setProgResposta(null);
+    try {
+      const r = await fetch(`/api/treatment-plans/${programando.id}/programar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inicio: progInicio,
+          periodicidade: progPeriodo,
+          intervaloDias: progPeriodo === 'Customizado' ? Number(progIntervalo) : undefined
+        })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setProgResposta({ ok: false, texto: d.error || 'Nao foi possivel programar.' }); return; }
+
+      /* A resposta conta o que NAO mudou, e nao so o que mudou: sessao ja
+         realizada nao e reprogramada, e quem programou precisa saber disso
+         antes de olhar a lista e achar que deu errado. */
+      const partes = [d.programadas + (d.programadas === 1 ? ' sessao programada' : ' sessoes programadas')];
+      if (d.preservadas) {
+        partes.push(d.preservadas + (d.preservadas === 1 ? ' ja realizada nao foi tocada'
+          : ' ja realizadas nao foram tocadas'));
+      }
+      if (d.avisos && d.avisos.length) partes.push(d.avisos.join(' '));
+      setProgResposta({ ok: true, texto: partes.join('. ') + '.' });
+      /* NAO recarrega aqui, e isso e' correcao de 21/09: a recarga remontava a
+         arvore, o modal sumia junto, e a pessoa nunca lia quantas sessoes
+         entraram nem quantas foram preservadas. Clicar e a tela fechar sem
+         dizer nada e' o silencio de sempre, em outro lugar. A recarga acontece
+         ao FECHAR o modal. */
+      setProgPrecisaRecarregar(true);
+    } catch {
+      setProgResposta({ ok: false, texto: 'Falha de rede ao programar as datas.' });
+    }
+  };
 
   // Maintenance follow-up modal
   const [maintenancePlan, setMaintenancePlan] = useState<TreatmentPlan | null>(null);
@@ -282,6 +350,14 @@ export default function TreatmentJourney({
                         <Play className="h-3.5 w-3.5" />
                       </button>
                     )}
+                    <button
+                      onClick={() => abrirProgramacao(plan)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-brand-brown/80 hover:bg-brand-beige rounded-lg border border-brand-gold/25"
+                      title="Preenche a data prevista de todas as sessões que ainda não aconteceram"
+                    >
+                      <CalendarClock className="h-3.5 w-3.5 text-brand-gold" />
+                      <span>Programar datas</span>
+                    </button>
                     <button
                       onClick={async () => {
                         if (confirm('Deseja excluir permanentemente este plano e todas as suas sessões?')) {
@@ -685,6 +761,91 @@ export default function TreatmentJourney({
                 </button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* PROGRAMAR AS DATAS DO PLANO (M5.12) */}
+      {programando && (
+        <div className="fixed inset-0 bg-brand-brown/40 backdrop-blur-xs flex items-center justify-center z-[110] p-4">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-brand-beige border border-brand-gold max-w-sm w-full rounded-2xl p-6 shadow-2xl space-y-4"
+          >
+            <div>
+              <h3 className="text-base font-serif font-bold text-brand-brown">Programar as datas</h3>
+              <p className="text-xxs text-brand-brown/70 leading-relaxed mt-1">
+                Preenche a data prevista de cada sessão de <strong>{programando.title}</strong>.
+                Sessões já realizadas, canceladas ou com falta <strong>não são tocadas</strong> —
+                a data delas é o dia em que a paciente esteve aqui.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Primeira sessão</label>
+                <input
+                  type="date"
+                  value={progInicio}
+                  onChange={(e) => setProgInicio(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                />
+              </div>
+              <div>
+                <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">De quanto em quanto</label>
+                <select
+                  value={progPeriodo}
+                  onChange={(e) => setProgPeriodo(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                >
+                  <option value="Semanal">Semanal</option>
+                  <option value="Quinzenal">Quinzenal</option>
+                  <option value="Mensal">Mensal</option>
+                  <option value="Customizado">Outro intervalo</option>
+                </select>
+              </div>
+            </div>
+
+            {progPeriodo === 'Customizado' && (
+              <div>
+                <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">A cada quantos dias</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={progIntervalo}
+                  onChange={(e) => setProgIntervalo(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                />
+              </div>
+            )}
+
+            {progResposta && (
+              <p className={`text-xxs font-medium leading-relaxed py-2 px-3 rounded-lg border ${
+                progResposta.ok
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-150'
+                  : 'text-red-600 bg-red-50 border-red-150'
+              }`}>
+                {progResposta.texto}
+              </p>
+            )}
+
+            <div className="flex justify-end space-x-3 pt-1">
+              <button
+                type="button"
+                onClick={fecharProgramacao}
+                className="px-4 py-2 text-xs font-medium text-brand-brown/70"
+              >
+                {progResposta && progResposta.ok ? 'Fechar' : 'Cancelar'}
+              </button>
+              <button
+                onClick={programar}
+                className="bg-brand-brown text-brand-beige px-4 py-2 rounded-xl text-xs font-semibold hover:bg-brand-brown/90 shadow-md"
+              >
+                Programar
+              </button>
+            </div>
           </motion.div>
         </div>
       )}

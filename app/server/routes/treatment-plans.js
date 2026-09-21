@@ -17,6 +17,8 @@
 const express = require('express');
 const router = express.Router();
 const escopo = require('../db/escopo');
+const agenda = require('../services/agenda-de-sessoes');
+const logs = require('../services/logs');
 
 router.get('/api/treatment-plans', async function(req, res) {
   const db = escopo(req);
@@ -41,7 +43,7 @@ router.get('/api/treatment-plans', async function(req, res) {
 
 router.post('/api/treatment-plans', async function(req, res) {
   const db = escopo(req);
-  const { clientId, title, clinicalObjective, totalSessions, periodicity, status, startDate, estimatedEndDate, sessionPrice } = req.body;
+  const { clientId, title, clinicalObjective, totalSessions, periodicity, status, startDate, estimatedEndDate, sessionPrice, intervaloDias } = req.body;
   if (!clientId || !title || !totalSessions) {
     return res.status(400).json({ error: 'Campos obrigatórios ausentes (clientId, title, totalSessions).' });
   }
@@ -51,6 +53,11 @@ router.post('/api/treatment-plans', async function(req, res) {
       'SELECT id FROM clients WHERE clinica_id = :clinica AND id = ?', [clientId]);
     if (!dono.length) return res.status(404).json({ error: 'Paciente nao encontrado.' });
 
+    const programado = agenda.datasDasSessoes({
+      inicio: startDate, periodicidade: periodicity,
+      total: Number(totalSessions), intervaloDias: intervaloDias
+    });
+
     // O plano e as sessoes dele numa transacao: plano gravado sem as sessoes
     // deixa um plano de N sessoes com zero sessoes, e a tela nao tem como
     // consertar isso -- ela so sabe criar plano novo.
@@ -59,15 +66,37 @@ router.post('/api/treatment-plans', async function(req, res) {
         id, clientId, title, clinicalObjective || '', totalSessions, periodicity || '', status || 'ATIVO', startDate ? new Date(startDate) : null, estimatedEndDate ? new Date(estimatedEndDate) : null
       ]);
 
+      /* AS SESSOES JA NASCEM COM DATA PREVISTA (M5.12).
+       *
+       * Ate aqui elas nasciam com `session_date` vazio -- e o formulario do
+       * plano JA perguntava a data de inicio e a periodicidade, gravava as
+       * duas, e nao fazia com elas a unica coisa que elas servem para fazer.
+       * Plano de 10 sessoes virava dez janelas e dez datas digitadas a mao.
+       *
+       * Se a programacao nao der (data invalida, periodicidade sem intervalo),
+       * as sessoes nascem sem data, exatamente como antes: o plano tem de ser
+       * criado de um jeito ou de outro, e a tela mostra o motivo. */
       for (let i = 1; i <= totalSessions; i++) {
         const sessId = 's_sess_' + Math.random().toString(36).substring(2, 9);
-        await tx.q('INSERT INTO treatment_sessions (id, plan_id, session_number, session_type, status, price, clinica_id) VALUES (?, ?, ?, ?, ?, ?, :clinica)', [
-          sessId, id, i, 'SESSAO_TRATAMENTO', 'PENDENTE', sessionPrice !== undefined && sessionPrice !== null ? sessionPrice : null
+        const data = programado.datas[i - 1] || null;
+        await tx.q('INSERT INTO treatment_sessions (id, plan_id, session_number, session_type, status, session_date, price, clinica_id) VALUES (?, ?, ?, ?, ?, ?, ?, :clinica)', [
+          sessId, id, i, 'SESSAO_TRATAMENTO', 'PENDENTE', data,
+          sessionPrice !== undefined && sessionPrice !== null ? sessionPrice : null
         ]);
       }
     });
 
-    res.status(201).json({ id, clientId, title, clinicalObjective, totalSessions, periodicity, status, startDate, estimatedEndDate });
+    res.status(201).json({
+      id, clientId, title, clinicalObjective, totalSessions, periodicity, status,
+      startDate, estimatedEndDate,
+      /* A tela precisa saber se as datas entraram, e por que nao entraram
+         quando nao entraram -- senao a recepcao descobre abrindo as dez. */
+      programacao: {
+        programadas: programado.datas.length,
+        avisos: programado.avisos,
+        erro: programado.erro
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao criar plano de tratamento', details: error.message });
   }
@@ -116,6 +145,87 @@ router.delete('/api/treatment-plans/:id', async function(req, res) {
 });
 
 // 10.6. Atualizar Sessão de Tratamento
+
+/** PROGRAMAR AS DATAS DE UM PLANO QUE JÁ EXISTE (M5.12).
+ *
+ *  A criação do plano já programa. Esta rota é para os planos que existiam
+ *  antes da M5.12 — e para quando o tratamento muda de ritmo no meio ("vamos
+ *  espaçar para mensal").
+ *
+ *  ================================== O QUE ELA NUNCA MEXE, E POR QUE IMPORTA
+ *
+ *  **Sessão que já aconteceu não é reprogramada.** `REALIZADA`, `FALTOU`,
+ *  `CANCELADA` e `REAGENDADA` são fatos sobre o passado: a data ali é a data em
+ *  que a paciente esteve (ou não esteve) na clínica. Reescrevê-las ao mudar o
+ *  ritmo do que ainda vem seria falsificar prontuário — em silêncio, e com a
+ *  tela ficando coerente.
+ *
+ *  Então só `PENDENTE` e `AGENDADA` recebem data nova, e a resposta diz quantas
+ *  foram preservadas. Quem programa fica sabendo o que não mudou, em vez de
+ *  supor que mudou tudo.
+ *
+ *  As datas são calculadas para o plano INTEIRO e cada sessão recebe a da sua
+ *  posição: assim a 7ª sessão continua sendo a 7ª data do ritmo, mesmo que as
+ *  seis primeiras estejam congeladas. Recomeçar a contagem na primeira pendente
+ *  encavalaria o plano por cima do que já foi feito. */
+router.post('/api/treatment-plans/:id/programar', async function (req, res) {
+  const db = escopo(req);
+  const { id } = req.params;
+  const { inicio, periodicidade, intervaloDias } = req.body || {};
+
+  const CONGELADAS = ['REALIZADA', 'FALTOU', 'CANCELADA', 'REAGENDADA'];
+
+  try {
+    const [plano] = await db.q(
+      'SELECT id, total_sessions AS total FROM treatment_plans' +
+      ' WHERE clinica_id = :clinica AND id = ?', [id]);
+    if (!plano[0]) return res.status(404).json({ error: 'Plano nao encontrado.' });
+
+    const [sessoes] = await db.q(
+      'SELECT id, session_number AS n, status FROM treatment_sessions' +
+      ' WHERE clinica_id = :clinica AND plan_id = ? ORDER BY session_number', [id]);
+
+    const total = Math.max(Number(plano[0].total) || 0, sessoes.length);
+    const r = agenda.datasDasSessoes({
+      inicio: inicio, periodicidade: periodicidade, total: total, intervaloDias: intervaloDias
+    });
+    if (r.erro) return res.status(400).json({ error: r.erro });
+
+    const preservadas = sessoes.filter((s) => CONGELADAS.indexOf(s.status) !== -1);
+    const mover = sessoes.filter((s) => CONGELADAS.indexOf(s.status) === -1);
+
+    await db.transacao(async function (tx) {
+      for (const s of mover) {
+        const data = r.datas[s.n - 1];
+        if (!data) continue;
+        await tx.q(
+          'UPDATE treatment_sessions SET session_date = ?' +
+          ' WHERE clinica_id = :clinica AND id = ?', [data, s.id]);
+      }
+      await tx.q(
+        'UPDATE treatment_plans SET start_date = ?, periodicity = ?' +
+        ' WHERE clinica_id = :clinica AND id = ?',
+        [r.datas[0], String(periodicidade || ''), id]);
+    });
+
+    await logs.registrar(db, 'PLANO',
+      'Datas do plano programadas: ' + mover.length + ' sessao(oes) a partir de ' +
+      r.datas[0] + (preservadas.length
+        ? '. ' + preservadas.length + ' sessao(oes) ja realizada(s) nao foram tocadas.'
+        : '.'));
+
+    res.json({
+      programadas: mover.length,
+      preservadas: preservadas.length,
+      avisos: r.avisos,
+      datas: r.datas
+    });
+  } catch (error) {
+    console.error('[planos]', error && error.message);
+    res.status(500).json({ error: 'Erro ao programar as datas do plano.' });
+  }
+});
+
 
 router.patch('/api/treatment-sessions/:id', async function(req, res) {
   const db = escopo(req);
