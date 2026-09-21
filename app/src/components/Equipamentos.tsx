@@ -18,7 +18,7 @@
  * isso, em vez de deixar a pessoa descobrir depois.
  */
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, RotateCcw, Check, X, Pencil, Wrench } from 'lucide-react';
+import { Plus, RotateCcw, Check, X, Pencil, Wrench, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 
 type Equipamento = { id: string; name: string; active: number };
@@ -72,6 +72,8 @@ export default function Equipamentos({ podeGerenciar }: { podeGerenciar: boolean
         <p className="text-xs text-brand-brown/70">
           Os aparelhos que a clínica usa nas sessões. Cadastrados aqui, viram lista de escolha
           na hora de lançar a evolução — em vez de cada pessoa digitar o nome do seu jeito.
+          Aparelho que sai de uso é <strong>inativado</strong>, nunca apagado: ele some da lista
+          de escolha e as sessões já lançadas com ele continuam como estão.
         </p>
       </div>
 
@@ -166,19 +168,31 @@ export default function Equipamentos({ podeGerenciar }: { podeGerenciar: boolean
                     </>
                   ) : (
                     <>
+                      {/* OS DOIS BOTOES TEM TEXTO, E ISSO E CORRECAO DE 21/09.
+                        *
+                        * A primeira versao usava so icones: um lapis e uma
+                        * LIXEIRA. A Silvia leu a lixeira como "excluir", nao
+                        * achou onde inativar, e por isso nao conseguiu nem
+                        * testar o passo seguinte.
+                        *
+                        * Lixeira promete apagar e esta acao NAO apaga -- ela
+                        * tira da lista e deixa o passado intacto. Icone que
+                        * promete uma coisa e faz outra e' o defeito desta
+                        * semana inteira, agora em forma de desenho. */}
                       <button
-                        title="Renomear"
                         onClick={() => { setEditando(eq.id); setNomeEditado(eq.name); }}
-                        className="p-1.5 text-brand-brown/60 hover:bg-brand-beige rounded-md"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-brand-brown/80 hover:bg-brand-beige rounded-lg"
                       >
-                        <Pencil className="h-4 w-4 text-brand-gold" />
+                        <Pencil className="h-3.5 w-3.5 text-brand-gold" />
+                        <span>Renomear</span>
                       </button>
                       <button
-                        title="Inativar — some da lista de escolha, e as sessões já lançadas continuam como estão"
+                        title="Some da lista de escolha. As sessões já lançadas com ele continuam como estão."
                         onClick={() => chamar('/api/equipments/' + eq.id, 'DELETE')}
-                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-md"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 border border-amber-200 rounded-lg"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <EyeOff className="h-3.5 w-3.5" />
+                        <span>Inativar</span>
                       </button>
                     </>
                   )}

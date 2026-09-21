@@ -127,6 +127,46 @@ console.log('\n[3] O QUE IMPORTA: a sessao antiga nao perde o que ja tinha');
   ok('e a profissional continua a mesma', r[0].professional_in_charge, 'Dra Musa');
 }
 
+console.log('\n[4] INATIVAR PRECISA ESTAR ESCRITO NA TELA');
+{
+  /* A primeira versao punha so uma LIXEIRA aqui. A Silvia leu como "excluir",
+     nao achou onde inativar, e por isso nao conseguiu testar o passo seguinte.
+     Icone que promete apagar numa acao que NAO apaga e' o defeito da semana em
+     forma de desenho. */
+  await pag.goto(BASE + '/crm/cadastros');
+  await pag.click('button:has-text("Equipamentos")');
+  await pag.waitForTimeout(1200);
+
+  const tela = await pag.locator('body').innerText();
+  ok('a palavra "Inativar" esta num botao', /inativar/i.test(tela), true);
+  ok('e a tela explica o que inativar faz, antes de alguem clicar',
+    /sess[õo]es j[áa] lan[çc]adas com ele continuam/i.test(tela), true);
+
+  await pag.click('button:has-text("Inativar")');
+  await pag.waitForTimeout(1500);
+  const depois = await pag.locator('body').innerText();
+  ok('ele vai para a faixa de inativos', /não aparecem na hora de lançar/i.test(depois), true);
+  ok('e da para reativar', /reativar/i.test(depois), true);
+
+  /* O ITEM QUE A SILVIA NAO CONSEGUIU TESTAR: sem nenhum ativo, o campo da
+     sessao NAO pode travar -- ele volta a aceitar texto digitado. */
+  ok('sem nenhum ativo, a lista avisa que o campo volta a aceitar texto',
+    /continua aceitando texto digitado/i.test(depois), true);
+
+  await pag.goto(BASE + '/crm/pacientes');
+  await pag.waitForTimeout(2000);
+  await pag.click('text=Ana Paula');
+  await pag.waitForTimeout(1500);
+  await pag.locator('button:has-text("Evolução / Status")').nth(1).click();
+  await pag.waitForSelector('text=Lançar Evolução Estética', { timeout: 10000 });
+
+  const rotulos = await pag.locator('label').allInnerTexts();
+  const iEquip = rotulos.findIndex((t) => /EQUIPAMENTO/i.test(t));
+  ok('o campo de equipamento continua existindo', iEquip >= 0, true);
+  const campos = await pag.locator('input[type="text"]').count();
+  ok('e virou campo de digitar, em vez de trancar o lancamento', campos > 0, true);
+}
+
 await pag.screenshot({ path: '/tmp/claude-0/m511-sessao.png', fullPage: false });
 await nav.close();
 
