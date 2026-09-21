@@ -81,7 +81,11 @@ export default function AlertasEstoque(p: {
           <div className="space-y-1.5 pt-1">
             {a.validade.slice(0, 5).map((i) => (
               <div key={i.batchId} className="flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold text-amber-900 truncate">{i.produto}</p>
+                {/* Quebra de linha em vez de `truncate` (M5.1): a 1366px de largura
+                    "Toxina Botulínica 100U" virava "Toxina Botulíni...". Nome de
+                    produto cortado num alerta de validade tira justamente a
+                    informação pela qual o alerta existe -- QUAL produto vence. */}
+                <p className="text-[11px] font-semibold text-amber-900 leading-tight min-w-0">{i.produto}</p>
                 <span className="text-[10px] font-mono text-amber-800/80 shrink-0">
                   {i.diasRestantes}d · {dataBR(i.validade)}
                 </span>

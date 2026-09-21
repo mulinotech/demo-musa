@@ -254,7 +254,10 @@ export default function CrmDashboard({
       proposal_sent: "agendado",
       converted: "arquivado",
     };
-    await fetch("/api/leads", {
+    /* Rota AUTENTICADA (11/09) -- ver o comentario em ChatConsole.tsx: a porta
+     * publica `/api/leads` e do formulario do site, e desde a segunda clinica
+     * ela recusa quem nao manda chave de captacao. Aqui ha sessao. */
+    await fetch("/api/leads/manual", {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({
@@ -832,7 +835,17 @@ export default function CrmDashboard({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-brand-beige animate-fade-in">
+    /* `escala-crm` deixa o CONSOLE um passo abaixo do site (M5.1, 15/09).
+     *
+     * O site ficou no ponto e o CRM pedia um respiro a menos -- e os dois dividem
+     * o mesmo CSS. Encolher a escala global resolveria o CRM e estragaria o site.
+     *
+     * A saida: as classes do Tailwind leem `var(--text-xs)` NO ELEMENTO, e
+     * variavel de CSS herda. Redefinir as variaveis na raiz do console faz cada
+     * descendente pegar o valor menor, sem tocar em mais nada. A regra vive no
+     * `index.css`, junto da escala, para nao haver dois lugares dizendo tamanho
+     * de letra. */
+    <div className="escala-crm fixed inset-0 z-50 flex bg-brand-beige animate-fade-in">
       <Sidebar
         aberta={menuAberto}
         recolhida={menuRecolhido}
@@ -862,7 +875,16 @@ export default function CrmDashboard({
                   <h3 className="text-xs font-serif font-bold text-brand-brown uppercase tracking-wider">
                     {relatorioDaRota.titulo}
                   </h3>
-                  <p className="text-[10px] text-brand-brown/65">Analise e consolidacao de metricas do mes atual</p>
+                  {/* A frase diz o periodo do PDF de proposito (M5.8). A Visao Geral
+                      abaixo tem filtro proprio -- 7 dias, 30 dias, periodo -- e o
+                      relatorio NAO o acompanha: ele consolida sempre o mes. Sem esta
+                      linha, a mesma tela mostra dois faturamentos diferentes e nenhum
+                      dos dois se explica. Fazer o PDF seguir o filtro esta na fila
+                      como M5.10, junto com a fonte dele (hoje ele soma
+                      `treatment_sessions`, e nao o razao do Financeiro). */}
+                  <p className="text-[10px] text-brand-brown/65">
+                    O PDF consolida o <strong>mês atual</strong>, independentemente do filtro de período desta tela.
+                  </p>
                 </div>
                 <button
                   onClick={() => handleGenerateReport(relatorioDaRota.aba)}

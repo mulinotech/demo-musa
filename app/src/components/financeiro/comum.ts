@@ -30,6 +30,12 @@ export interface Categoria {
   id: string;
   name: string;
   type: "RECEITA" | "DESPESA";
+  /** A clínica marcou esta categoria como investimento em captação (M5.8).
+   *  É o que alimenta o Custo por Lead da Visão Geral. Só vale em DESPESA. */
+  contaNoCpl?: boolean;
+  /** Categoria aposentada some das listas de escolha e continua nos relatórios
+   *  de meses passados (M5.8b). Só a aba Categorias pede as inativas. */
+  ativa?: boolean;
 }
 
 export interface Lancamento {

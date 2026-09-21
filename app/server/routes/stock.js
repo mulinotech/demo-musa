@@ -24,6 +24,13 @@
  */
 const express = require('express');
 const router = express.Router();
+
+/** A linha e desta clinica? Ver o mesmo em routes/documents.js. */
+async function ehDestaClinica(db, tabela, id) {
+  const [r] = await db.q(
+    'SELECT 1 FROM `' + tabela + '` WHERE clinica_id = :clinica AND id = ? LIMIT 1', [id]);
+  return r.length > 0;
+}
 const escopo = require('../db/escopo');
 const est = require('../services/estoque');
 const logs = require('../services/logs');
@@ -194,6 +201,9 @@ router.patch('/api/products/:id', async function (req, res) {
 router.get('/api/products/:id/batches', async function (req, res) {
   const db = escopo(req);
   try {
+    if (!(await ehDestaClinica(db, 'products', req.params.id))) {
+      return res.status(404).json({ error: 'Produto nao encontrado.' });
+    }
     const [r] = await db.q(`
       SELECT id, batch_number, quantity, unit_cost,
              DATE_FORMAT(expiry_date, '%Y-%m-%d') AS expiry_date,
@@ -423,6 +433,9 @@ router.get('/api/stock/movements', async function (req, res) {
 router.get('/api/services/:catalogId/supplies', async function (req, res) {
   const db = escopo(req);
   try {
+    if (!(await ehDestaClinica(db, 'treatment_catalog', req.params.catalogId))) {
+      return res.status(404).json({ error: 'Servico nao encontrado.' });
+    }
     const [itens] = await db.q(`
       SELECT s.product_id, s.quantity, p.name, p.unit, p.unit_cost
         FROM service_supplies s

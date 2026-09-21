@@ -25,8 +25,21 @@
 
 const crypto = require('crypto');
 
-const TIPOS = ['ANAMNESE', 'TERMO_CONSENTIMENTO', 'ORIENTACAO', 'OUTRO'];
-const STATUS = ['RASCUNHO', 'AGUARDANDO_ASSINATURA', 'ASSINADO', 'CANCELADO'];
+/* RECEITA e ATESTADO entraram na M5.5 (16/09), e sao de uma natureza diferente
+ * dos outros quatro: quem os assina e a PROFISSIONAL, nao a paciente. Por isso
+ * existe `EMITIDO` ao lado de `AGUARDANDO_ASSINATURA` -- mandar uma receita
+ * para a fila de "aguardando assinatura da paciente" seria pedir que ela
+ * assinasse a propria prescricao. */
+const TIPOS = ['ANAMNESE', 'TERMO_CONSENTIMENTO', 'ORIENTACAO', 'RECEITA', 'ATESTADO', 'OUTRO'];
+const STATUS = ['RASCUNHO', 'AGUARDANDO_ASSINATURA', 'ASSINADO', 'EMITIDO', 'CANCELADO'];
+
+/** Os tipos que a profissional emite e assina -- no papel, com a propria mao.
+ *  Tudo o que muda de comportamento por causa disso pergunta por aqui, em vez
+ *  de repetir a lista em cinco lugares. */
+const TIPOS_EMITIDOS = ['RECEITA', 'ATESTADO'];
+function ehEmitidoPelaProfissional(tipo) {
+  return TIPOS_EMITIDOS.indexOf(String(tipo || '').toUpperCase()) !== -1;
+}
 const TIPOS_DE_CAMPO = ['text', 'textarea', 'boolean', 'select', 'multiselect', 'date', 'number', 'scale'];
 
 /* ------------------------------------------------------------ utilidades */
@@ -142,6 +155,12 @@ function valorLegivel(campo, v) {
   if (campo.type === 'boolean') return v === true ? 'Sim' : 'Não';
   if (Array.isArray(v)) return v.join(', ');
   if (campo.type === 'scale') return String(v) + ' de ' + (campo.max == null ? 10 : campo.max);
+  // O <input type="date"> entrega 2026-09-16, e e assim que ficava no papel.
+  // Atestado que a paciente leva ao RH com a data escrita ao contrario e um
+  // documento que levanta duvida antes de ser lido.
+  if (campo.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(String(v))) {
+    return String(v).split('-').reverse().join('/');
+  }
   return String(v);
 }
 
@@ -223,7 +242,30 @@ const CSS = [
   '.assinatura{margin-top:2rem;padding-top:1rem;border-top:1px solid #ddd}',
   '.assinatura img{max-width:16rem;display:block;margin:.5rem 0}',
   '.aviso{font-family:system-ui,sans-serif;font-size:.72rem;color:#6b5443;background:#faf7f2;border:1px solid #e6dbc9;padding:.6rem .8rem;margin-top:1rem}',
-  '@media print{body{padding:0} .naoImprimir{display:none}}'
+  '.timbre{margin-bottom:.2rem}',
+  '.timbre-nome{font-size:1.6rem;font-weight:700;line-height:1.15}',
+  '.timbre-funcao{font-family:system-ui,sans-serif;font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:#6b5443;margin-top:.3rem}',
+  '.timbre-registro{font-family:system-ui,sans-serif;font-size:.72rem;color:#6b5443;margin-top:.35rem}',
+  '.timbre-tipo{font-size:1.5rem;color:#8a7361;text-align:center;margin:1.8rem 0 2rem}',
+  '.faixa{margin-top:3rem;padding-top:.9rem;border-top:1px solid #ccc;text-align:center;font-size:.78rem;color:#6b5443;line-height:1.8;letter-spacing:.02em}',
+  '.rodape-timbre{margin-top:1.6rem;padding-top:.7rem;border-top:1px solid #ddd;font-size:.72rem;letter-spacing:.04em;color:#6b5443;line-height:1.7}',
+  '.barra{font-family:system-ui,sans-serif;display:flex;gap:.6rem;align-items:center;justify-content:flex-end;margin:-1rem 0 1.6rem;padding-bottom:1rem;border-bottom:1px solid #eee}',
+  '.barra button{font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;background:#4a3728;color:#f5ede1;border:none;border-radius:6px;padding:.5rem .9rem}',
+  '.barra button:hover{background:#3a2b1f}',
+  '.barra span{font-size:.72rem;color:#6b5443}',
+  /* ============ O CABECALHO QUE O NAVEGADOR IMPRIME POR CONTA PROPRIA
+   *
+   * O Chrome carimba data, hora, titulo da pagina, URL e numero de pagina nas
+   * margens do papel -- e como a pagina do documento e aberta numa aba em
+   * branco, a URL sai como "about:blank" no pe do atestado. Num documento que
+   * a paciente leva para o trabalho, isso e ruido que levanta duvida.
+   *
+   * Zerar a margem de `@page` tira o espaco onde esses carimbos moram, e o
+   * navegador para de desenha-los. A margem visual do papel volta como padding
+   * do corpo, so na impressao. (Se algum navegador insistir, a caixa de
+   * impressao tem a opcao "Cabecalhos e rodapes" para desmarcar.) */
+  '@page{margin:0}',
+  '@media print{body{padding:16mm 14mm} .naoImprimir{display:none}}'
 ].join('');
 
 /**
@@ -247,8 +289,60 @@ function renderizar(p) {
 
   let texto = String(corpo);
   const tabela = tabelaDeRespostas(modelo, respostas);
-  const temMarca = texto.indexOf('{{respostas}}') !== -1;
+  /* O modelo que coloca as respostas UMA A UMA no texto (`{{campo.x}}`) nao
+   * leva a tabela no fim. Sem esta condicao, a receita saia com a prescricao
+   * escrita por extenso E logo abaixo a mesma prescricao numa tabela de
+   * formulario respondido -- documento repetido e documento que ninguem le ate
+   * o fim, e no fim e onde fica a identificacao de quem emitiu. */
+  const temMarca = texto.indexOf('{{respostas}}') !== -1 || texto.indexOf('{{campo.') !== -1;
   texto = texto.replace(/\{\{respostas\}\}/g, ' RESPOSTAS ');
+  /* ======== {{se campo.x}} ... {{/se}} e {{campo.x}} entraram na M5.5 (16/09)
+   *
+   * Ate aqui havia so `{{respostas}}`, que despeja a TABELA inteira. Serve para
+   * anamnese e nao serve para atestado: "necessitando de 3 dias de afastamento"
+   * precisa do valor NO MEIO DA FRASE, e a linha do CID tem de SUMIR quando a
+   * paciente nao autorizou o diagnostico (CFM 1.658/2002) -- em vez de sair
+   * "CID:" em branco, que e o atestado que o RH devolve.
+   *
+   * O bloco vem primeiro: ele decide o que sobra do texto antes de qualquer
+   * valor ser colocado. */
+  const porChave = {};
+  for (const c of campos(modelo)) porChave[c.key] = c;
+
+  /* PERGUNTA ESCONDIDA NAO TEM RESPOSTA -- nem aqui.
+   *
+   * A resposta de um campo com `showIf` insatisfeito continua GRAVADA: a tela
+   * apaga ao desmarcar, mas o servidor nao pode depender disso. A tabela de
+   * `{{respostas}}` ja pulava esses campos (`visivel`); o texto tinha de pular
+   * tambem.
+   *
+   * O caso que fez isto aparecer e o CID do atestado: marcar a autorizacao,
+   * digitar o codigo, DESMARCAR e emitir imprimia o diagnostico da paciente no
+   * papel que vai para a mao do empregador -- contra a Resolucao CFM
+   * 1.658/2002, e sem nenhum erro aparecer. Um teste pegou; a tela nao pegaria. */
+  function valorDe(chave) {
+    const c = porChave[chave];
+    if (c && !visivel(c, respostas)) return undefined;
+    return respostas[chave];
+  }
+
+  texto = texto.replace(/\{\{se campo\.([\w-]+)\}\}([\s\S]*?)\{\{\/se\}\}/g,
+    function (_, chave, dentro) {
+      const v = valorDe(chave);
+      // Zero conta como nao respondido AQUI, e so aqui: o bloco pergunta se ha
+      // o que dizer, e "afastamento de 0 dia(s)" nao e afastamento nenhum.
+      if (vazio(v) || v === 0 || v === '0') return '';
+      return dentro;
+    });
+
+  // O valor passa pelo MESMO `valorLegivel` da tabela: booleano sai "Sim" e nao
+  // "true", escala sai "3 de 10". Quem le o papel nao le JavaScript.
+  texto = texto.replace(/\{\{campo\.([\w-]+)\}\}/g, function (_, chave) {
+    const v = valorDe(chave);
+    if (vazio(v)) return '';
+    return porChave[chave] ? valorLegivel(porChave[chave], v) : String(v);
+  });
+
   texto = texto.replace(/\{\{(\w+)\}\}/g, function (_, k) {
     return variaveis[k] === undefined ? '' : String(variaveis[k]);
   });
@@ -273,6 +367,112 @@ function paginaCompleta(doc, opcoes) {
   const partes = ['<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">',
     '<title>' + esc(doc.title) + '</title><style>' + CSS + '</style></head><body>'];
 
+  /* A BARRA DE IMPRESSAO (M5.5, 16/09).
+   *
+   * `window.print()` do proprio navegador -- e nao um PDF gerado no servidor.
+   * A caixa de impressao do navegador ja oferece "Salvar como PDF", entao o
+   * arquivo sai identico ao que a profissional acabou de conferir na tela, sem
+   * um segundo desenho do documento para manter em sincronia. Um layout de PDF
+   * escrito a mao em biblioteca divergiria da tela na primeira mudanca de
+   * modelo, e divergencia entre o que se le e o que se assina e exatamente o
+   * que este modulo existe para impedir.
+   *
+   * A barra tem a classe `naoImprimir`: ela some no papel. */
+  /* ================================= O TIMBRE (M5.6, 17/09)
+   *
+   * Quem recebe um atestado -- o RH, a farmacia, a escola -- le o cabecalho
+   * antes de ler o texto, e papel sem cabecalho parece rascunho por mais
+   * correto que esteja.
+   *
+   * O valor CARIMBADO no documento vem primeiro; o cadastro atual e so o
+   * recurso para documento antigo, anterior a esta migration. A clinica muda de
+   * endereco, e a receita do ano passado tem de continuar dizendo de onde ela
+   * saiu. */
+  const atual = o.timbre || {};
+  const timbre = {
+    clinica: doc.timbre_clinica || atual.clinica || '',
+    endereco: doc.timbre_endereco || atual.endereco || '',
+    telefone: doc.timbre_telefone || atual.telefone || '',
+    contato: doc.timbre_contato || atual.contato || '',
+    email: doc.timbre_email || atual.email || ''
+  };
+
+  /* O RECEITUARIO TEM O PE PROPRIO (M5.7, 17/09).
+   *
+   * No atestado o endereco vem logo abaixo da assinatura, porque quem confere
+   * um atestado para ali. A receita e outra leitura: ela vai para a farmacia e
+   * depois para a gaveta de casa, e o que a paciente procura nela e como falar
+   * com a clinica. Por isso o contato dela desce para uma faixa centralizada no
+   * PE DA FOLHA, e o miolo fica livre para a prescricao.
+   *
+   * Sem fundo colorido de proposito: receita e impressa em preto e branco e em
+   * modo economico na maioria das clinicas, e faixa escura vira borrao cinza. */
+  const receita = String(doc.type || '').toUpperCase() === 'RECEITA';
+  const emitido = doc.status === 'EMITIDO';
+
+  /* O ENDERECO VEM LOGO ABAIXO DA ASSINATURA, e nao no fim da folha.
+   *
+   * Quem confere um atestado le de cima para baixo e para na assinatura: e ali
+   * que ele procura de onde o papel saiu. Os avisos e o codigo de integridade
+   * continuam depois, porque sao leitura de quem contesta o documento, e nao de
+   * quem o recebe.
+   *
+   * Em documento sem bloco de assinatura (rascunho, cancelado) ele cai no fim
+   * da folha, que e o unico lugar que sobra. */
+  let timbreSaiu = false;
+  function rodapeDoTimbre() {
+    if (receita) {
+      // "Contato: (11) 3456-7890 ou contato@clinica.com.br" / endereco -- a
+      // linha que a paciente procura quando precisa remarcar ou tirar duvida.
+      const canais = [timbre.telefone, timbre.email, timbre.contato].filter(Boolean);
+      const linhas = [];
+      if (canais.length) linhas.push('Contato: ' + canais.join(' ou '));
+      if (timbre.endereco) linhas.push(timbre.endereco);
+      if (!linhas.length) return '';
+      timbreSaiu = true;
+      return '<div class="faixa">' + linhas.map(esc).join('<br>') + '</div>';
+    }
+    const pe = [timbre.endereco,
+      [timbre.telefone, timbre.email, timbre.contato].filter(Boolean).join(' - ')].filter(Boolean);
+    if (!pe.length) return '';
+    timbreSaiu = true;
+    return '<div class="rodape-timbre">' + pe.map(esc).join('<br>') + '</div>';
+  }
+
+  // No RECEITUARIO o conselho sobe para o cabecalho, junto do nome: e ali que o
+  // balcao da farmacia procura por ele antes de ler a prescricao. No atestado
+  // ele fica com a assinatura, que e onde o RH olha.
+  const registro = emitido && doc.emitido_por_conselho
+    ? esc(doc.emitido_por_conselho) + ' ' + esc(doc.emitido_por_numero || '') +
+      (doc.emitido_por_uf ? '/' + esc(doc.emitido_por_uf) : '')
+    : '';
+
+  // Em documento EMITIDO o cabecalho e de QUEM ASSINA; nos outros, da clinica.
+  // O conselho nao sobe para o cabecalho de proposito: ele pertence ao bloco da
+  // assinatura, que e onde quem confere o papel procura por ele.
+  const titular = emitido && doc.emitido_por_nome
+    ? esc(doc.emitido_por_nome) : esc(timbre.clinica);
+  const funcao = emitido && doc.emitido_por_funcao ? esc(doc.emitido_por_funcao) : '';
+
+  if (titular || funcao) {
+    partes.push('<div class="timbre">' +
+      (titular ? '<div class="timbre-nome">' + titular + '</div>' : '') +
+      (funcao ? '<div class="timbre-funcao">' + funcao + '</div>' : '') +
+      (receita && registro ? '<div class="timbre-registro">' + registro + '</div>' : '') +
+      '</div>');
+  }
+  // O tipo do documento vem ABAIXO do nome e centralizado -- e so no emitido:
+  // anamnese e termo ja trazem o proprio titulo dentro do texto, e repeti-lo
+  // aqui imprimiria duas vezes no mesmo papel.
+  if (emitido && doc.title) {
+    partes.push('<div class="timbre-tipo">' + esc(doc.title) + '</div>');
+  }
+
+  partes.push('<div class="barra naoImprimir">' +
+    '<span>Imprima e assine. Para gerar PDF, escolha "Salvar como PDF" na caixa de impressão.</span>' +
+    '<button type="button" onclick="window.print()">Imprimir / Salvar em PDF</button>' +
+    '</div>');
+
   partes.push(doc.rendered_html || '');
 
   if (doc.status === 'ASSINADO') {
@@ -283,6 +483,7 @@ function paginaCompleta(doc, opcoes) {
     partes.push('<p><strong>' + esc(doc.signer_name || '') + '</strong>' +
                 (doc.signer_document ? '<br>CPF ' + esc(doc.signer_document) : '') + '</p>');
     partes.push('</div>');
+    partes.push(rodapeDoTimbre());
     partes.push('<div class="aviso"><strong>Assinatura eletrônica simples.</strong> ' +
       'Este documento foi assinado por desenho em tela, com registro de data, hora, endereço IP e ' +
       'código de integridade do conteúdo (SHA-256). Tem validade entre as partes nos termos da MP ' +
@@ -296,6 +497,42 @@ function paginaCompleta(doc, opcoes) {
       'Integridade (SHA-256): ' + esc(doc.content_hash || '') +
       (o.hashConfere === false ? '<br><strong>ATENCAO: o conteudo nao corresponde ao hash registrado.</strong>' : '') +
       '</div>');
+  } else if (doc.status === 'EMITIDO') {
+    /* ============ RECEITA E ATESTADO: QUEM ASSINA E A PROFISSIONAL (M5.5)
+     *
+     * O papel sai com a identificacao dela e uma LINHA PARA ASSINAR A MAO. Nao
+     * ha assinatura em tela aqui, e o aviso diz isso com todas as letras: um
+     * documento que se apresenta como assinado sem estar e pior do que um
+     * documento em branco.
+     *
+     * O conselho e o numero vem do cadastro dela e sao carimbados no momento da
+     * emissao -- se ela trocar de registro depois, o documento antigo continua
+     * dizendo o que era verdade quando foi emitido. */
+    partes.push('<div class="assinatura">');
+    partes.push('<p style="border-top:1px solid #333;padding-top:6px;margin-top:48px;">' +
+      '<strong>' + esc(doc.emitido_por_nome || '') + '</strong>' +
+      (doc.emitido_por_conselho
+        ? '<br>' + esc(doc.emitido_por_conselho) + ' ' + esc(doc.emitido_por_numero || '') +
+          (doc.emitido_por_uf ? '/' + esc(doc.emitido_por_uf) : '')
+        : '') +
+      '</p>');
+    partes.push('</div>');
+    // A receita pula esta linha: a faixa dela sai no PE DA FOLHA, depois dos
+    // avisos, e nao colada na assinatura.
+    if (!receita) partes.push(rodapeDoTimbre());
+    partes.push('<div class="aviso"><strong>Documento emitido pela profissional identificada acima.</strong> ' +
+      'Para ter validade, precisa da assinatura dela &mdash; de próprio punho, no papel impresso, ' +
+      'ou por assinatura digital com certificado ICP-Brasil feita fora deste sistema. ' +
+      'O Musa registra o conteúdo, a data e o código de integridade; <strong>não</strong> assina ' +
+      'pela profissional.</div>');
+    partes.push('<div class="rodape">' +
+      'Documento: ' + esc(doc.id) + '<br>' +
+      // `emitido_em_br` vem formatado da consulta; o campo cru e um Date, e
+      // imprimia "Wed Sep 16 2026 19:37:16 GMT+0000" no rodape do papel.
+      'Emitido em: ' + esc(doc.emitido_em_br || doc.emitido_em || '') + '<br>' +
+      'Integridade (SHA-256): ' + esc(doc.content_hash || '') +
+      (o.hashConfere === false ? '<br><strong>ATENCAO: o conteudo nao corresponde ao hash registrado.</strong>' : '') +
+      '</div>');
   } else if (doc.status === 'AGUARDANDO_ASSINATURA') {
     partes.push('<div class="aviso">Documento gerado e aguardando assinatura. ' +
       'Código de integridade: ' + esc(doc.content_hash || '') + '</div>');
@@ -303,6 +540,8 @@ function paginaCompleta(doc, opcoes) {
     partes.push('<div class="aviso"><strong>Documento cancelado.</strong> ' +
       esc(doc.cancelled_reason || '') + ' O conteúdo é mantido para fins de histórico.</div>');
   }
+
+  if (!timbreSaiu) partes.push(rodapeDoTimbre());
 
   partes.push('</body></html>');
   return partes.join('\n');
@@ -317,6 +556,49 @@ function podeEditar(doc) {
   if (doc.status === 'CANCELADO') return { ok: false, status: 409, error: 'Documento cancelado nao se edita.' };
   return { ok: false, status: 409,
     error: 'Documento já gerado é imutável — é isso que dá valor à assinatura. Emita um documento novo para corrigir.' };
+}
+
+/** Receita e atestado NAO passam pela assinatura em tela. A recusa e explicita
+ *  porque a alternativa -- deixar passar -- produziria um papel com o desenho da
+ *  paciente embaixo da prescricao dela mesma. */
+function podeAssinarEmTela(doc) {
+  if (doc && ehEmitidoPelaProfissional(doc.type)) {
+    return { ok: false, status: 409,
+      error: 'Receita e atestado sao assinados pela profissional, no papel impresso ' +
+             'ou por certificado ICP-Brasil fora do sistema. Nao ha assinatura da paciente aqui.' };
+  }
+  return { ok: true };
+}
+
+/** O status que o documento assume ao ser congelado depende de QUEM assina.
+ *  Anamnese e termo vao para a fila da paciente; receita e atestado ja saem
+ *  prontos para a profissional assinar de proprio punho. */
+function statusAoFinalizar(tipo) {
+  return ehEmitidoPelaProfissional(tipo) ? 'EMITIDO' : 'AGUARDANDO_ASSINATURA';
+}
+
+/** Receita e atestado so saem com o registro profissional preenchido.
+ *
+ *  Nao e formalidade: papel sem conselho e numero nao e receita nem atestado --
+ *  a farmacia nao dispensa e o RH nao aceita. Recusar aqui, com a frase que diz
+ *  ONDE preencher, custa um clique; descobrir na portaria da empresa custa o
+ *  dia da paciente.
+ *
+ *  A trava tambem responde "quem pode emitir": nao ha lista de papeis: ha o
+ *  cadastro. Quem tem registro profissional emite, e o resto e recusado pela
+ *  mesma linha -- inclusive o admin que so mexe no sistema. */
+function podeEmitir(doc, emissor) {
+  if (!ehEmitidoPelaProfissional(doc && doc.type)) return { ok: true };
+  const e = emissor || {};
+  if (!String(e.nome || '').trim()) {
+    return { ok: false, status: 409, error: 'Quem emite precisa estar identificado.' };
+  }
+  if (!String(e.conselho || '').trim() || !String(e.numero || '').trim()) {
+    return { ok: false, status: 409,
+      error: 'Para emitir receita ou atestado, preencha o conselho e o numero de registro ' +
+             'no seu cadastro (aba Usuarios).' };
+  }
+  return { ok: true };
 }
 
 function podeFinalizar(doc, problemas) {
@@ -356,5 +638,8 @@ module.exports = {
   validar: validar, alertas: alertas,
   renderizar: renderizar, tabelaDeRespostas: tabelaDeRespostas, markdownSimples: markdownSimples,
   hashDoConteudo: hashDoConteudo, paginaCompleta: paginaCompleta,
-  podeEditar: podeEditar, podeFinalizar: podeFinalizar, podeAssinar: podeAssinar
+  podeEditar: podeEditar, podeFinalizar: podeFinalizar, podeAssinar: podeAssinar,
+  TIPOS_EMITIDOS: TIPOS_EMITIDOS, ehEmitidoPelaProfissional: ehEmitidoPelaProfissional,
+  podeAssinarEmTela: podeAssinarEmTela, statusAoFinalizar: statusAoFinalizar,
+  podeEmitir: podeEmitir
 };

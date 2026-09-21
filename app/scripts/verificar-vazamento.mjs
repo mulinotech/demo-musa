@@ -136,6 +136,21 @@ async function semear(conn) {
     "INSERT INTO operadores (id, nome, email, password_hash) VALUES (?,?,?,?)",
     ['op_ensaio', 'Operadora Mulino', 'operadora@ensaio.invalido', hash]);
 
+  /* Categorias financeiras da clinica B, com os MESMOS ids da clinica 1 -- que e
+   * o que a chave primaria composta da migration 030 passou a permitir, e que a
+   * varredura de escrita cruzada precisa para ter o que tentar alterar. */
+  await conn.query(
+    "INSERT INTO finance_categories (id, name, type, clinica_id) VALUES" +
+    " ('cat_procedimentos', 'Procedimentos', 'receita', 'cl_b')," +
+    " ('cat_produtos', 'Produtos', 'despesa', 'cl_b')," +
+    " ('cat' + MARCA_B + 'exclusiva', 'So da Vizinha', 'despesa', 'cl_b')".replace("' + MARCA_B + '", MARCA_B));
+
+  /* Um premio de fidelidade da clinica B -- a varredura de escrita cruzada
+   * (bloco [X]) precisa de linha para tentar alterar. */
+  await conn.query(
+    'INSERT INTO loyalty_rewards (id, name, points_cost, clinica_id) VALUES (?,?,?,?)',
+    ['rw' + MARCA_B + '1', 'Premio da Vizinha', 100, 'cl_b']);
+
   // Pacientes com nomes PARECIDOS de proposito.
   const pacientes = [
     ['c_a_1', 'cl_1', 'Maria Silva',  '5511900001111'],
@@ -186,6 +201,24 @@ async function semear(conn) {
       ['sp' + suf + '1', 'Vendedora ' + (cl === 'cl_1' ? 'A' : 'B'),
        'vend' + suf + '@ensaio.invalido', '5511900007777', 'vendedor',
        'senha-em-texto-puro-' + (cl === 'cl_1' ? 'a' : 'b'), cl]);
+
+    /* UM USUARIO COM PAPEL `vendedor`, e o lead apontando para ele (M5.2).
+     *
+     * Antes desta tarefa o bloco [C] media a rota do vendedor com um token de
+     * PROFISSIONAL -- ou seja, o ramo `if (userRole === 'vendedor')` nunca era
+     * executado pelo ensaio. A regra de papel mais delicada do sistema nao
+     * tinha conferencia nenhuma.
+     *
+     * O lead precisa pertencer a esta vendedora E casar por telefone com uma
+     * paciente, senao a lista dela vem VAZIA -- e lista vazia satisfaz qualquer
+     * assercao sobre o que ela nao contem. */
+    await conn.query(
+      'INSERT INTO users (id, name, email, password_hash, role, status, clinica_id, salesperson_id)' +
+      ' VALUES (?,?,?,?,?,?,?,?)',
+      ['uv' + suf + '1', 'Vendedora usuaria', 'vendedor' + suf + '@ensaio.invalido', hash,
+       'vendedor', 'active', cl, 'sp' + suf + '1']);
+    await conn.query(
+      'UPDATE leads SET salesperson_id = ? WHERE id = ?', ['sp' + suf + '1', 'ld' + suf + '1']);
 
     // Um acumulo de pontos JA VENCIDO em cada clinica (M2.3). Sem ele, a
     // varredura de expiracao nao expira nada no ensaio -- e "expirados: 0"
@@ -530,7 +563,7 @@ const ROTAS = [
   // contagem exata mudaria a cada migration nova. `minimo` guarda o que
   // importa: a resposta nao pode vir vazia.
   { rota: '/api/products', nome: 'produtos', minimo: 1, arquivo: 'routes/stock.js' },
-  { rota: '/api/users', nome: 'usuarios', esperado: 2, arquivo: 'routes/users.js' },
+  { rota: '/api/users', nome: 'usuarios', esperado: 3, arquivo: 'routes/users.js' },
   // Era `esperado: 0` -- e resposta vazia nao contem dado da vizinha, entao a
   // conferencia passava sem medir filtro nenhum. Agora cada clinica tem a sua
   // vendedora semeada, e o numero e 1.
@@ -737,6 +770,56 @@ async function principal() {
     const rP = await fetch(base + '/api/clients', { headers: { Authorization: 'Bearer ' + tokenPro } });
     const tP = await rP.text();
     conferir('juncao por telefone nao atravessa clinica', tP.indexOf(MARCA_B) === -1);
+
+    /* ======== E AGORA COM UM VENDEDOR DE VERDADE (M5.2, 15/09)
+     *
+     * A conferencia acima usava um token de PROFISSIONAL, entao o ramo do
+     * vendedor -- que e outro SQL -- nunca rodava. Achado ao escrever o
+     * material comercial, conferindo se "o vendedor nao ve historico de saude"
+     * era verdade. Nao era: a lista trazia anamnese, foto e laudo. */
+    const tokenVend = await entrar('vendedor_a_@ensaio.invalido');
+    const rV = await fetch(base + '/api/clients', { headers: { Authorization: 'Bearer ' + tokenVend } });
+    const tV = await rV.text();
+    let listaV = [];
+    try { listaV = JSON.parse(tV); } catch (e) { /* cai na conferencia abaixo */ }
+
+    // O CONTROLE: lista vazia satisfaria tudo o que vem depois sem medir nada.
+    conferir('a vendedora enxerga a paciente do lead dela',
+      Array.isArray(listaV) && listaV.length > 0,
+      'lista com ' + (Array.isArray(listaV) ? listaV.length : '?') + ' -- zero aqui invalida as ' +
+      'conferencias abaixo, que passariam por ausencia de dado');
+
+    conferir('a lista do vendedor NAO traz anamnese, foto nem laudo',
+      tV.indexOf('anamnese') === -1 && tV.indexOf('imageBase64') === -1 &&
+      tV.indexOf('laudo') === -1,
+      'dado de saude (LGPD art. 5, II) na lista de quem trabalha funil');
+    conferir('a juncao do vendedor tambem nao atravessa clinica', tV.indexOf(MARCA_B) === -1);
+
+    /* A AGENDA E DE LEITURA PARA O VENDEDOR (M5.2, 15/09).
+     *
+     * O CONTROLE VEM PRIMEIRO: se o vendedor nem conseguisse LER a agenda, as
+     * recusas abaixo passariam por ele nao alcancar a rota nenhuma -- e a
+     * conferencia estaria medindo ausencia, nao regra. */
+    const rLer = await fetch(base + '/api/appointments?from=' + PRIMEIRO + '&to=' + HOJE,
+      { headers: { Authorization: 'Bearer ' + tokenVend } });
+    conferir('o vendedor LE a agenda (controle)', rLer.ok,
+      'respondeu ' + rLer.status + ' -- sem leitura, as recusas abaixo nao provam nada');
+
+    for (const [metodo, rota, oQue] of [
+      ['POST',   '/api/appointments',                  'criar compromisso'],
+      ['PATCH',  '/api/appointments/ap_a_1/status',    'CONCLUIR atendimento'],
+      ['PUT',    '/api/appointments/ap_a_1',           'remarcar'],
+      ['DELETE', '/api/appointments/ap_a_1',           'cancelar']
+    ]) {
+      const r = await fetch(base + rota, { method: metodo,
+        headers: { Authorization: 'Bearer ' + tokenVend, 'Content-Type': 'application/json' },
+        body: metodo === 'DELETE' ? undefined : '{}' });
+      conferir('o vendedor NAO pode ' + oQue, r.status === 403,
+        'respondeu ' + r.status + ' em ' + metodo + ' ' + rota +
+        (oQue.indexOf('CONCLUIR') === 0
+          ? ' -- concluir lanca receita, baixa insumo e credita ponto'
+          : ''));
+    }
 
     console.log('\n[E] a GRAVACAO: concluir um atendimento carimba a clinica');
     // A conferencia mais importante da M1.1c, e a que nenhuma leitura substitui.
@@ -1504,10 +1587,13 @@ async function principal() {
         'preco: ' + (nova.conferencia && nova.conferencia.configuracaoDePreco) +
         ', pontos: ' + (nova.conferencia && nova.conferencia.programaDePontos) +
         '. Era a chave primaria de linha unica que impedia isso ate a migration 030');
-      conferir('com os dois modelos de documento',
-        nova.conferencia && nova.conferencia.modelosDeDocumento === 2,
+      // QUATRO desde a M5.5 (16/09): anamnese, termo, receituario e atestado.
+      // Uma clinica que nasce sem os dois ultimos nao emite receita no primeiro
+      // dia -- e ninguem descobre isso ate a primeira paciente pedir uma.
+      conferir('com os quatro modelos de documento',
+        nova.conferencia && nova.conferencia.modelosDeDocumento === 4,
         'veio ' + (nova.conferencia && nova.conferencia.modelosDeDocumento) +
-        '. Sem modelo, nao ha anamnese');
+        '. Sem modelo, nao ha anamnese nem receita');
       conferir('e com chave de captacao propria',
         !!nova.chaveCaptacao && nova.chaveCaptacao !== CHAVE_B_DO_ENSAIO,
         'chave: ' + nova.chaveCaptacao);
@@ -2061,6 +2147,303 @@ async function principal() {
         'respondeu ' + rEntraDeNovo.status);
     }
 
+    /* ============== [V] SUSPENDER E ENCERRAR: TRANCA O ACESSO, GUARDA O DADO (M3.2b)
+     *
+     * A parte que precisa ser verdade ao mesmo tempo, e que e facil entregar
+     * pela metade: o acesso morre NA HORA (inclusive para quem ja estava
+     * dentro), e o dado NAO some. Um sistema que so faz a primeira metade perde
+     * cliente; um que faz a segunda sem a primeira nao suspendeu nada.
+     */
+    console.log('\n[V] suspender e encerrar: tranca o acesso e guarda o dado?');
+    {
+      const contarTudoDaB = async () => {
+        const c = await mysql.createConnection({ host: HOST, port: PORTA, user: USUARIO,
+          password: SENHA, database: BANCO });
+        const [r] = await c.query(
+          "SELECT (SELECT COUNT(*) FROM clients WHERE clinica_id='cl_b') AS pacientes," +
+          " (SELECT COUNT(*) FROM appointments WHERE clinica_id='cl_b') AS agenda," +
+          " (SELECT COUNT(*) FROM clinicas WHERE id='cl_b') AS linha");
+        await c.end();
+        return r[0];
+      };
+      const mudarStatus = (corpo) => fetch(base + '/api/plataforma/clinicas/cl_b/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json',
+                   Authorization: 'Bearer ' + tokenDaPlataforma },
+        body: JSON.stringify(corpo) });
+
+      const antes = await contarTudoDaB();
+      conferir('a clinica B tem dado antes de ser suspensa', Number(antes.pacientes) > 0,
+        'pacientes: ' + antes.pacientes + '. Zero aqui faria a conferencia de "nada foi apagado" ' +
+        'passar sem medir nada');
+
+      const rSemMotivo = await mudarStatus({ status: 'suspensa' });
+      conferir('suspender SEM motivo e recusado', rSemMotivo.status === 400,
+        'respondeu ' + rSemMotivo.status);
+
+      const rSusp = await mudarStatus({ status: 'suspensa', motivo: 'ensaio: falta de pagamento' });
+      conferir('a plataforma suspende a clinica', rSusp.status === 200,
+        'respondeu ' + rSusp.status);
+
+      // ---- o token que a clinica B JA TINHA para de valer
+      const rComTokenVelho = await fetch(base + '/api/clients',
+        { headers: { Authorization: 'Bearer ' + tokenB } });
+      conferir('o token que a clinica ja tinha para de valer NA HORA', rComTokenVelho.status === 403,
+        'respondeu ' + rComTokenVelho.status + '. Se ainda respondesse 200, "suspendi o acesso" ' +
+        'seria mentira pelas proximas 12 horas -- ate o token vencer');
+
+      // ---- e nem entrar de novo
+      const rLogin = await fetch(base + '/api/auth/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'admin-b@ensaio.invalido', password: SENHA_TESTE }) });
+      conferir('e ninguem da clinica consegue entrar', rLogin.status === 403,
+        'respondeu ' + rLogin.status);
+
+      // ---- a clinica A continua trabalhando (o irmao que tem de passar)
+      const rA = await fetch(base + '/api/clients',
+        { headers: { Authorization: 'Bearer ' + tokenA } });
+      conferir('e a clinica A continua trabalhando normalmente', rA.status === 200,
+        'respondeu ' + rA.status + '. Suspender uma NAO pode derrubar as outras 49');
+
+      // ---- o site da clinica suspensa para de captar
+      const rLead = await fetch(base + '/api/leads?captacao=' + CHAVE_B_DO_ENSAIO, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Lead Da Suspensa', whatsapp: '5511900000009',
+                               treatment: 'Ensaio' }) });
+      conferir('e o site dela para de captar lead', rLead.status === 503,
+        'respondeu ' + rLead.status + '. Clinica suspensa recebendo lead novo seria dado entrando ' +
+        'numa conta trancada');
+
+      // ---- NADA foi apagado
+      const depois = await contarTudoDaB();
+      conferir('e NENHUM dado foi apagado', depois.pacientes === antes.pacientes &&
+        depois.agenda === antes.agenda && Number(depois.linha) === 1,
+        'antes: ' + JSON.stringify(antes) + ' / depois: ' + JSON.stringify(depois) +
+        '. Prontuario tem prazo legal de guarda: suspender tranca, nao limpa');
+
+      // ---- encerrar exige o nome digitado
+      const rEncerraSemNome = await mudarStatus({ status: 'encerrada', motivo: 'ensaio' });
+      conferir('encerrar sem digitar o nome e recusado', rEncerraSemNome.status === 400,
+        'respondeu ' + rEncerraSemNome.status + '. E a operacao que ninguem quer fazer por engano ' +
+        'na linha de baixo da lista');
+
+      const rEncerra = await mudarStatus({ status: 'encerrada', motivo: 'ensaio',
+                                           confirmacaoNome: 'Clinica Vizinha' });
+      conferir('e com o nome certo ela encerra', rEncerra.status === 200,
+        'respondeu ' + rEncerra.status);
+
+      const depoisDeEncerrar = await contarTudoDaB();
+      conferir('encerrar tambem NAO apaga nada',
+        depoisDeEncerrar.pacientes === antes.pacientes && Number(depoisDeEncerrar.linha) === 1,
+        'depois de encerrar: ' + JSON.stringify(depoisDeEncerrar));
+
+      // ---- reativar devolve tudo
+      const rVolta = await mudarStatus({ status: 'ativa' });
+      conferir('reativar devolve o acesso', rVolta.status === 200, 'respondeu ' + rVolta.status);
+
+      const rLoginDeVolta = await fetch(base + '/api/auth/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'admin-b@ensaio.invalido', password: SENHA_TESTE }) });
+      conferir('e a clinica entra de novo', rLoginDeVolta.status === 200,
+        'respondeu ' + rLoginDeVolta.status);
+
+      const tokenBdeVolta = (await rLoginDeVolta.json().catch(() => ({}))).token;
+      const rDadoDeVolta = await fetch(base + '/api/clients',
+        { headers: { Authorization: 'Bearer ' + tokenBdeVolta } }).then((r) => r.json());
+      conferir('com o dado dela inteiro, do jeito que estava',
+        Array.isArray(rDadoDeVolta) && rDadoDeVolta.length === Number(antes.pacientes),
+        'voltaram ' + (Array.isArray(rDadoDeVolta) ? rDadoDeVolta.length : '?') + ' de ' +
+        antes.pacientes);
+    }
+
+    /* ===================== [W] O PAINEL DE USO: CONTA SEM CONTAR QUEM (M3.3)
+     *
+     * O painel existe para o comercial saber quem nao esta usando e qual site
+     * esta captando errado. O risco dele e o mesmo da listagem: a tentacao de
+     * "mostrar so um nomezinho para ficar mais util".
+     */
+    console.log('\n[W] o painel de uso: numeros certos, e nenhum nome?');
+    {
+      const comoOperador = (rota) => fetch(base + rota,
+        { headers: { Authorization: 'Bearer ' + tokenDaPlataforma } });
+
+      const rUso = await comoOperador('/api/plataforma/uso');
+      const uso = await rUso.json().catch(() => ({}));
+      conferir('o painel responde', rUso.status === 200 && !!uso.instalacao,
+        'respondeu ' + rUso.status);
+
+      conferir('e conta as clinicas da instalacao', Number(uso.instalacao.clinicas) >= 2,
+        'contou ' + (uso.instalacao && uso.instalacao.clinicas));
+      conferir('e soma as pacientes de todas elas', Number(uso.instalacao.pacientes) > 0,
+        'somou ' + (uso.instalacao && uso.instalacao.pacientes) + '. Zero faria a conferencia de ' +
+        'baixo passar por a resposta estar vazia');
+
+      const cruUso = JSON.stringify(uso);
+      conferir('e NAO contem nome de paciente nenhum',
+        cruUso.indexOf('Maria') === -1 && cruUso.indexOf('Joana') === -1,
+        'a semente tem "Maria Silva" e "Maria Souza": se aparecerem aqui, o painel virou janela ' +
+        'para o prontuario');
+
+      const daB = (uso.clinicas || []).filter((c) => c.id === 'cl_b')[0] || {};
+      conferir('cada clinica traz os numeros dela', Number(daB.pacientes) > 0,
+        'clinica B com ' + daB.pacientes + ' paciente(s)');
+      conferir('e os alertas sao uma lista', Array.isArray(daB.alertas),
+        'alertas da B: ' + JSON.stringify(daB.alertas));
+
+      // ---- o alerta que vale dinheiro: lead recusado por site mal configurado
+      await fetch(base + '/api/leads', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Lead De Chave Errada', whatsapp: '5511900000123',
+                               treatment: 'Ensaio', captacao: 'cap_errada_de_proposito' }) });
+
+      const uso2 = await comoOperador('/api/plataforma/uso').then((r) => r.json());
+      conferir('lead recusado por chave errada aparece no painel',
+        Number(uso2.instalacao.leadsRecusados7d) > 0,
+        'contou ' + uso2.instalacao.leadsRecusados7d + '. E o unico sinal de que o site de alguem ' +
+        'esta com a chave errada AGORA');
+
+      // ---- os registros da instalacao, que estavam invisiveis desde a M1.6a
+      const rReg = await comoOperador('/api/plataforma/registros');
+      const reg = await rReg.json().catch(() => ({}));
+      conferir('os registros da instalacao voltaram a ter tela',
+        rReg.status === 200 && (reg.registros || []).length > 0,
+        'respondeu ' + rReg.status + ' com ' + ((reg.registros || []).length) + ' registro(s)');
+      conferir('e sao SO os da instalacao, sem os de clinica nenhuma',
+        !(reg.registros || []).some((r) => (r.descricao || '').indexOf('Maria') !== -1),
+        'registro de clinica aparecendo aqui seria a plataforma lendo a trilha de um inquilino');
+
+      // ---- e nada disso e alcancavel por quem nao e da plataforma
+      for (const rota of ['/api/plataforma/uso', '/api/plataforma/registros']) {
+        const r = await fetch(base + rota, { headers: { Authorization: 'Bearer ' + tokenA } });
+        conferir('a clinica NAO alcanca ' + rota, r.status === 403, 'respondeu ' + r.status);
+      }
+    }
+
+    /* ========== [X] A VARREDURA DE ESCRITA CRUZADA, ROTA POR ROTA (M4.1)
+     *
+     * Os blocos [A]-[O] perguntam "esta LEITURA traz a vizinha?". Este pergunta
+     * a outra metade, que e a que estraga dado: **"esta ESCRITA alcanca a
+     * vizinha?"**. Com o id da linha da clinica B na mao -- e ele aparece em
+     * listagem, em URL, em relatorio -- a clinica A tenta alterar e apagar tudo
+     * que tem `:id` no caminho.
+     *
+     * A resposta certa e 404 (ou 403), nunca 200. E nao basta o codigo: a linha
+     * da B tem de continuar la, do jeito que estava. Uma rota que responde 404 e
+     * apaga assim mesmo passaria numa conferencia de status.
+     *
+     * Os ids sao lidos DO BANCO, e nao escritos a mao aqui: semente que muda
+     * deixaria esta varredura medindo ids que nao existem -- e "404 porque o id
+     * nao existe" e o falso verde perfeito. Por isso cada familia confere
+     * primeiro que achou um id de verdade.
+     */
+    console.log('\n[X] a escrita cruzada: a clinica A alcanca a linha da B?');
+    {
+      const conexao = await mysql.createConnection({ host: HOST, port: PORTA, user: USUARIO,
+        password: SENHA, database: BANCO });
+
+      /* Prefere um id que carregue a marca `_b_`, ou seja, que exista SO na
+       * clinica B. Sem isso, em tabela de id compartilhado (as categorias
+       * financeiras, desde a migration 030, tem `cat_procedimentos` nas duas) a
+       * varredura mandaria um id que a propria clinica A tambem tem -- e a
+       * resposta 200 seria correta, nao vazamento. Foi o que quase virou uma
+       * acusacao errada. */
+      const idDaB = async (tabela) => {
+        const [marcado] = await conexao.query(
+          'SELECT id FROM `' + tabela + "` WHERE clinica_id = 'cl_b' AND id LIKE ? LIMIT 1",
+          ['%' + MARCA_B + '%']);
+        if (marcado.length) return marcado[0].id;
+        const [r] = await conexao.query(
+          'SELECT id FROM `' + tabela + "` WHERE clinica_id = 'cl_b' LIMIT 1");
+        return r.length ? r[0].id : null;
+      };
+      /* SEMPRE com `clinica_id = 'cl_b'`, e nunca so pelo id. Desde a migration
+       * 030 as clinicas COMPARTILHAM ids (as duas tem `cat_procedimentos`), e um
+       * `WHERE id = ?` sozinho devolve a linha de qualquer uma delas. A primeira
+       * versao disto acusou a rota de categorias financeiras de alterar a linha
+       * da vizinha -- quando o que mudou foi a linha da PROPRIA clinica A, com o
+       * mesmo id. Chave composta obriga leitura composta, inclusive na regua. */
+      const existeAinda = async (tabela, id) => {
+        const [r] = await conexao.query(
+          'SELECT COUNT(*) AS n FROM `' + tabela + "` WHERE clinica_id = 'cl_b' AND id = ?", [id]);
+        return Number(r[0].n) === 1;
+      };
+
+      /* [familia de rotas, tabela de onde sai o id da B, [ [metodo, caminho, corpo] ... ] ]
+       * `{ID}` e trocado pelo id da B. */
+      const FAMILIAS = require('./scripts/rotas-com-id.js').FAMILIAS;
+
+      const linhaDaB = async (tabela, id) => {
+        const [r] = await conexao.query(
+          'SELECT * FROM `' + tabela + "` WHERE clinica_id = 'cl_b' AND id = ?", [id]);
+        return r.length ? JSON.stringify(r[0]) : null;
+      };
+
+      let tentativas = 0;
+      /* Tres consequencias DIFERENTES, e misturar as tres foi o que quase me fez
+       * declarar nove vazamentos onde havia um problema de outra natureza:
+       *   VAZOU   -- a resposta trouxe dado da vizinha (o pior);
+       *   ALTEROU -- a linha da vizinha mudou ou sumiu (o segundo pior);
+       *   MENTIU  -- respondeu 2xx sem tocar em nada, o que nao vaza e nao
+       *              estraga, mas afirma que a linha e alcancavel e confirma que
+       *              aquele id existe. Tem de ser 404. */
+      const vazou = [], alterou = [], mentiu = [];
+
+      for (const [familia, tabela, chamadas] of FAMILIAS) {
+        const id = await idDaB(tabela);
+        conferir('achei uma linha da clinica B em ' + tabela, !!id,
+          id ? 'id: ' + id : 'SEM LINHA: toda tentativa abaixo daria 404 por o id nao existir, e ' +
+               'esse e o falso verde perfeito');
+        if (!id) continue;
+
+        for (const [metodo, molde, corpo] of chamadas) {
+          const rota = molde.replace('{ID}', encodeURIComponent(id));
+          const antes = await linhaDaB(tabela, id);
+
+          const r = await fetch(base + rota, {
+            method: metodo,
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tokenA },
+            body: corpo ? JSON.stringify(corpo) : undefined
+          });
+          tentativas++;
+          const texto = await r.text().catch(() => '');
+          const depois = await linhaDaB(tabela, id);
+          const onde = metodo + ' ' + molde + '  (' + familia + ', ' + r.status + ')';
+
+          if (antes !== depois) alterou.push(onde + (depois === null ? ' -- APAGOU' : ' -- ALTEROU'));
+          else if (r.status >= 200 && r.status < 300) {
+            // A marca `_b_` nos ids e o que distingue "trouxe dado da vizinha" de
+            // "respondeu vazio". Resposta vazia nao vaza -- mente.
+            /* O id que EU mandei volta no corpo de varias rotas (`clientId:
+             * req.params.id`), e conta-lo como vazamento acusaria o codigo de
+             * algo que ele nao fez -- foi o que aconteceu na primeira versao
+             * desta linha. O que vaza e marca `_b_` que NAO seja o id enviado. */
+            const semOIdQueEuMandei = texto.split(id).join('<id-que-eu-mandei>');
+            if (semOIdQueEuMandei.indexOf(MARCA_B) !== -1) {
+              vazou.push(onde + ' -- corpo com dado da vizinha: ' +
+                semOIdQueEuMandei.slice(0, 120));
+            }
+            else mentiu.push(onde);
+          }
+        }
+      }
+
+      conferir('a varredura tentou de verdade', tentativas >= 35,
+        tentativas + ' tentativas de escrita cruzada. Poucas aqui significaria familia sem linha ' +
+        'semeada, e conferencia que nao mede nada');
+
+      conferir('nenhuma rota com :id DEVOLVEU dado da clinica vizinha', vazou.length === 0,
+        vazou.length ? 'VAZOU:\n      ' + vazou.join('\n      ') : 'nenhuma');
+
+      conferir('e nenhuma ALTEROU ou APAGOU linha da vizinha', alterou.length === 0,
+        alterou.length ? 'ALTEROU:\n      ' + alterou.join('\n      ') : 'nenhuma');
+
+      conferir('e nenhuma responde 2xx sem ter feito nada (mentira de 200)', mentiu.length === 0,
+        mentiu.length ? 'RESPONDERAM 2xx SEM TOCAR EM NADA -- deviam ser 404:\n      ' +
+          mentiu.join('\n      ') : 'nenhuma');
+
+      await conexao.end();
+    }
+
     /* ================================================== [P] A TERCEIRA BARREIRA
      *
      * Os blocos [A]-[O] medem a 1a barreira (o filtro do SELECT) usando linhas
@@ -2084,6 +2467,428 @@ async function principal() {
      * E o motivo da recusa é conferido pelo texto (`foreign key`): recusa por
      * chave duplicada ou por coluna obrigatória também daria erro, e também
      * pareceria contenção. */
+    /* ============================================== [Y] O CAMINHO FELIZ (M4.3)
+     *
+     * Este bloco existe por causa de um defeito que TODAS as 283 outras
+     * conferências deixaram passar, e o motivo é estrutural: elas medem
+     * **recusa**.
+     *
+     * Cadastrar, editar e excluir paciente gravavam no banco e devolviam 500 --
+     * `logs.registrar(db, ...)` com `db` inexistente desde a M1.6. Uma rota que
+     * responde 500 para todo mundo passa em cada conferência de vazamento: ela
+     * não entrega dado da outra clínica porque não entrega dado nenhum.
+     * **Varredura que só mede recusa não distingue código seguro de código
+     * morto.**
+     *
+     * Então aqui a clínica A age sobre a PRÓPRIA linha, e o ensaio exige 2xx.
+     * E exige mais: que a trilha de auditoria tenha a linha correspondente --
+     * porque foi ela que sumiu, e é ela que o documento de LGPD afirma existir
+     * quando alguém pergunta "quem apagou esta paciente?". */
+    console.log('\n[Y] o caminho feliz: a clinica alcanca a PROPRIA linha, e a trilha registra?');
+    {
+      const contarLog = async (tipo) => {
+        const c = await mysql.createConnection({
+          host: HOST, port: PORTA, user: USUARIO, password: SENHA, database: BANCO });
+        const [r] = await c.query(
+          "SELECT id FROM system_logs WHERE action_type = ? AND clinica_id = 'cl_1'", [tipo]);
+        await c.end();
+        return r.length;
+      };
+
+      const rNova = await fetch(base + '/api/clients', {
+        method: 'POST', headers: comoA,
+        body: JSON.stringify({ name: 'Paciente do Caminho Feliz', phone: '11900000001' }) });
+      const corpoNova = await rNova.text();
+      conferir('POST /api/clients responde 2xx para a propria clinica',
+        rNova.status >= 200 && rNova.status < 300,
+        'respondeu ' + rNova.status + ' :: ' + corpoNova.slice(0, 160));
+      conferir('e a trilha registrou o cadastro (CLIENT_CREATE)',
+        (await contarLog('CLIENT_CREATE')) > 0,
+        'nenhum CLIENT_CREATE em system_logs -- a trilha da LGPD nao existe');
+
+      let idNova = null;
+      try { idNova = JSON.parse(corpoNova).id; } catch (e) { /* ja falhou acima */ }
+
+      if (idNova) {
+        const rEdita = await fetch(base + '/api/clients/' + idNova, {
+          method: 'PATCH', headers: comoA, body: JSON.stringify({ phone: '11900000002' }) });
+        conferir('PATCH /api/clients/:id responde 2xx para a propria clinica',
+          rEdita.ok, 'respondeu ' + rEdita.status + ' :: ' + (await rEdita.text()).slice(0, 160));
+        conferir('e a trilha registrou a edicao (CLIENT_UPDATE)',
+          (await contarLog('CLIENT_UPDATE')) > 0, 'nenhum CLIENT_UPDATE em system_logs');
+
+        const rApaga = await fetch(base + '/api/clients/' + idNova, {
+          method: 'DELETE', headers: comoA });
+        conferir('DELETE /api/clients/:id responde 2xx para a propria clinica',
+          rApaga.ok, 'respondeu ' + rApaga.status + ' :: ' + (await rApaga.text()).slice(0, 160));
+        conferir('e a trilha registrou a exclusao (CLIENT_DELETE)',
+          (await contarLog('CLIENT_DELETE')) > 0,
+          'nenhum CLIENT_DELETE -- apagar paciente nao deixa rastro (LGPD art. 18, VI)');
+
+        /* O NOME tem de estar no registro. "Paciente c_k3f9a2b excluida" nao
+         * responde a pergunta que se faz um ano depois -- e depois do DELETE
+         * nao ha de onde tira-lo. */
+        const c = await mysql.createConnection({
+          host: HOST, port: PORTA, user: USUARIO, password: SENHA, database: BANCO });
+        const [reg] = await c.query(
+          "SELECT description FROM system_logs WHERE action_type = 'CLIENT_DELETE' LIMIT 1");
+        await c.end();
+        conferir('o registro da exclusao guarda o NOME, e nao so o id',
+          reg.length > 0 && reg[0].description.indexOf('Caminho Feliz') !== -1,
+          reg.length ? reg[0].description : 'sem registro');
+      }
+    }
+
+    /* ======================================= [R] RECEITA E ATESTADO (M5.5)
+     *
+     * O motor de documento ja era conferido; o que entra aqui e o que MUDA nos
+     * dois tipos novos, e cada linha abaixo existe por uma consequencia no
+     * papel impresso:
+     *
+     *   1. sem registro profissional no cadastro, NAO emite (a farmacia e o RH
+     *      devolvem papel sem conselho e numero);
+     *   2. o CID so sai com a autorizacao da paciente (CFM 1.658/2002) -- e o
+     *      ensaio digita o codigo COM a autorizacao desmarcada, que e o estado
+     *      que o teste de unidade pegou e a tela nao pegaria;
+     *   3. o papel nao se apresenta como assinado;
+     *   4. a paciente NAO assina receita em tela;
+     *   5. ler documento emitido entra na trilha, como ler assinado ja entrava.
+     *
+     * E o controle vem antes de tudo: sem o par de modelos semeado, nada abaixo
+     * mede nada -- seria mais uma varredura passando por ausencia de dado. */
+    console.log('\n[R] receituario e atestado: quem assina e a profissional?');
+    {
+      const comoPro = { Authorization: 'Bearer ' + tokenPro, 'Content-Type': 'application/json' };
+      const conexao = () => mysql.createConnection({
+        host: HOST, port: PORTA, user: USUARIO, password: SENHA, database: BANCO });
+
+      const rMod = await fetch(base + '/api/document-templates', { headers: comoPro });
+      let modelos = [];
+      try { modelos = await rMod.json(); } catch (e) { /* cai no controle */ }
+      const mAtestado = (modelos || []).find((m) => m.type === 'ATESTADO');
+      const mReceita = (modelos || []).find((m) => m.type === 'RECEITA');
+      conferir('controle: a clinica nasce com os modelos de receita e atestado',
+        !!mAtestado && !!mReceita,
+        'modelos vistos: ' + (modelos || []).map((m) => m.type).join(', ') +
+        ' -- sem eles nada abaixo mede nada');
+
+      if (mAtestado && mReceita) {
+        const rNovo = await fetch(base + '/api/clients/c_a_1/documents', {
+          method: 'POST', headers: comoPro,
+          body: JSON.stringify({ templateId: mAtestado.id }) });
+        const idDoc = (await rNovo.json().catch(() => ({}))).id;
+        conferir('a profissional cria o atestado da paciente dela', !!idDoc,
+          'POST respondeu ' + rNovo.status);
+
+        if (idDoc) {
+          /* O CID DIGITADO COM A AUTORIZACAO DESMARCADA. A tela apaga a resposta
+           * ao desmarcar; o servidor nao pode depender disso. */
+          await fetch(base + '/api/documents/' + idDoc, {
+            method: 'PATCH', headers: comoPro,
+            body: JSON.stringify({ answers: {
+              atendimento_data: HOJE, atendimento_hora: '14:30',
+              afastamento_dias: 2, cid_autorizado: false, cid: 'F41.1' } }) });
+
+          // 1. SEM REGISTRO NO CADASTRO, NAO EMITE.
+          const rSem = await fetch(base + '/api/documents/' + idDoc + '/finalize',
+            { method: 'POST', headers: comoPro });
+          const txtSem = await rSem.text();
+          conferir('sem conselho no cadastro, a emissao e RECUSADA',
+            rSem.status === 409, 'respondeu ' + rSem.status + ' :: ' + txtSem.slice(0, 140));
+          conferir('e a recusa diz ONDE preencher',
+            /cadastro/i.test(txtSem), txtSem.slice(0, 140));
+
+          // O admin preenche o registro -- e so o admin alcanca /api/users.
+          const rReg = await fetch(base + '/api/users/u_a_pro', {
+            method: 'PATCH', headers: comoA,
+            body: JSON.stringify({ conselho: 'crm', conselhoNumero: '12345', conselhoUf: 'sp' }) });
+          conferir('o admin preenche o registro profissional', rReg.ok,
+            'respondeu ' + rReg.status);
+
+          // 2. AGORA EMITE -- e o status e EMITIDO, nao "aguardando assinatura".
+          const rEmite = await fetch(base + '/api/documents/' + idDoc + '/finalize',
+            { method: 'POST', headers: comoPro });
+          const jEmite = await rEmite.json().catch(() => ({}));
+          conferir('com o registro preenchido, o atestado e EMITIDO',
+            rEmite.ok && jEmite.status === 'EMITIDO',
+            'respondeu ' + rEmite.status + ' status=' + jEmite.status);
+
+          const c1 = await conexao();
+          const [linha] = await c1.query(
+            'SELECT status, emitido_por_nome, emitido_por_conselho, emitido_por_numero,' +
+            ' emitido_por_uf, emitido_em FROM client_documents WHERE id = ?', [idDoc]);
+          await c1.end();
+          conferir('o emissor fica CARIMBADO no documento, e nao so apontado',
+            linha.length > 0 && !!linha[0].emitido_por_nome && !!linha[0].emitido_em,
+            JSON.stringify(linha[0] || {}));
+          conferir('o conselho e a UF sao guardados em maiusculas',
+            linha.length > 0 && linha[0].emitido_por_conselho === 'CRM' &&
+            linha[0].emitido_por_uf === 'SP',
+            JSON.stringify(linha[0] || {}));
+
+          // 3. O PAPEL. Tres coisas que ele tem de dizer, e uma que nao pode.
+          const rVer = await fetch(base + '/api/documents/' + idDoc + '/view', { headers: comoPro });
+          const papel = await rVer.text();
+          conferir('o papel sai com o registro como a farmacia le',
+            papel.indexOf('CRM 12345/SP') !== -1, 'nao achei "CRM 12345/SP" no documento');
+          conferir('o papel diz que o sistema NAO assina pela profissional',
+            /n(ã|a)o<\/strong> assina/.test(papel), 'o aviso de emissao sumiu do papel');
+          conferir('o papel NAO se apresenta como assinado eletronicamente',
+            papel.indexOf('Assinatura eletr') === -1,
+            'o aviso da assinatura da paciente entrou num documento que ela nao assinou');
+          conferir('o CID digitado SEM autorizacao nao chega ao papel',
+            papel.indexOf('F41.1') === -1,
+            'CFM 1.658/2002: o diagnostico foi impresso sem a paciente autorizar');
+
+          // 5. E a leitura entrou na trilha.
+          const c2 = await conexao();
+          const [trilha] = await c2.query(
+            "SELECT id FROM system_logs WHERE action_type = 'LGPD'" +
+            " AND description LIKE '%emitido%' AND clinica_id = 'cl_1'");
+          await c2.end();
+          conferir('ler documento EMITIDO entra na trilha de acesso',
+            trilha.length > 0,
+            'nenhum registro LGPD de leitura -- "quem viu o atestado?" fica sem resposta');
+
+          // 4. A PACIENTE NAO ASSINA RECEITA NEM ATESTADO EM TELA.
+          const rAss = await fetch(base + '/api/documents/' + idDoc + '/sign', {
+            method: 'POST', headers: comoPro,
+            body: JSON.stringify({ signerName: 'Paciente A', signatureImage: 'data:image/png;base64,x' }) });
+          const txtAss = await rAss.text();
+          conferir('a assinatura em tela e recusada em atestado',
+            rAss.status === 409, 'respondeu ' + rAss.status);
+          conferir('e a recusa explica QUEM assina',
+            /profissional/i.test(txtAss), txtAss.slice(0, 140));
+
+          // O vendedor nao chega perto de nada disto.
+          const rVend = await fetch(base + '/api/documents/' + idDoc + '/view',
+            { headers: { Authorization: 'Bearer ' + tokenVend } });
+          conferir('o vendedor nao abre receita nem atestado', rVend.status === 403,
+            'respondeu ' + rVend.status);
+
+          // E a clinica B nao alcanca o documento da A -- nem para ler, nem
+          // para emitir por cima.
+          const rCruz = await fetch(base + '/api/documents/' + idDoc + '/view',
+            { headers: { Authorization: 'Bearer ' + tokenB } });
+          conferir('a clinica B nao abre o atestado da clinica A', rCruz.status === 404,
+            'respondeu ' + rCruz.status);
+
+          /* ==================== O TIMBRE (M5.6, 17/09)
+           *
+           * `clinicas` e a unica tabela sem `clinica_id`, e por isso a gravacao
+           * dela passa por uma porta estreita (`atualizarMinhaClinica`). O que
+           * se mede aqui e o que a porta NAO deixa passar -- e que ela continua
+           * deixando passar o que deve. */
+          const rTimbre = await fetch(base + '/api/clinica', {
+            method: 'PATCH', headers: comoA,
+            body: JSON.stringify({
+              endereco: 'Rua do Ensaio, 10', telefone: '(11) 4444-4444', contato: '@ensaio',
+              // As tres que nao sao decisao da clinica vao juntas, de proposito.
+              status: 'encerrada', chave_captacao: 'chave-roubada',
+              evolution_instance: 'instancia-da-vizinha'
+            }) });
+          conferir('a clinica edita o proprio timbre', rTimbre.ok,
+            'respondeu ' + rTimbre.status);
+
+          const c3 = await conexao();
+          const [cl] = await c3.query(
+            'SELECT endereco, telefone, contato, status, chave_captacao, evolution_instance' +
+            " FROM clinicas WHERE id = 'cl_1'");
+          await c3.end();
+          conferir('o endereco entrou', cl.length > 0 && cl[0].endereco === 'Rua do Ensaio, 10',
+            JSON.stringify(cl[0] || {}));
+          conferir('e status, chave de captacao e instancia NAO foram tocados',
+            cl.length > 0 && cl[0].status === 'ativa' &&
+            cl[0].chave_captacao !== 'chave-roubada' &&
+            cl[0].evolution_instance !== 'instancia-da-vizinha',
+            JSON.stringify(cl[0] || {}) + ' -- encerrar clinica, trocar a chave de captacao ' +
+            'e apontar a instancia do WhatsApp NAO sao decisao da propria clinica');
+
+          const rEditaPro = await fetch(base + '/api/clinica', {
+            method: 'PATCH', headers: comoPro, body: JSON.stringify({ endereco: 'x' }) });
+          conferir('a profissional NAO edita o timbre', rEditaPro.status === 403,
+            'respondeu ' + rEditaPro.status);
+          const rLePro = await fetch(base + '/api/clinica', { headers: comoPro });
+          conferir('mas ela LE o timbre (controle)', rLePro.ok,
+            'respondeu ' + rLePro.status + ' -- sem leitura ela nao ve o cabecalho antes de emitir');
+
+          const rMeu = await fetch(base + '/api/meu-timbre', { headers: comoPro });
+          const meu = await rMeu.json().catch(() => ({}));
+          conferir('o proprio timbre traz o registro e a resposta de podeEmitir',
+            rMeu.ok && meu.podeEmitir === true && meu.conselho === 'CRM',
+            JSON.stringify(meu).slice(0, 180));
+          conferir('e o timbre que a profissional le e o da PROPRIA clinica',
+            meu.clinica && meu.clinica.endereco === 'Rua do Ensaio, 10',
+            JSON.stringify(meu.clinica || {}));
+
+          // Um documento NOVO, agora com o timbre preenchido, carrega o carimbo.
+          const rNovo2 = await fetch(base + '/api/clients/c_a_1/documents', {
+            method: 'POST', headers: comoPro,
+            body: JSON.stringify({ templateId: mReceita.id }) });
+          const id2 = (await rNovo2.json().catch(() => ({}))).id;
+          if (id2) {
+            await fetch(base + '/api/documents/' + id2, {
+              method: 'PATCH', headers: comoPro,
+              body: JSON.stringify({ answers: { prescricao: 'Dipirona 500mg' } }) });
+            await fetch(base + '/api/documents/' + id2 + '/finalize',
+              { method: 'POST', headers: comoPro });
+            const papel2 = await (await fetch(base + '/api/documents/' + id2 + '/view',
+              { headers: comoPro })).text();
+            conferir('a receita sai com o nome de quem emite no alto',
+              papel2.indexOf('class="timbre-nome">Dra Ana A') !== -1,
+              'sem cabecalho, o papel parece rascunho por mais correto que esteja');
+            conferir('e com o endereco da clinica no rodape',
+              papel2.indexOf('Rua do Ensaio, 10') !== -1, 'rodape sem endereco');
+
+            const c4 = await conexao();
+            const [carimbo] = await c4.query(
+              'SELECT timbre_endereco FROM client_documents WHERE id = ?', [id2]);
+            await c4.end();
+            conferir('o timbre fica CARIMBADO no documento, e nao lido por juncao',
+              carimbo.length > 0 && carimbo[0].timbre_endereco === 'Rua do Ensaio, 10',
+              'sem o carimbo, mudar o endereco hoje reescreveria a receita de ontem');
+          }
+        }
+      }
+    }
+
+    /* ================================ [S] OS NUMEROS DA VISAO GERAL (M5.8)
+     *
+     * Ate a M5.8 esta tela somava no NAVEGADOR, a partir das listas que o CRM ja
+     * tinha carregado -- e por isso ela nunca apareceu nesta varredura: nao havia
+     * rota para medir. O filtro de clinica das listas a protegia por tabela.
+     *
+     * Agora ha duas rotas, e com elas dois riscos novos que so um ensaio com a
+     * vizinha acordada pega:
+     *
+     *   1. a conta e feita no servidor sobre o razao INTEIRO e sobre TODOS os
+     *      leads -- uma consulta sem `clinica_id` faria a clinica A abrir o CRM
+     *      vendo o faturamento das 50;
+     *   2. faturamento, ticket e CPL sao a mesma informacao que /api/finance
+     *      nega a quem atende. A tela e visivel para a profissional; o dinheiro
+     *      dela nao pode ser.
+     *
+     * E uma terceira conferencia, que nao e de vazamento e entra aqui de
+     * proposito: **o numero nao pode ser inventado**. Foi o defeito que originou
+     * a tarefa, e ele nao aparece em teste de permissao nenhum. */
+    console.log('\n[Z] a visao geral: o numero e da propria clinica, e nao e chutado?');
+    {
+      const comoA = { Authorization: 'Bearer ' + tokenA, 'Content-Type': 'application/json' };
+      const comoPro2 = { Authorization: 'Bearer ' + tokenPro };
+      const comoVend = { Authorization: 'Bearer ' + tokenVend };
+      const JANELA = '?from=' + PRIMEIRO + '&to=' + HOJE;
+
+      /* A MEDIDA E ANTES-E-DEPOIS, e nao um numero fixo.
+       *
+       * Os blocos acima ja criaram lead e concluiram atendimento na clinica A,
+       * entao "a A tem 1 lead" seria uma expectativa que quebra sempre que a
+       * varredura crescer -- e conferencia que quebra por motivo errado acaba
+       * sendo afrouxada ate nao medir nada. Aqui a vizinha ganha UM lead e UMA
+       * receita de valor inconfundivel DEPOIS da primeira leitura: se o numero
+       * da A mexer, a consulta esta sem `clinica_id`. */
+      const rAntes = await fetch(base + '/api/dashboard/visao-geral' + JANELA, { headers: comoA });
+      const antes = await rAntes.json().catch(() => ({}));
+      const dAntes = await (await fetch(base + '/api/dashboard/dinheiro' + JANELA,
+        { headers: comoA })).json().catch(() => ({}));
+
+      conferir('controle: a clinica A ve os proprios leads do mes',
+        rAntes.ok && antes.leads && antes.leads.valor >= 1,
+        'respondeu ' + rAntes.status + ' :: ' + JSON.stringify(antes.leads || {}) +
+        ' -- zero aqui faria a conferencia de baixo passar por resposta vazia');
+
+      const bdZ = await mysql.createConnection({
+        host: HOST, port: PORTA, user: USUARIO, password: SENHA, database: BANCO });
+      await bdZ.query(
+        'INSERT INTO leads (id, name, whatsapp, treatment, date, status, clinica_id)' +
+        " VALUES ('ld_z_vizinha','Lead da Vizinha','5511911112222','Ensaio',?,'novo','cl_b')",
+        [HOJE + ' 10:00:00']);
+      await bdZ.query(
+        'INSERT INTO cash_entries (id, type, description, amount, entry_date, clinica_id)' +
+        " VALUES ('ce_z_vizinha','RECEITA','Receita da Vizinha',7777.77,?,'cl_b')", [HOJE]);
+      await bdZ.end();
+
+      const rGeral = await fetch(base + '/api/dashboard/visao-geral' + JANELA, { headers: comoA });
+      const geral = await rGeral.json().catch(() => ({}));
+
+      conferir('o lead novo da vizinha NAO mexe na contagem da clinica A',
+        geral.leads && antes.leads && geral.leads.valor === antes.leads.valor,
+        'antes ' + JSON.stringify((antes.leads || {}).valor) +
+        ', depois ' + JSON.stringify((geral.leads || {}).valor) +
+        ' -- se subiu, a consulta e sem clinica_id e o CRM abriria com o funil das 50');
+
+      conferir('o funil fecha com a contagem de leads',
+        geral.funil && geral.funil.total === (geral.leads || {}).valor,
+        JSON.stringify(geral.funil || {}));
+
+      conferir('a janela comparada e do MESMO tamanho da pedida',
+        geral.periodo && geral.periodoAnterior &&
+        geral.periodoAnterior.ate === new Date(new Date(geral.periodo.de + 'T12:00:00')
+          .getTime() - 86400000).toISOString().slice(0, 10),
+        JSON.stringify({ p: geral.periodo, a: geral.periodoAnterior }));
+
+      conferir('nenhum percentual literal sobreviveu na resposta',
+        !/\+12|18[.,]5|1200/.test(JSON.stringify(geral)),
+        'a tela antiga imprimia "+12% vs periodo anterior" ao lado de qualquer numero');
+
+      const rDin = await fetch(base + '/api/dashboard/dinheiro' + JANELA, { headers: comoA });
+      const din = await rDin.json().catch(() => ({}));
+      const rFin = await fetch(base + '/api/finance/summary' + JANELA, { headers: comoA });
+      const resumo = await rFin.json().catch(() => ({}));
+
+      conferir('controle: o Financeiro respondeu um numero',
+        typeof resumo.receitaTotal === 'number',
+        'sem ele a comparacao abaixo seria undefined === undefined');
+      conferir('o faturamento da abertura e EXATAMENTE o do Financeiro',
+        din.faturamento && din.faturamento.valor === resumo.receitaTotal,
+        'abertura ' + JSON.stringify((din.faturamento || {}).valor) +
+        ' x financeiro ' + JSON.stringify(resumo.receitaTotal) +
+        ' -- duas telas do mesmo sistema nao podem dizer dois faturamentos');
+      conferir('e a receita de 7.777,77 da vizinha nao entrou no faturamento da A',
+        din.faturamento && dAntes.faturamento &&
+        din.faturamento.valor === dAntes.faturamento.valor,
+        'antes ' + JSON.stringify((dAntes.faturamento || {}).valor) +
+        ', depois ' + JSON.stringify((din.faturamento || {}).valor) +
+        ' -- o valor foi escolhido para nao poder ser confundido com nada da A');
+
+      conferir('sem categoria marcada, o CPL responde NADA em vez de um numero',
+        din.custoPorLead && din.custoPorLead.valor === null &&
+        din.custoPorLead.investimento === null &&
+        din.custoPorLead.categoriasMarcadas === 0,
+        JSON.stringify(din.custoPorLead || {}) +
+        ' -- aqui havia "R$ 18,50" escrito no codigo da tela');
+
+      // A marcacao e POR CLINICA: a chave de finance_categories e composta desde
+      // a migration 030, e as duas clinicas tem categoria com o MESMO id.
+      const rMarca = await fetch(base + '/api/finance/categories/cat_produtos', {
+        method: 'PATCH', headers: comoA, body: JSON.stringify({ contaNoCpl: true }) });
+      conferir('a clinica A marca a propria categoria de captacao', rMarca.ok,
+        'respondeu ' + rMarca.status);
+      const bdM = await mysql.createConnection({
+        host: HOST, port: PORTA, user: USUARIO, password: SENHA, database: BANCO });
+      const [marcas] = await bdM.query(
+        "SELECT clinica_id, conta_no_cpl FROM finance_categories WHERE id = 'cat_produtos'");
+      await bdM.end();
+      const daVizinha = marcas.find((m) => m.clinica_id === 'cl_b');
+      conferir('e a categoria de MESMO id da vizinha continua desmarcada',
+        !!daVizinha && Number(daVizinha.conta_no_cpl) === 0,
+        JSON.stringify(marcas) +
+        ' -- id repetido entre clinicas e o caso que a chave composta permitiu');
+
+      conferir('a profissional ABRE a visao geral',
+        (await fetch(base + '/api/dashboard/visao-geral' + JANELA, { headers: comoPro2 })).ok,
+        'sem isto ela perde a tela de abertura inteira');
+      conferir('mas NAO alcanca o faturamento nem o CPL',
+        (await fetch(base + '/api/dashboard/dinheiro' + JANELA, { headers: comoPro2 })).status === 403,
+        'quem nao ve preco em Precificacao nao pode ver o caixa na abertura');
+      conferir('e o vendedor nao alcanca nem a visao geral',
+        (await fetch(base + '/api/dashboard/visao-geral' + JANELA, { headers: comoVend })).status === 403,
+        'a tela nao esta no menu dele; a tabela de papeis e quem barra');
+      conferir('sem sessao, nenhuma das duas responde',
+        (await fetch(base + '/api/dashboard/visao-geral' + JANELA)).status === 401 &&
+        (await fetch(base + '/api/dashboard/dinheiro' + JANELA)).status === 401,
+        'rota de painel nao entra em ROTAS_PUBLICAS');
+    }
+
     console.log('\n[P] a terceira barreira: o banco recusa a linha cruzada?');
     const bd = await mysql.createConnection({
       host: HOST, port: PORTA, user: USUARIO, password: SENHA, database: BANCO });

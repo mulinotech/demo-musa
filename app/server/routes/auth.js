@@ -35,6 +35,16 @@ router.post('/api/auth/login', express.json({ limit: '1mb' }), async function (r
       }
 
       await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [u.id]);
+      /* Clinica suspensa ou encerrada: recusa aqui tambem (M3.2b). O porteiro ja
+       * barraria a proxima requisicao, mas deixar entrar para derrubar no
+       * clique seguinte seria pior de entender do que dizer na porta. */
+      const situacao = require('../db/situacao-clinica');
+      if (!(await situacao.estaAtiva(u.clinica_id))) {
+        return res.status(403).json({
+          error: 'O acesso desta clinica esta suspenso. Fale com a Mulino.'
+        });
+      }
+
       return res.json({ token: auth.gerarToken(u), role: u.role, salespersonName: u.name, salespersonId: u.salesperson_id });
     }
 

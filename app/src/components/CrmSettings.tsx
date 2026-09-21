@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, Users, Plus, Edit2, Trash2, Tag, X } from 'lucide-react';
+import { Settings, Users, Plus, Edit2, Trash2, Tag, X, Building2 } from 'lucide-react';
+import TimbreDaClinica from './TimbreDaClinica';
 import { Salesperson, TreatmentCatalog } from '../types';
 import { TREATMENTS } from '../data';
 
 export default function CrmSettings() {
-  const [activeTab, setActiveTab] = useState<'salespersons' | 'treatments'>('treatments');
+  const [activeTab, setActiveTab] = useState<'salespersons' | 'treatments' | 'timbre'>('treatments');
 
   // Data states
   const [salespersons, setSalespersons] = useState<Salesperson[]>([]);
@@ -202,11 +203,25 @@ export default function CrmSettings() {
               <Users className="w-4 h-4" />
               Equipe de Vendas
             </button>
+            {/* O TIMBRE (M5.6). Fica em Cadastros porque e' cadastro da clinica,
+                nao configuracao de documento: o mesmo endereco sai em receita,
+                atestado, anamnese e termo. */}
+            <button
+              onClick={() => setActiveTab('timbre')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                activeTab === 'timbre' ? 'bg-brand-brown text-brand-beige' : 'text-brand-brown/70 hover:bg-brand-beige'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              Timbre da Clínica
+            </button>
           </nav>
         </div>
 
         {/* Settings Content */}
         <div className="flex-1 p-6 md:p-8">
+          {activeTab === 'timbre' && <TimbreDaClinica />}
+
           {activeTab === 'treatments' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div className="flex justify-between items-center">

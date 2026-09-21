@@ -319,4 +319,221 @@ router.post('/api/plataforma/clinicas/:id/entrar', async function (req, res) {
   }
 });
 
+/** SUSPENDER, ENCERRAR E REATIVAR (M3.2b).
+ *
+ *  ENCERRAR NÃO APAGA NADA. Ele tranca o acesso e mantém os dados: prontuário
+ *  tem prazo legal de guarda, e a exclusão é ato separado, deliberado, que
+ *  depende do prazo de retenção que a clínica definir. Não existe rota de apagar
+ *  clínica neste sistema, e o teste cobra que não passe a existir.
+ *
+ *  Encerrar exige digitar o NOME da clínica. Suspender é reversível com um
+ *  clique; encerrar é a operação que alguém faz uma vez e ninguém quer fazer por
+ *  engano na linha de baixo da lista.
+ */
+const STATUS_VALIDOS = ['ativa', 'suspensa', 'encerrada'];
+
+router.patch('/api/plataforma/clinicas/:id/status', express.json(), async function (req, res) {
+  const id = req.params.id;
+  const status = String((req.body && req.body.status) || '').trim();
+  const motivo = String((req.body && req.body.motivo) || '').trim().slice(0, 255);
+  const nomeDigitado = String((req.body && req.body.confirmacaoNome) || '').trim();
+
+  if (STATUS_VALIDOS.indexOf(status) === -1) {
+    return res.status(400).json({ error: 'Status invalido. Use: ' + STATUS_VALIDOS.join(', ') + '.' });
+  }
+  if (status !== 'ativa' && !motivo) {
+    return res.status(400).json({
+      error: 'Informe o motivo. Suspensao sem motivo registrado vira discussao sem arbitro.'
+    });
+  }
+
+  try {
+    const cru = escopo.todasAsClinicas(MOTIVO);
+    const [achadas] = await cru.q('SELECT id, nome, status FROM clinicas WHERE id = ?', [id]);
+    if (!achadas.length) return res.status(404).json({ error: 'Clinica nao encontrada.' });
+    const clinica = achadas[0];
+
+    if (status === 'encerrada' && nomeDigitado !== clinica.nome) {
+      return res.status(400).json({
+        error: 'Para encerrar, digite o nome exato da clinica: "' + clinica.nome + '".'
+      });
+    }
+
+    await cru.q(
+      'UPDATE clinicas SET status = ?, status_em = NOW(), motivo_status = ?, status_por = ?' +
+      ' WHERE id = ?',
+      [status, motivo || null, req.usuario.email, id]);
+
+    // Sem isto a mudanca so valeria quando o cache vencesse.
+    require('../db/situacao-clinica').esquecer();
+
+    await logs.daInstalacao(MOTIVO, 'CLINICA_STATUS',
+      'Clinica "' + clinica.nome + '" (' + id + '): ' + clinica.status + ' -> ' + status +
+      (motivo ? ' — motivo: ' + motivo : '') + '. Por ' + req.usuario.email +
+      '. Nenhum dado foi apagado.',
+      req.usuario.email, req.ip);
+
+    res.json({
+      clinica: id,
+      nome: clinica.nome,
+      de: clinica.status,
+      para: status,
+      observacao: status === 'ativa'
+        ? 'A clinica voltou a funcionar. Quem tem acesso entra normalmente.'
+        : 'O acesso esta trancado: ninguem da clinica entra, e quem estava dentro cai em ate 15 ' +
+          'segundos. NENHUM DADO FOI APAGADO -- paciente, prontuario, financeiro e agenda continuam ' +
+          'no banco. Reativar devolve tudo.'
+    });
+  } catch (e) {
+    console.error('[plataforma] status:', e && e.message);
+    res.status(500).json({ error: 'Falha ao mudar o status da clinica.' });
+  }
+});
+
+/** O PAINEL DE USO (M3.3).
+ *
+ *  Números por clínica nos últimos 30 dias, e ALERTAS — que é a parte que vale.
+ *  "A Clínica X tem 40 atendimentos" é informação; **"a Clínica Y não registra
+ *  nada há 12 dias"** é a ligação que o comercial precisa fazer hoje, e
+ *  **"o site da Clínica Z recusou 8 leads esta semana"** é dinheiro escorrendo
+ *  agora por uma chave de captação errada.
+ *
+ *  Contagem, nunca conteúdo — a mesma fronteira da listagem, e há teste cobrando
+ *  que nenhum nome de paciente apareça aqui.
+ */
+router.get('/api/plataforma/uso', async function (req, res) {
+  try {
+    const cru = escopo.todasAsClinicas(MOTIVO);
+
+    const [linhas] = await cru.q(`
+      SELECT
+        c.id, c.nome, c.status, c.criada_em, c.chave_captacao,
+        c.evolution_instance IS NOT NULL AND c.evolution_instance <> '' AS whatsappConectado,
+        (SELECT COUNT(*) FROM users WHERE clinica_id = c.id AND status = 'active'
+           AND role = 'admin') AS administradores,
+        (SELECT COUNT(*) FROM users WHERE clinica_id = c.id AND status = 'active') AS acessos,
+        (SELECT COUNT(*) FROM clients WHERE clinica_id = c.id) AS pacientes,
+        (SELECT COUNT(*) FROM appointments WHERE clinica_id = c.id
+           AND starts_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) AS atendimentos30d,
+        (SELECT COUNT(*) FROM leads WHERE clinica_id = c.id
+           AND date >= DATE_SUB(NOW(), INTERVAL 30 DAY)) AS leads30d,
+        (SELECT COUNT(*) FROM clients WHERE clinica_id = c.id
+           AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) AS pacientesNovos30d,
+        (SELECT MAX(created_at) FROM system_logs WHERE clinica_id = c.id) AS ultimaAtividade
+      FROM clinicas c
+      ORDER BY c.criada_em ASC, c.id ASC
+    `);
+
+    /* Leads RECUSADOS ficam no registro da instalacao, e nao no de clinica
+     * nenhuma -- e o motivo e que a recusa acontece justamente quando nao da
+     * para saber de quem o lead e. Este numero e o unico sinal de que o site de
+     * alguem esta com a chave errada AGORA. */
+    const [recusados] = await cru.q(
+      "SELECT COUNT(*) AS n FROM system_logs WHERE clinica_id IS NULL" +
+      " AND action_type = 'LEAD_SEM_CLINICA' AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+
+    const agora = Date.now();
+    const clinicas = linhas.map(function (c) {
+      const alertas = [];
+      const dias = c.ultimaAtividade
+        ? Math.floor((agora - new Date(c.ultimaAtividade).getTime()) / 86400000) : null;
+
+      if (c.status === 'ativa') {
+        if (dias === null) alertas.push('nunca registrou atividade desde que nasceu');
+        else if (dias >= 7) alertas.push('sem atividade ha ' + dias + ' dias');
+        if (Number(c.administradores) === 0) alertas.push('nenhum administrador ativo');
+        if (!c.chave_captacao) alertas.push('sem chave de captacao: o site dela nao grava lead');
+        if (!Number(c.whatsappConectado)) alertas.push('WhatsApp nao conectado');
+      }
+
+      return {
+        id: c.id, nome: c.nome, status: c.status, criadaEm: c.criada_em,
+        acessos: Number(c.acessos), administradores: Number(c.administradores),
+        pacientes: Number(c.pacientes),
+        atendimentos30d: Number(c.atendimentos30d),
+        leads30d: Number(c.leads30d),
+        pacientesNovos30d: Number(c.pacientesNovos30d),
+        whatsappConectado: !!Number(c.whatsappConectado),
+        ultimaAtividade: c.ultimaAtividade,
+        diasSemAtividade: dias,
+        alertas: alertas
+      };
+    });
+
+    const soma = function (campo) {
+      return clinicas.reduce(function (t, c) { return t + c[campo]; }, 0);
+    };
+
+    res.json({
+      instalacao: {
+        clinicas: clinicas.length,
+        ativas: clinicas.filter(function (c) { return c.status === 'ativa'; }).length,
+        suspensas: clinicas.filter(function (c) { return c.status === 'suspensa'; }).length,
+        encerradas: clinicas.filter(function (c) { return c.status === 'encerrada'; }).length,
+        pacientes: soma('pacientes'),
+        acessos: soma('acessos'),
+        atendimentos30d: soma('atendimentos30d'),
+        leads30d: soma('leads30d'),
+        leadsRecusados7d: Number(recusados[0].n)
+      },
+      clinicas: clinicas,
+      comAlerta: clinicas.filter(function (c) { return c.alertas.length > 0; }).length
+    });
+  } catch (e) {
+    console.error('[plataforma] uso:', e && e.message);
+    res.status(500).json({ error: 'Falha ao montar o painel de uso.' });
+  }
+});
+
+/** OS REGISTROS DA INSTALAÇÃO — a dívida guardada desde a M1.6a (M3.3).
+ *
+ *  Quando a trilha de auditoria virou "por clínica", tudo que é da INSTALAÇÃO
+ *  ficou com `clinica_id` vazio: migrations, varreduras do cron, nascimento de
+ *  clínica, mudança de status, e todo registro anterior a 09/09. Linha sem
+ *  clínica é invisível em todas as telas do CRM — de propósito, porque mostrá-la
+ *  a uma clínica seria mostrar atividade que pode não ser dela.
+ *
+ *  Resultado: esses registros estão no banco, íntegros, e ninguém os vê. Esta
+ *  rota é a tela deles, e o lugar certo é aqui: são da plataforma.
+ *
+ *  UM AVISO SOBRE O CONTEÚDO: o registro de lead recusado carrega nome e
+ *  telefone de quem preencheu o formulário. Isso é deliberado e vale a pena — é
+ *  a ÚNICA forma de recuperar o contato de quem tentou falar com uma clínica
+ *  cujo site estava mal configurado. Mas é dado de pessoa, e quem abre esta tela
+ *  precisa saber disso.
+ */
+router.get('/api/plataforma/registros', async function (req, res) {
+  const tipo = String(req.query.tipo || '').trim();
+  const limite = Math.min(Math.max(parseInt(req.query.limite || '100', 10) || 100, 1), 500);
+
+  try {
+    const cru = escopo.todasAsClinicas(MOTIVO);
+    const filtro = tipo ? ' AND action_type = ?' : '';
+    const params = tipo ? [tipo, limite] : [limite];
+
+    const [linhas] = await cru.q(
+      'SELECT id, action_type AS tipo, description AS descricao, author AS autor,' +
+      ' ip_address AS ip, created_at AS quando FROM system_logs' +
+      ' WHERE clinica_id IS NULL' + filtro +
+      ' ORDER BY created_at DESC LIMIT ?', params);
+
+    const [tipos] = await cru.q(
+      'SELECT action_type AS tipo, COUNT(*) AS n FROM system_logs WHERE clinica_id IS NULL' +
+      ' GROUP BY action_type ORDER BY n DESC');
+
+    res.json({
+      registros: linhas,
+      tipos: tipos,
+      limite: limite,
+      aviso: 'Estes sao os registros da INSTALACAO, nao de clinica nenhuma. Os de lead recusado ' +
+             'carregam nome e telefone de quem preencheu um formulario mal configurado -- e ' +
+             'existem para que esse contato possa ser recuperado.'
+    });
+  } catch (e) {
+    console.error('[plataforma] registros:', e && e.message);
+    res.status(500).json({ error: 'Falha ao ler os registros da instalacao.' });
+  }
+});
+
 module.exports = router;
+module.exports.STATUS_VALIDOS = STATUS_VALIDOS;

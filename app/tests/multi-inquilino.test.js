@@ -510,6 +510,13 @@ async function passaNoPorteiro(req) {
 
 const USUARIO = { id: 'u_1', name: 'Silvia', role: 'admin', salesperson_id: null, clinica_id: 'cl_1' };
 
+/* O porteiro passou a conferir se a clinica esta ativa (M3.2b). Estes testes
+ * medem a logica do TOKEN e nao tem banco, entao a origem do status vem daqui.
+ * `cl_suspensa` existe para o teste do bloqueio, logo abaixo. */
+require('../server/db/situacao-clinica.js').trocarOrigem(async function () {
+  return { cl_1: 'ativa', cl_b: 'ativa', cl_suspensa: 'suspensa', cl_encerrada: 'encerrada' };
+});
+
 test('o token carrega a clinica', function () {
   const t = auth.gerarToken(USUARIO);
   const lido = auth.usuarioDaRequisicao({ headers: { authorization: 'Bearer ' + t } });
@@ -529,6 +536,62 @@ test('o token NAO carrega o nome da clinica', function () {
 test('sessao COM clinica passa no porteiro', async function () {
   const { seguiu } = await passaNoPorteiro(reqCom(USUARIO));
   assert.strictEqual(seguiu, true);
+});
+
+test('sessao de clinica SUSPENSA e recusada com 403, mesmo com token valido', async function () {
+  /* Conferir so no login deixaria quem ja estava dentro trabalhando por mais 12
+   * horas depois da suspensao -- e "suspendi o acesso" seria mentira o resto do
+   * dia. O status vem de um mapa em memoria, recarregado a cada 15s. */
+  const daSuspensa = Object.assign({}, USUARIO, { clinica_id: 'cl_suspensa' });
+  const { seguiu, res } = await passaNoPorteiro(reqCom(daSuspensa));
+  assert.strictEqual(seguiu, false);
+  assert.strictEqual(res.codigo, 403);
+  assert.match(res.corpo.error, /suspenso/i);
+});
+
+test('e clinica ENCERRADA tambem nao entra', async function () {
+  const daEncerrada = Object.assign({}, USUARIO, { clinica_id: 'cl_encerrada' });
+  const { seguiu, res } = await passaNoPorteiro(reqCom(daEncerrada));
+  assert.strictEqual(seguiu, false);
+  assert.strictEqual(res.codigo, 403);
+});
+
+test('clinica que nao existe no mapa tambem nao entra (falha fechado)', async function () {
+  const deOutra = Object.assign({}, USUARIO, { clinica_id: 'cl_que_nao_existe' });
+  const { seguiu } = await passaNoPorteiro(reqCom(deOutra));
+  assert.strictEqual(seguiu, false,
+    'status desconhecido tem de barrar: falha de leitura nao pode virar "todo mundo entra"');
+});
+
+test('NAO existe rota que apague clinica', function () {
+  /* Encerrar tranca o acesso e MANTEM os dados: prontuario tem prazo legal de
+   * guarda. Se um dia alguem escrever um DELETE de clinica achando que "encerrar
+   * deveria limpar", este teste fica vermelho antes de ir para producao. */
+  const fs = require('fs');
+  const p = require('path');
+  const dir = p.join(__dirname, '..', 'server', 'routes');
+  for (const arq of fs.readdirSync(dir)) {
+    const fonte = fs.readFileSync(p.join(dir, arq), 'utf8');
+    assert.ok(!/DELETE\s+FROM\s+clinicas/i.test(fonte),
+      arq + ' apaga linha de `clinicas`. Encerrar NAO e apagar.');
+    assert.ok(!/router\.delete\([^)]*\/api\/plataforma\/clinicas/i.test(fonte),
+      arq + ' tem rota de apagar clinica pela plataforma.');
+  }
+});
+
+test('suspender exige motivo; encerrar exige o nome digitado', function () {
+  const fs = require('fs');
+  const fonte = fs.readFileSync(
+    require('path').join(__dirname, '..', 'server', 'routes', 'plataforma.js'), 'utf8');
+  const i = fonte.indexOf("router.patch('/api/plataforma/clinicas/:id/status'");
+  assert.ok(i !== -1, 'a rota de status precisa existir');
+  const corpo = fonte.slice(i, fonte.indexOf('\n});', i));
+
+  assert.ok(/!motivo/.test(corpo), 'suspender ou encerrar sem motivo tem de ser recusado');
+  assert.ok(/confirmacaoNome|nomeDigitado/.test(corpo),
+    'encerrar tem de exigir o nome digitado: e a operacao que ninguem quer fazer por engano');
+  assert.ok(/esquecer\(\)/.test(corpo),
+    'mudar o status tem de limpar o cache, senao a mudanca so vale daqui a 15 segundos');
 });
 
 test('sessao SEM clinica e recusada com 401', async function () {
@@ -1206,6 +1269,88 @@ test('o teto de requisicoes por minuto continua 120 quando ninguem configura', f
   const linha = app.split('\n').filter((l) => l.indexOf('LIMITE_API_POR_MINUTO') !== -1)[0] || '';
   assert.ok(/\|\|\s*'120'/.test(linha),
     'o padrao do teto por minuto tem de ser 120; achei: ' + linha.trim());
+});
+
+test('o painel de uso monta a resposta CAMPO A CAMPO, e nao espalhando a linha', function () {
+  /* Medido em 14/09: uma sabotagem que acrescentou `name` da paciente na
+   * consulta passou verde -- porque a resposta e montada campo a campo e a
+   * coluna extra nunca chegou a tela. Esse `map` e uma barreira de verdade, e
+   * este teste existe para ninguem troca-lo por um espalhamento do objeto do
+   * banco num dia apressado. */
+  const fs = require('fs');
+  const fonte = fs.readFileSync(
+    require('path').join(__dirname, '..', 'server', 'routes', 'plataforma.js'), 'utf8');
+  const i = fonte.indexOf("router.get('/api/plataforma/uso'");
+  assert.ok(i !== -1, 'a rota do painel precisa existir');
+  const corpo = fonte.slice(i, fonte.indexOf('\n});', i));
+
+  assert.ok(/\.map\(/.test(corpo), 'a resposta tem de ser montada campo a campo');
+  assert.ok(!/\.\.\.c\b/.test(corpo) && !/Object\.assign\(\{\},\s*c\b/.test(corpo),
+    'espalhar a linha do banco na resposta levaria junto toda coluna nova que alguem adicionar');
+});
+
+/* ============ o censo de rotas: a varredura cobre TODAS? (M4.1, 14/09) */
+
+test('TODA rota com :id esta na varredura de escrita cruzada, ou tem excecao escrita', function () {
+  /* A conferencia que faz a M4.1 durar. Ate hoje a varredura media "as rotas que
+   * eu lembrei" -- e foi justamente por nao passar por rotas com `:id` que nove
+   * delas respondiam 2xx para o id da clinica vizinha sem ninguem notar.
+   *
+   * Agora a aplicacao e ENUMERADA: toda rota montada com parametro tem de estar
+   * na tabela da varredura ou na lista de excecoes, com motivo. Rota nova que
+   * ninguem acrescentar deixa isto vermelho antes de ir para producao. */
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'segredo-de-teste';
+  const app = require('../server/app.js');
+  const { FAMILIAS, FORA_DA_VARREDURA } = require('../scripts/rotas-com-id.js');
+  const { ehRotaPublica } = require('../server/middleware/autenticacao.js');
+
+  const montadas = [];
+  (function varrer(pilha) {
+    for (const c of pilha) {
+      if (c.route) {
+        for (const m of Object.keys(c.route.methods)) {
+          if (c.route.methods[m]) montadas.push(m.toUpperCase() + ' ' + c.route.path);
+        }
+      } else if (c.handle && c.handle.stack) varrer(c.handle.stack);
+    }
+  })(app._router.stack);
+
+  assert.ok(montadas.length > 100,
+    'esperava mais de 100 rotas montadas, achei ' + montadas.length +
+    ' -- enumeracao vazia faria este teste passar sem conferir nada');
+
+  // O que a varredura cobre, no formato "METODO /caminho/:param".
+  const cobertas = new Set();
+  for (const [, , chamadas] of FAMILIAS) {
+    for (const [metodo, molde] of chamadas) {
+      cobertas.add(metodo + ' ' + molde.replace('{ID}', ':id'));
+    }
+  }
+
+  const comParametro = [...new Set(montadas)].filter((r) => r.indexOf('/:') !== -1);
+  const descobertas = comParametro.filter(function (r) {
+    // `:catalogId`, `:name` etc. viram `:id` para casar com a tabela.
+    const normal = r.replace(/:[A-Za-z]+/g, ':id');
+    if (cobertas.has(normal)) return false;
+    if (FORA_DA_VARREDURA[r] || FORA_DA_VARREDURA[normal]) return false;
+    if (ehRotaPublica(r.split(' ')[0], r.split(' ')[1])) return false;
+    return true;
+  });
+
+  assert.deepStrictEqual(descobertas, [],
+    'rota(s) com parametro fora da varredura de escrita cruzada:\n  ' +
+    descobertas.join('\n  ') +
+    '\nAcrescente em scripts/rotas-com-id.js -- na tabela FAMILIAS, ou em ' +
+    'FORA_DA_VARREDURA com o motivo escrito.');
+});
+
+test('as excecoes da varredura tem motivo, e nao so nome', function () {
+  const { FORA_DA_VARREDURA } = require('../scripts/rotas-com-id.js');
+  for (const rota of Object.keys(FORA_DA_VARREDURA)) {
+    const motivo = FORA_DA_VARREDURA[rota];
+    assert.ok(typeof motivo === 'string' && motivo.length > 40,
+      'a excecao de "' + rota + '" precisa de motivo escrito, nao de uma frase de efeito');
+  }
 });
 
 /* ============ o acesso de suporte, com prazo (M3.1b, 14/09) */

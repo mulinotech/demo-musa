@@ -59,7 +59,10 @@ const ROTAS_DA_PLATAFORMA = [
   { metodo: 'GET',  caminho: '/api/plataforma/clinicas' },
   { metodo: 'POST', caminho: '/api/plataforma/clinicas' },
   { metodo: 'GET',  padrao: /^\/api\/plataforma\/clinicas\/[^/]+\/conferencia$/ },
-  { metodo: 'POST', padrao: /^\/api\/plataforma\/clinicas\/[^/]+\/entrar$/ }
+  { metodo: 'POST', padrao: /^\/api\/plataforma\/clinicas\/[^/]+\/entrar$/ },
+  { metodo: 'PATCH', padrao: /^\/api\/plataforma\/clinicas\/[^/]+\/status$/ },
+  { metodo: 'GET',  caminho: '/api/plataforma/uso' },
+  { metodo: 'GET',  caminho: '/api/plataforma/registros' }
 ];
 
 /** A SESSAO DE SUPORTE (M3.1b): so leitura, e o prontuario fica fora.

@@ -9,13 +9,14 @@
  * 20/08/2026: o sistema **registra** dinheiro, não **movimenta** dinheiro.
  */
 import { useCallback, useEffect, useState } from "react";
-import { LineChart, ListPlus, Repeat, DownloadCloud } from "lucide-react";
+import { LineChart, ListPlus, Repeat, DownloadCloud, Megaphone } from "lucide-react";
 import ResumoFinanceiro from "../../components/financeiro/ResumoFinanceiro";
 import LancamentosList from "../../components/financeiro/LancamentosList";
 import Recorrentes from "../../components/financeiro/Recorrentes";
+import Categorias from "../../components/financeiro/Categorias";
 import { Base, Categoria, mesCorrente } from "../../components/financeiro/comum";
 
-type Aba = "resumo" | "lancamentos" | "recorrentes";
+type Aba = "resumo" | "lancamentos" | "recorrentes" | "categorias";
 
 export default function Financeiro() {
   const inicial = mesCorrente();
@@ -69,6 +70,7 @@ export default function Financeiro() {
     { id: "resumo", rotulo: "Resultado", icone: LineChart },
     { id: "lancamentos", rotulo: "Lançamentos", icone: ListPlus },
     { id: "recorrentes", rotulo: "Recorrentes", icone: Repeat },
+    { id: "categorias", rotulo: "Categorias", icone: Megaphone },
   ];
 
   return (
@@ -133,6 +135,10 @@ export default function Financeiro() {
       )}
 
       {aba === "recorrentes" && <Recorrentes categorias={categorias} aoMudar={mudou} />}
+
+      {/* A lista de categorias e recarregada ao marcar: o estado que importa
+          (contaNoCpl) vive no servidor, nao nesta tela. */}
+      {aba === "categorias" && <Categorias aoMudar={carregarCategorias} />}
     </div>
   );
 }

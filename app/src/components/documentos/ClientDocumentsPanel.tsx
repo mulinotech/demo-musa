@@ -30,6 +30,21 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
   const [ocupado, setOcupado] = useState(false);
   const [chaveAlertas, setChaveAlertas] = useState(0);
 
+  /* O TIMBRE DE QUEM ESTA LOGADA (M5.6).
+   *
+   * A tela precisa de duas respostas ANTES de a profissional escrever qualquer
+   * coisa: como vai ficar o cabecalho, e se ela pode emitir. A segunda custou
+   * caro em 16/09 -- sem o conselho preenchido a emissao e recusada,
+   * corretamente, mas a recusa so aparecia DEPOIS de escrever a receita
+   * inteira, e foi lida como "o botao de imprimir esta quebrado".
+   *
+   * `podeEmitir` vem PRONTO do servidor: a regra de quem pode emitir vive la, e
+   * deduzi-la aqui de tres campos criaria uma segunda versao dela. */
+  const [timbre, setTimbre] = useState<{
+    nome: string; funcao: string; conselho: string; conselhoNumero: string; conselhoUf: string;
+    podeEmitir: boolean; clinica: { nome: string; endereco: string; telefone: string; email: string; contato: string };
+  } | null>(null);
+
   const carregar = useCallback(async () => {
     if (!p.clientId) return;
     const r = await fetch("/api/clients/" + p.clientId + "/documents");
@@ -45,6 +60,10 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
       .then((r) => r.json())
       .then((d) => setModelos(Array.isArray(d) ? d : []))
       .catch(() => setModelos([]));
+    fetch("/api/meu-timbre")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setTimbre(d))
+      .catch(() => setTimbre(null));
   }, [carregar]);
 
   const abrir = (doc: Documento) => {
@@ -103,9 +122,14 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
   const gerar = async () => {
     if (!aberto) return;
     if (!window.confirm(
-      "Gerar para assinatura?\n\n" +
-      "A partir daqui o conteúdo do documento fica IMUTÁVEL — é isso que dá valor à assinatura. " +
-      "Para corrigir depois será preciso emitir um documento novo.",
+      ehEmitido
+        ? "Emitir o documento?\n\n" +
+          "A partir daqui o conteúdo fica IMUTÁVEL. Quem assina receita e atestado é a " +
+          "profissional, no papel impresso — o sistema não assina por você. " +
+          "Para corrigir depois será preciso emitir um documento novo."
+        : "Gerar para assinatura?\n\n" +
+          "A partir daqui o conteúdo do documento fica IMUTÁVEL — é isso que dá valor à assinatura. " +
+          "Para corrigir depois será preciso emitir um documento novo.",
     )) return;
     setOcupado(true);
     try {
@@ -135,10 +159,16 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
       }
       setErro("");
       setProblemas({});
-      setRecado("Documento gerado. Código de integridade: " + String(j.contentHash).slice(0, 16) + "…");
+      setRecado((j.status === "EMITIDO" ? "Documento emitido. " : "Documento gerado. ") +
+        "Código de integridade: " + String(j.contentHash).slice(0, 16) + "…");
       await carregar();
-      setAberto({ ...aberto, status: "AGUARDANDO_ASSINATURA", contentHash: j.contentHash });
-      setAssinando(true);
+      /* O STATUS VEM DO SERVIDOR, nao e' adivinhado aqui. Antes a tela escrevia
+         "AGUARDANDO_ASSINATURA" sempre -- e receita, que nasce EMITIDA, aparecia
+         como se estivesse esperando a paciente assinar. */
+      const novo = j.status || "AGUARDANDO_ASSINATURA";
+      setAberto({ ...aberto, status: novo, contentHash: j.contentHash });
+      // Documento emitido nao abre painel de assinatura: nao ha o que assinar em tela.
+      setAssinando(novo === "AGUARDANDO_ASSINATURA");
     } finally {
       setOcupado(false);
     }
@@ -187,6 +217,10 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
   };
 
   const modeloDoAberto = aberto ? modelos.find((m) => m.id === aberto.templateId) : null;
+  /* Receita e atestado sao EMITIDOS pela profissional; os demais sao assinados
+     pela paciente. O tipo decide tudo o que muda daqui para baixo. */
+  const ehEmitido = !!modeloDoAberto && (modeloDoAberto.type === "RECEITA" || modeloDoAberto.type === "ATESTADO");
+  const faltaConselho = ehEmitido && !!timbre && !timbre.podeEmitir;
   const rotulo = "block text-[10px] uppercase tracking-widest text-brand-brown/60 font-bold mb-1";
   const campo =
     "w-full bg-white border border-brand-gold/30 rounded px-3 py-2 text-xs text-brand-brown focus:outline-none focus:border-brand-brown transition-colors";
@@ -313,6 +347,40 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
             </p>
           )}
 
+          {/* O AVISO VEM ANTES DE ESCREVER, nao depois (M5.6). */}
+          {faltaConselho && (
+            <div className="rounded-xl px-4 py-3 mb-3 text-xs border bg-amber-50 border-amber-200 text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                Para emitir receita ou atestado é preciso ter <strong>conselho e número de
+                registro</strong> no seu cadastro. Preencha em <strong>Usuários</strong> antes de
+                escrever — sem isso o documento não pode ser emitido, e o papel sem registro é
+                devolvido pela farmácia e pelo RH.
+              </p>
+            </div>
+          )}
+
+          {/* "Vai sair assim no papel": o cabecalho que o documento impresso vai
+              carregar, visivel na hora de escrever. */}
+          {ehEmitido && timbre && timbre.podeEmitir && aberto.status === "RASCUNHO" && (
+            <div className="rounded-xl px-4 py-3 mb-3 border border-brand-gold/25 bg-white font-serif text-brand-brown">
+              <p className="text-[9px] uppercase tracking-widest text-brand-brown/55 font-sans mb-1">
+                Vai sair assim no papel
+              </p>
+              <p className="text-sm font-bold leading-tight">{timbre.nome}</p>
+              <p className="text-[10px] text-brand-brown/65 font-sans">
+                {[timbre.funcao, [timbre.conselho, timbre.conselhoNumero].filter(Boolean).join(" ") +
+                  (timbre.conselhoUf ? "/" + timbre.conselhoUf : "")].filter(Boolean).join(" · ")}
+              </p>
+              {timbre.clinica && (timbre.clinica.endereco || timbre.clinica.telefone) && (
+                <p className="text-[10px] text-brand-brown/55 mt-1.5 font-sans">
+                  {[timbre.clinica.endereco, timbre.clinica.telefone, timbre.clinica.email]
+                    .filter(Boolean).join(" · ")}
+                </p>
+              )}
+            </div>
+          )}
+
           {modeloDoAberto ? (
             <DocumentForm
               secoes={modeloDoAberto.fields.sections}
@@ -372,7 +440,11 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
                   className="flex items-center gap-1.5 bg-brand-brown hover:bg-brand-brown/95 disabled:opacity-50 text-brand-beige px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest cursor-pointer"
                 >
                   <Lock className="h-3.5 w-3.5" />
-                  Gerar para assinatura
+                  {/* O rotulo segue QUEM assina: a paciente assina anamnese e
+                      termo em tela; receita e atestado a profissional assina no
+                      papel. "Gerar para assinatura" num receituario prometia uma
+                      assinatura em tela que nao existe. */}
+                  {ehEmitido ? "Emitir documento" : "Gerar para assinatura"}
                 </button>
               </>
             )}

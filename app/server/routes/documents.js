@@ -18,6 +18,16 @@
  */
 const express = require('express');
 const router = express.Router();
+
+/** A linha e desta clinica? Uma consulta so, para rota com `:id` poder responder
+ *  404 em vez de 200 vazio. Vive aqui e e repetida nos outros modulos de
+ *  proposito: importar rota de outro arquivo cria dependencia entre modulos que
+ *  nao tem nada a ver um com o outro. */
+async function ehDestaClinica(db, tabela, id) {
+  const [r] = await db.q(
+    'SELECT 1 FROM `' + tabela + '` WHERE clinica_id = :clinica AND id = ? LIMIT 1', [id]);
+  return r.length > 0;
+}
 const escopo = require('../db/escopo');
 const doc = require('../services/documentos');
 const logs = require('../services/logs');
@@ -53,7 +63,8 @@ async function lerDocumento(db, id) {
   const [r] = await db.q(`
     SELECT d.*, c.name AS client_name,
            DATE_FORMAT(d.signed_at, '%d/%m/%Y às %H:%i') AS signed_at_br,
-           DATE_FORMAT(d.created_at, '%Y-%m-%d %H:%i:%s') AS created_at_txt
+           DATE_FORMAT(d.emitido_em, '%d/%m/%Y às %H:%i') AS emitido_em_br,
+             DATE_FORMAT(d.created_at, '%Y-%m-%d %H:%i:%s') AS created_at_txt
       FROM client_documents d
       JOIN clients c ON c.id = d.client_id AND c.clinica_id = :clinica
      WHERE d.clinica_id = :clinica AND d.id = ?
@@ -84,7 +95,19 @@ function paraTela(d) {
     signerDocument: d.signer_document,
     signedAt: d.signed_at_br || null,
     cancelledReason: d.cancelled_reason,
-    createdAt: d.created_at_txt
+    createdAt: d.created_at_txt,
+    // Quem emitiu -- so existe em receita e atestado, e vem do CARIMBO no
+    // documento, nunca de uma juncao com `users`: o papel tem de continuar
+    // dizendo o que era verdade no dia em que saiu.
+    emitidoPor: d.emitido_por_nome
+      ? {
+        nome: d.emitido_por_nome,
+        conselho: d.emitido_por_conselho || null,
+        numero: d.emitido_por_numero || null,
+        uf: d.emitido_por_uf || null,
+        em: d.emitido_em_br || null
+      }
+      : null
   };
 }
 
@@ -187,9 +210,16 @@ router.patch('/api/document-templates/:id', async function (req, res) {
 router.get('/api/clients/:id/documents', async function (req, res) {
   const db = escopo(req);
   try {
+    /* A PACIENTE E DESTA CLINICA? Sem esta pergunta, um id de outra clinica
+     * responde 200 com lista vazia -- o que nao vaza dado, mas afirma que a
+     * paciente existe e nao tem documento. Medido na M4.1. */
+    if (!(await ehDestaClinica(db, 'clients', req.params.id))) {
+      return res.status(404).json({ error: 'Paciente nao encontrada.' });
+    }
     const [r] = await db.q(`
       SELECT d.*, c.name AS client_name,
              DATE_FORMAT(d.signed_at, '%d/%m/%Y às %H:%i') AS signed_at_br,
+             DATE_FORMAT(d.emitido_em, '%d/%m/%Y às %H:%i') AS emitido_em_br,
              DATE_FORMAT(d.created_at, '%Y-%m-%d %H:%i:%s') AS created_at_txt
         FROM client_documents d
         JOIN clients c ON c.id = d.client_id AND c.clinica_id = :clinica
@@ -261,6 +291,25 @@ router.patch('/api/documents/:id', async function (req, res) {
   }
 });
 
+/** Quem esta emitindo, do CADASTRO -- e nao do que a tela mandar.
+ *
+ *  O numero do conselho e o que a farmacia confere e o que o RH confere. Se
+ *  viesse no corpo da requisicao, qualquer pessoa autenticada emitiria receita
+ *  com o registro de outra profissional, e o papel sairia perfeito. Vem do
+ *  token, entao so pode ser o proprio. */
+async function quemEmite(db, req) {
+  const id = req.usuario && req.usuario.sub;
+  if (!id) return null;
+  const [r] = await db.q(
+    'SELECT id, name, funcao, conselho, conselho_numero, conselho_uf' +
+    ' FROM users WHERE clinica_id = :clinica AND id = ?', [id]);
+  if (!r.length) return null;
+  return {
+    id: r[0].id, nome: r[0].name, funcao: r[0].funcao, conselho: r[0].conselho,
+    numero: r[0].conselho_numero, uf: r[0].conselho_uf
+  };
+}
+
 /** Congela o documento: renderiza, calcula o hash e trava a edição. */
 router.post('/api/documents/:id/finalize', async function (req, res) {
   const db = escopo(req);
@@ -274,6 +323,16 @@ router.post('/api/documents/:id/finalize', async function (req, res) {
     const pode = doc.podeFinalizar(d, problemas);
     if (!pode.ok) return res.status(pode.status).json({ error: pode.error, problemas: pode.problemas });
 
+    /* RECEITA E ATESTADO SO SAEM COM REGISTRO PROFISSIONAL (M5.5).
+     *
+     * Repare que nao ha lista de papeis aqui. Quem pode emitir e quem TEM
+     * conselho e numero no cadastro -- o que e a mesma coisa na vida real e
+     * uma coisa so para manter. O admin que apenas administra o sistema e
+     * recusado pela mesma linha que recusa a recepcao. */
+    const emissor = await quemEmite(db, req);
+    const podeEmitir = doc.podeEmitir(d, emissor);
+    if (!podeEmitir.ok) return res.status(podeEmitir.status).json({ error: podeEmitir.error });
+
     let procedimento = null;
     if (d.appointment_id) {
       const [ap] = await db.q(
@@ -281,21 +340,53 @@ router.post('/api/documents/:id/finalize', async function (req, res) {
       if (ap.length) procedimento = ap[0].title;
     }
 
+    /* O NOME DA CLINICA VEM DA CLINICA. A variavel `{{clinica}}` do modelo
+     * tinha um padrao fixo com o nome da clinica da demonstracao -- e o padrao
+     * valia para todo mundo. Termo de consentimento da clinica B saindo com o
+     * cabecalho da clinica A e o tipo de vazamento que ninguem chama de
+     * vazamento ate o dia em que a paciente le o papel. */
+    const minha = await db.minhaClinica();
+
     const html = doc.renderizar({
       modelo: modelo, respostas: respostas, titulo: d.title,
-      cliente: { name: d.client_name }, procedimento: procedimento
+      cliente: { name: d.client_name }, procedimento: procedimento,
+      clinica: (minha && minha.nome) || undefined
     });
     const hash = doc.hashDoConteudo(html);
+    const novoStatus = doc.statusAoFinalizar(d.type);
+    const emitido = novoStatus === 'EMITIDO';
 
     await db.q(
       `UPDATE client_documents
-          SET rendered_html = ?, content_hash = ?, status = 'AGUARDANDO_ASSINATURA'
+          SET rendered_html = ?, content_hash = ?, status = ?,
+              emitido_por_id = ?, emitido_por_nome = ?, emitido_por_funcao = ?,
+              emitido_por_conselho = ?, emitido_por_numero = ?, emitido_por_uf = ?,
+              timbre_clinica = ?, timbre_endereco = ?, timbre_telefone = ?, timbre_contato = ?,
+              timbre_email = ?,
+              emitido_em = ` + (emitido ? 'NOW()' : 'NULL') + `
         WHERE clinica_id = :clinica AND id = ? AND status = 'RASCUNHO'`,
-      [html, hash, req.params.id]
+      [html, hash, novoStatus,
+       emitido ? emissor.id : null,
+       emitido ? emissor.nome : null,
+       emitido ? (emissor.funcao || null) : null,
+       emitido ? (emissor.conselho || null) : null,
+       emitido ? (emissor.numero || null) : null,
+       emitido ? (emissor.uf || null) : null,
+       // O TIMBRE VAI CARIMBADO em todo documento congelado, emitido ou nao: a
+       // clinica muda de endereco, e o termo assinado no ano passado tem de
+       // continuar dizendo o endereco de onde ele saiu.
+       (minha && minha.nome) || null,
+       (minha && minha.endereco) || null,
+       (minha && minha.telefone) || null,
+       (minha && minha.contato) || null,
+       (minha && minha.email) || null,
+       req.params.id]
     );
-    await logs.registrar(db, 'DOCUMENTOS',
-      '"' + d.title + '" de ' + d.client_name + ' gerado para assinatura.');
-    res.json({ ok: true, contentHash: hash, status: 'AGUARDANDO_ASSINATURA' });
+    await logs.registrar(db, 'DOCUMENTOS', emitido
+      ? '"' + d.title + '" de ' + d.client_name + ' emitido por ' + emissor.nome + ' (' +
+        (emissor.conselho || '') + ' ' + (emissor.numero || '') + ').'
+      : '"' + d.title + '" de ' + d.client_name + ' gerado para assinatura.');
+    res.json({ ok: true, contentHash: hash, status: novoStatus });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao gerar o documento.' });
   }
@@ -306,6 +397,15 @@ router.post('/api/documents/:id/sign', async function (req, res) {
   const b = req.body || {};
   try {
     const d = await lerDocumento(db, req.params.id);
+
+    /* A RECUSA VEM ANTES DE QUALQUER OUTRA (M5.5). `podeAssinar` recusaria
+     * sozinha, por estado -- receita nasce EMITIDO e nunca passa por
+     * AGUARDANDO_ASSINATURA -- mas recusaria dizendo "documento ainda nao foi
+     * gerado", que e falso e manda a recepcao tentar de novo. A frase daqui
+     * diz o que E: quem assina receita e a profissional, no papel. */
+    const emTela = doc.podeAssinarEmTela(d);
+    if (!emTela.ok) return res.status(emTela.status).json({ error: emTela.error });
+
     const pode = doc.podeAssinar(d, b);
     if (!pode.ok) return res.status(pode.status).json({ error: pode.error });
 
@@ -346,13 +446,27 @@ router.get('/api/documents/:id/view', async function (req, res) {
     // isso do que apresentar um documento adulterado como legítimo.
     const confere = doc.hashDoConteudo(d.rendered_html) === d.content_hash;
 
-    if (d.status === 'ASSINADO') {
+    /* A TRILHA VALE PARA O EMITIDO TAMBEM. Receita e atestado sao dado de
+     * saude como a anamnese e -- deixar a leitura deles fora do registro seria
+     * responder "quem viu o prontuario?" com meia lista. */
+    if (d.status === 'ASSINADO' || d.status === 'EMITIDO') {
       await logs.registrar(db, 'LGPD',
-        'Documento assinado "' + d.title + '" de ' + d.client_name + ' visualizado.');
+        'Documento ' + (d.status === 'EMITIDO' ? 'emitido' : 'assinado') +
+        ' "' + d.title + '" de ' + d.client_name + ' visualizado.');
     }
 
+    /* O timbre ATUAL vai junto, e serve so de recurso: `paginaCompleta` usa o
+     * que esta carimbado no documento e cai aqui apenas para documento antigo,
+     * anterior a migration 035. */
+    const minha = await db.minhaClinica();
     res.set('Content-Type', 'text/html; charset=utf-8');
-    res.send(doc.paginaCompleta(d, { hashConfere: confere }));
+    res.send(doc.paginaCompleta(d, {
+      hashConfere: confere,
+      timbre: minha ? {
+        clinica: minha.nome, endereco: minha.endereco, telefone: minha.telefone,
+        contato: minha.contato, email: minha.email
+      } : null
+    }));
   } catch (e) {
     res.status(500).json({ error: 'Falha ao abrir o documento.' });
   }
@@ -389,6 +503,13 @@ router.post('/api/documents/:id/cancel', async function (req, res) {
 router.get('/api/clients/:id/alerts', async function (req, res) {
   const db = escopo(req);
   try {
+    /* AQUI O 404 NAO E DETALHE: e a rota que a profissional abre segundos antes
+     * de aplicar o produto. Com id de outra clinica ela respondia
+     * `semAnamnese: true`, que se le como "nenhuma contraindicacao" -- para uma
+     * paciente que nem e desta clinica. Medido na M4.1. */
+    if (!(await ehDestaClinica(db, 'clients', req.params.id))) {
+      return res.status(404).json({ error: 'Paciente nao encontrada.' });
+    }
     // A rota que a profissional abre segundos antes de aplicar o produto.
     // Alerta de contraindicacao da paciente ERRADA aqui nao e vazamento de
     // dado: e risco clinico.

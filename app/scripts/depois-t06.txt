@@ -1,0 +1,16 @@
+GET    /                                      anon   200  1073 bytes
+GET    /api/config                            anon   200  objeto{2}
+GET    /api/clients                           anon   401  erro
+GET    /api/logs                              token  200  lista[18]
+GET    /api/leads                             token  200  lista[7]
+GET    /api/salespeople                       token  200  lista[2]
+GET    /api/treatment-catalog                 token  200  lista[4]
+GET    /api/clients                           token  200  lista[2]
+GET    /api/treatments                        token  200  lista[1]
+GET    /api/treatment-plans                   token  200  lista[2]
+GET    /api/interactions                      token  200  lista[3]
+GET    /api/evolution/instances               token  200  lista[3]
+GET    /api/evolution/status                  token  200  objeto{4}
+GET    /api/users                             token  200  lista[3]
+POST   /api/reports/generate                  token  200  objeto{3}
+POST   /api/_migrate?status=1                 token  200  objeto{3}

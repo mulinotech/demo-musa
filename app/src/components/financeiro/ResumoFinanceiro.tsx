@@ -235,14 +235,18 @@ export default function ResumoFinanceiro({ de, ate, base, aoTrocarBase, aoTrocar
             <div style={{ width: "100%", height: 240 }}>
               <ResponsiveContainer>
                 <BarChart data={dadosGrafico} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+                  {/* Os eixos NÃO passam pela camada de leitura da M5.1: o recharts
+                      desenha SVG com `fontSize` em propriedade, e regra de CSS por
+                      classe não o alcança. Eram 10px -- os menores da tela inteira, e
+                      é onde estão as datas e os valores que alguém de fato lê. */}
                   <CartesianGrid strokeDasharray="3 3" stroke="#E0D5C2" vertical={false} />
-                  <XAxis dataKey="rotulo" tick={{ fontSize: 10, fill: "#8E7B69" }} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 10, fill: "#8E7B69" }} tickFormatter={reaisCurto} />
+                  <XAxis dataKey="rotulo" tick={{ fontSize: 13, fill: "#8E7B69" }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 13, fill: "#8E7B69" }} tickFormatter={reaisCurto} />
                   <Tooltip
                     formatter={(v: number, n: string) => [reais(v), n === "receita" ? "Receita" : "Despesa"]}
-                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E0D5C2" }}
+                    contentStyle={{ fontSize: 14, borderRadius: 8, border: "1px solid #E0D5C2" }}
                   />
-                  <Legend formatter={(v) => (v === "receita" ? "Receita" : "Despesa")} wrapperStyle={{ fontSize: 11 }} />
+                  <Legend formatter={(v) => (v === "receita" ? "Receita" : "Despesa")} wrapperStyle={{ fontSize: 13.5 }} />
                   <Bar dataKey="receita" fill={CORES.receita} radius={[3, 3, 0, 0]} />
                   <Bar dataKey="despesa" fill={CORES.despesa} radius={[3, 3, 0, 0]} />
                 </BarChart>
@@ -254,11 +258,11 @@ export default function ResumoFinanceiro({ de, ate, base, aoTrocarBase, aoTrocar
               <ResponsiveContainer>
                 <LineChart data={dadosGrafico} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E0D5C2" vertical={false} />
-                  <XAxis dataKey="rotulo" tick={{ fontSize: 10, fill: "#8E7B69" }} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 10, fill: "#8E7B69" }} tickFormatter={reaisCurto} />
+                  <XAxis dataKey="rotulo" tick={{ fontSize: 13, fill: "#8E7B69" }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 13, fill: "#8E7B69" }} tickFormatter={reaisCurto} />
                   <Tooltip
                     formatter={(v: number) => [reais(v), "Acumulado"]}
-                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E0D5C2" }}
+                    contentStyle={{ fontSize: 14, borderRadius: 8, border: "1px solid #E0D5C2" }}
                   />
                   {/* Degrau, nao curva: o saldo nao muda aos poucos entre um lancamento e
                       outro - ele fica parado e pula no dia do fato. Curva suave aqui

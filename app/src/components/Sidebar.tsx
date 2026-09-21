@@ -73,7 +73,11 @@ export default function Sidebar(p: {
         title={p.recolhida ? i.label : undefined}
         className={({ isActive }) =>
           "group flex items-center gap-2.5 rounded-xl text-xs font-semibold transition-all duration-200 " +
-          (p.recolhida ? "lg:justify-center lg:px-0 px-3 py-2.5" : "px-3 py-2.5") + " " +
+          /* py-2.5 -> py-2 (M5.1): com a letra maior o menu passou de 631 para
+             731px e, a 1440x900, "Logs do Sistema" saiu de vista. O texto
+             cresce e o respiro encolhe -- a altura total volta ao que era, e o
+             menu continua cabendo inteiro sem rolagem. */
+          (p.recolhida ? "lg:justify-center lg:px-0 px-3 py-2" : "px-3 py-2") + " " +
           (isActive
             ? "bg-brand-brown text-brand-beige shadow-sm"
             : "text-brand-brown/80 hover:bg-brand-beige hover:text-brand-brown")
@@ -94,7 +98,7 @@ export default function Sidebar(p: {
       <div className="space-y-1">
         <p
           className={
-            "text-[9px] uppercase tracking-[0.14em] font-bold text-brand-brown/40 px-3 pt-3 pb-1 " +
+            "text-[9px] uppercase tracking-[0.14em] font-bold text-brand-brown/40 px-3 pt-2 pb-0.5 " +
             (p.recolhida ? "lg:text-center lg:px-0 lg:tracking-normal" : "")
           }
         >
@@ -133,7 +137,12 @@ export default function Sidebar(p: {
             <h1 className="text-sm font-serif font-semibold tracking-wide text-brand-brown leading-tight truncate">
               Dra. Musa Estética
             </h1>
-            <p className="text-[9px] font-sans tracking-widest uppercase text-brand-gold font-medium truncate">
+            {/* `tracking-widest` + `truncate` virou "CRM CONCIERGE & ..." quando a
+                escala de leitura subiu (M5.1): 0,1em de espacejamento cresce junto
+                com a fonte, e a caixa da marca tem largura fixa. Espacejamento menor
+                e quebra de linha no lugar do corte -- linha decorativa pode ocupar
+                duas linhas; o que ela nao pode e esconder metade de si mesma. */}
+            <p className="text-[9px] font-sans tracking-wide uppercase text-brand-gold font-medium leading-tight">
               CRM Concierge &amp; Skin AI
             </p>
           </div>

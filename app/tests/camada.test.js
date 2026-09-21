@@ -876,6 +876,73 @@ test('ninguem mais chama a forma antiga logSystemEvent', function () {
     'instalacao inteira, logs.daInstalacao(motivo, tipo, descricao).');
 });
 
+/* ============================ E A FORMA ANTIGA COM O NOME NOVO (M4.3, 14/09)
+ *
+ * O teste acima varre o NOME antigo, e por isso deixou passar o defeito que
+ * custou cinco dias de trilha: `routes/clients.js` já chamava `logs.registrar`
+ * -- nome novo, guarda satisfeita -- mas com os CINCO argumentos da forma
+ * antiga e um `db` que não existia naquele escopo.
+ *
+ * O resultado: cadastrar, editar e excluir paciente gravavam no banco e
+ * devolviam 500, sem nenhum registro de auditoria. Um ReferenceError que o
+ * `catch` da rota transformava em erro genérico, e que o front engolia.
+ *
+ * A assinatura nova tem exatamente TRÊS argumentos: autor e IP saem do próprio
+ * escopo, e é essa a razão de ela existir. Quem passa mais está com a chamada
+ * convertida pela metade.
+ */
+test('nenhuma chamada a logs.registrar ficou com a forma antiga de argumentos', function () {
+  /** Tira comentários E literais de texto: vírgula dentro de string não separa
+   *  argumento, e foi assim que uma contagem anterior acusou quatro chamadas
+   *  boas.
+   *
+   *  As QUEBRAS DE LINHA são preservadas -- cada trecho removido vira a mesma
+   *  quantidade de `\n`. Sem isso o arquivo encolhe e a mensagem de erro aponta
+   *  uma linha que não é a da chamada: na primeira sabotagem deste teste ele
+   *  acusou a linha 48 de um defeito que estava na 76. Número de linha errado
+   *  em mensagem de erro custa a meia hora de quem for procurar. */
+  const mesmasLinhas = (t) => t.replace(/[^\n]/g, '');
+  const soCodigo = (fonte) => fonte
+    .replace(/\/\*[\s\S]*?\*\//g, mesmasLinhas)
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/`(?:\\[\s\S]|[^`\\])*`/g, (t) => '`' + mesmasLinhas(t) + '`')
+    .replace(/'(?:\\[\s\S]|[^'\\])*'/g, "''")
+    .replace(/"(?:\\[\s\S]|[^"\\])*"/g, '""');
+
+  const erradas = [];
+  for (const f of arquivosDoServidor()) {
+    const fonte = soCodigo(fs.readFileSync(path.join(DIR_SERVIDOR, f), 'utf8'));
+    const re = /logs\.registrar\(/g;
+    let m;
+    while ((m = re.exec(fonte))) {
+      let i = m.index + m[0].length;
+      let prof = 1;
+      const ini = i;
+      while (i < fonte.length && prof > 0) {
+        const c = fonte[i];
+        if (c === '(') prof++;
+        else if (c === ')') prof--;
+        i++;
+      }
+      const args = fonte.slice(ini, i - 1);
+      let d = 0;
+      let quantos = 1;
+      for (const c of args) {
+        if ('([{'.indexOf(c) !== -1) d++;
+        else if (')]}'.indexOf(c) !== -1) d--;
+        else if (c === ',' && d === 0) quantos++;
+      }
+      const linha = fonte.slice(0, m.index).split('\n').length;
+      if (quantos !== 3) erradas.push(f + ':' + linha + ' (' + quantos + ' argumentos)');
+    }
+  }
+
+  assert.deepStrictEqual(erradas, [],
+    'Estas chamadas nao tem os 3 argumentos de logs.registrar(db, tipo, descricao):\n  ' +
+    erradas.join('\n  ') +
+    '\nAutor e IP vem do escopo, e nao se passam a mao.');
+});
+
 test('logs.registrar recusa alto quem passa o tipo no lugar do escopo', function () {
   // A forma antiga tinha o tipo do evento como primeiro argumento. Um ponto de
   // chamada convertido pela metade passaria uma string aqui -- e, sem esta
@@ -977,4 +1044,59 @@ test('so quem esta autorizado atravessa clinica', function () {
     '\nAtravessar clinica e excecao de duas: varredura do cron e painel da plataforma. ' +
     'Se for uma delas, acrescente o caminho a PODEM_ATRAVESSAR aqui -- a lista existe ' +
     'para a excecao ser uma decisao escrita, e nao um require esquecido.');
+});
+
+/* ============================================ a porta do timbre (M5.6, 17/09)
+ *
+ * `clinicas` é a única tabela sem `clinica_id` — ela É a lista de clínicas —, e
+ * por isso `db.q` recusa qualquer consulta a ela. `atualizarMinhaClinica` é a
+ * porta estreita por onde a clínica edita a PRÓPRIA linha, e ela precisa
+ * continuar estreita: três colunas daquela tabela não são decisão da clínica.
+ */
+test('atualizarMinhaClinica grava so as colunas do timbre, e sempre na propria linha',
+  async function () {
+    const vistas = [];
+    const db = escopo.fazerEscopo(CL, {
+      query: async (s, p) => { vistas.push({ s: s, p: p }); return [{ affectedRows: 1 }]; }
+    });
+
+    await db.atualizarMinhaClinica({ endereco: 'Rua A, 1', telefone: '(11) 1234-5678' });
+    assert.match(vistas[0].s, /UPDATE clinicas SET/);
+    assert.match(vistas[0].s, /WHERE id = \?$/);
+    assert.deepStrictEqual(vistas[0].p, ['Rua A, 1', '(11) 1234-5678', CL],
+      'a clinica alvo e a da sessao, e ela e sempre o ULTIMO parametro');
+  });
+
+test('atualizarMinhaClinica IGNORA status, chave de captacao e instancia', async function () {
+  // As tres que nao sao decisao da clinica, e cada uma por uma razao diferente:
+  // suspender e da plataforma; trocar a chave DESLIGA o formulario do site; e
+  // apontar para a instancia da vizinha faz mensagem de paciente cair na
+  // clinica errada. Uma porta generica de gravacao alcancaria as tres.
+  const vistas = [];
+  const db = escopo.fazerEscopo(CL, {
+    query: async (s, p) => { vistas.push({ s: s, p: p }); return [{ affectedRows: 1 }]; }
+  });
+
+  const tentou = await db.atualizarMinhaClinica({
+    status: 'ativa', chave_captacao: 'roubada', evolution_instance: 'da-vizinha', id: 'cl_b'
+  });
+  assert.strictEqual(tentou, 0, 'sem coluna permitida, nao pode haver UPDATE nenhum');
+  assert.strictEqual(vistas.length, 0, 'nao pode nem chegar a montar SQL');
+
+  // E misturada com uma permitida, a proibida nao pega carona.
+  await db.atualizarMinhaClinica({ endereco: 'Rua B, 2', status: 'encerrada' });
+  assert.strictEqual(vistas.length, 1);
+  assert.ok(!/status/.test(vistas[0].s), 'status nao pode entrar no SET');
+  assert.deepStrictEqual(vistas[0].p, ['Rua B, 2', CL]);
+});
+
+test('campo vazio no timbre vira NULL, e nao a string vazia', async function () {
+  // Apagar o telefone tem de apagar de verdade: string vazia imprimiria um
+  // separador solto no rodape do papel.
+  const vistas = [];
+  const db = escopo.fazerEscopo(CL, {
+    query: async (s, p) => { vistas.push({ s: s, p: p }); return [{ affectedRows: 1 }]; }
+  });
+  await db.atualizarMinhaClinica({ telefone: '', contato: null });
+  assert.deepStrictEqual(vistas[0].p, [null, null, CL]);
 });

@@ -759,6 +759,18 @@ router.put('/api/availability/:professionalId', async function (req, res) {
   }
   const db = escopo(req);
   try {
+    /* A PROFISSIONAL E DESTA CLINICA? Medido na M4.1: com o id de uma
+     * profissional da vizinha, esta rota respondia 200 sem fazer nada -- e, com
+     * faixas de verdade no corpo, tentaria gravar grade apontando para gente de
+     * outra clinica (a chave composta da M1.8 recusaria, mas com 500, que e um
+     * jeito ruim de dizer "nao e sua"). */
+    const [dela] = await db.q(
+      'SELECT 1 FROM users WHERE clinica_id = :clinica AND id = ? LIMIT 1',
+      [req.params.professionalId]);
+    if (!dela.length) {
+      return res.status(404).json({ error: 'Profissional nao encontrada nesta clinica.' });
+    }
+
     await db.transacao(async function (tx) {
       // A grade e um CONJUNTO: apaga a do profissional e grava a nova inteira.
       // O filtro de clinica no DELETE e o que impede apagar a grade de um

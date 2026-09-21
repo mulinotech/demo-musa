@@ -15,12 +15,56 @@ const REGRAS_DE_PAPEL = [
   { metodo: 'PATCH',  prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
   { metodo: 'DELETE', prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
   { metodo: 'DELETE', prefixo: '/api/clients',           papeis: ['admin', 'gerente'] },
+
+  /* A AGENDA E DE LEITURA PARA O VENDEDOR (M5.2, 15/09).
+   *
+   * Decisao da Silvia depois de ver, MEDIDO, o que o papel alcancava: o
+   * vendedor trabalha o que e COMERCIAL -- lead, conversa, o contato da
+   * paciente e o plano de tratamento que ele vende -- e nao mexe no calendario
+   * de quem atende.
+   *
+   * Ele CONTINUA LENDO a agenda, e isso e deliberado: sem ver disponibilidade
+   * ele nao tem o que prometer ao fechar. O que sai e criar, remarcar, cancelar
+   * e, sobretudo, CONCLUIR -- porque concluir um atendimento lanca receita,
+   * baixa insumo e credita ponto. Quem nunca aplicou o procedimento nao e quem
+   * deve declarar que ele aconteceu.
+   *
+   * Sao quatro linhas, e nao uma com `metodo: '*'`, porque o GET tem de passar:
+   * a tabela casa por metodo exato, e `*` levaria a leitura junto. */
+  { metodo: 'POST',   prefixo: '/api/appointments', papeis: ['admin', 'gerente', 'profissional'] },
+  { metodo: 'PATCH',  prefixo: '/api/appointments', papeis: ['admin', 'gerente', 'profissional'] },
+  { metodo: 'PUT',    prefixo: '/api/appointments', papeis: ['admin', 'gerente', 'profissional'] },
+  { metodo: 'DELETE', prefixo: '/api/appointments', papeis: ['admin', 'gerente', 'profissional'] },
+
   { metodo: '*',      prefixo: '/api/users',             papeis: ['admin'] },
+
+  /* O TIMBRE DA CLINICA (M5.6, 17/09): quem EDITA e a gestao; quem LE e todo
+   * mundo, e isso e deliberado -- a profissional precisa ver o cabecalho que
+   * vai sair impresso antes de escrever a receita. Endereco de clinica nao e
+   * dado sensivel: esta no site dela e na porta.
+   *
+   * `/api/meu-timbre` fica FORA de regra: cada um le o proprio, e o id vem do
+   * token. Uma regra de papel aqui so tiraria da profissional o acesso ao
+   * proprio nome. */
+  { metodo: 'PATCH',  prefixo: '/api/clinica',           papeis: ['admin', 'gerente'] },
   // Preco e informacao sensivel de negocio: profissional e vendedor nao veem.
   { metodo: '*',      prefixo: '/api/pricing',           papeis: ['admin', 'gerente'] },
   { metodo: '*',      prefixo: '/api/fixed-costs',       papeis: ['admin', 'gerente'] },
   { metodo: '*',      prefixo: '/api/finance',           papeis: ['admin', 'gerente'] },
   { metodo: '*',      prefixo: '/api/recurring-expenses',papeis: ['admin', 'gerente'] },
+
+  /* A VISAO GERAL, EM DOIS PEDACOS (M5.8, 18/09).
+   *
+   * A tela e de admin, gerencia e profissional (ver components/navegacao.ts),
+   * mas faturamento, ticket medio e CPL sao a mesma informacao que
+   * /api/finance protege duas linhas acima. Separar em duas rotas e o que
+   * permite a profissional manter a tela SEM que a decisao de quem ve dinheiro
+   * desca para dentro do handler.
+   *
+   * A linha de /dinheiro vem ANTES da geral: a busca para na primeira que casa,
+   * e /api/dashboard cobriria as duas. */
+  { metodo: '*',      prefixo: '/api/dashboard/dinheiro', papeis: ['admin', 'gerente'] },
+  { metodo: '*',      prefixo: '/api/dashboard',          papeis: ['admin', 'gerente', 'profissional'] },
   // Estoque: a profissional PRECISA consultar saldo e validade antes de
   // aplicar, entao a leitura e dela tambem. Mexer no saldo, nao.
   { metodo: 'GET',    prefixo: '/api/products',          papeis: ['admin', 'gerente', 'profissional'] },

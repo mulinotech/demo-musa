@@ -43,11 +43,46 @@ const { verificarAlteracao } = require('../services/usuarios');
 
 const PAPEIS_VALIDOS = ['admin', 'gerente', 'profissional', 'vendedor'];
 
+/* ================== O REGISTRO PROFISSIONAL (M5.5) MORA NO CADASTRO DA PESSOA
+ *
+ * Conselho, numero e UF. Sao o que a farmacia confere na receita e o que o RH
+ * confere no atestado, e por isso NAO sao digitados a cada emissao: digitar de
+ * novo e errar de vez em quando, e numero errado invalida o papel na hora em
+ * que a paciente mais precisa dele.
+ *
+ * Quem preenche e o `admin` -- esta rota inteira e dele. Nao e burocracia: o
+ * numero de conselho e uma afirmacao de identidade profissional, e deixar cada
+ * um escrever o seu proprio seria deixar qualquer acesso do sistema se declarar
+ * habilitado a prescrever.
+ *
+ * Campo vazio APAGA o que estava. Tem de apagar: profissional que sai do quadro
+ * ou perde o registro precisa deixar de emitir, e a unica forma de dizer isso
+ * pela tela e limpando o campo. */
+function registroProfissional(b, campos, valores) {
+  if (b.funcao !== undefined) {
+    campos.push('funcao = ?');
+    valores.push(String(b.funcao).trim().slice(0, 120) || null);
+  }
+  if (b.conselho !== undefined) {
+    campos.push('conselho = ?');
+    valores.push(String(b.conselho).trim().toUpperCase().slice(0, 20) || null);
+  }
+  if (b.conselhoNumero !== undefined) {
+    campos.push('conselho_numero = ?');
+    valores.push(String(b.conselhoNumero).trim().slice(0, 30) || null);
+  }
+  if (b.conselhoUf !== undefined) {
+    campos.push('conselho_uf = ?');
+    valores.push(String(b.conselhoUf).trim().toUpperCase().slice(0, 2) || null);
+  }
+}
+
 router.get('/api/users', async function (req, res) {
   const db = escopo(req);
   try {
     const [r] = await db.q(
-      'SELECT id, name, email, role, status, last_login_at, created_at' +
+      'SELECT id, name, email, role, status, last_login_at, created_at, funcao,' +
+      ' conselho, conselho_numero AS conselhoNumero, conselho_uf AS conselhoUf' +
       ' FROM users WHERE clinica_id = :clinica ORDER BY name'
     );
     res.json(r);
@@ -81,9 +116,14 @@ router.post('/api/users', express.json({ limit: '1mb' }), async function (req, r
     // Desde a M1.6b isto passa pela camada, como todo o resto: e ela que troca
     // `:clinica` pelo valor da sessao, e que recusa consulta de rota sem filtro.
     await db.q(
-      'INSERT INTO users (id, name, email, password_hash, role, clinica_id)' +
-      ' VALUES (?, ?, ?, ?, ?, :clinica)',
-      [id, nome, email, bcrypt.hashSync(String(senha), 10), papel]);
+      'INSERT INTO users (id, name, email, password_hash, role, clinica_id,' +
+      ' funcao, conselho, conselho_numero, conselho_uf)' +
+      ' VALUES (?, ?, ?, ?, ?, :clinica, ?, ?, ?, ?)',
+      [id, nome, email, bcrypt.hashSync(String(senha), 10), papel,
+       String(b.funcao || '').trim().slice(0, 120) || null,
+       String(b.conselho || '').trim().toUpperCase().slice(0, 20) || null,
+       String(b.conselhoNumero || '').trim().slice(0, 30) || null,
+       String(b.conselhoUf || '').trim().toUpperCase().slice(0, 2) || null]);
 
     await logs.registrar(db, 'USUARIO',
       'Acesso criado para "' + nome + '" com o papel ' + papel + '.');
@@ -123,6 +163,7 @@ router.patch('/api/users/:id', express.json({ limit: '1mb' }), async function (r
     if (String(b.password).length < 10) return res.status(400).json({ error: 'A senha precisa ter ao menos 10 caracteres.' });
     campos.push('password_hash = ?'); valores.push(bcrypt.hashSync(String(b.password), 10));
   }
+  registroProfissional(b, campos, valores);
   if (!campos.length) return res.status(400).json({ error: 'Nada para atualizar.' });
   try {
     // Guarda contra os dois cliques que trancam todo mundo do lado de fora --
@@ -155,6 +196,19 @@ router.patch('/api/users/:id', express.json({ limit: '1mb' }), async function (r
     if (b.role) oQueMudou.push('papel para ' + b.role);
     if (b.status) oQueMudou.push(b.status === 'inactive' ? 'acesso INATIVADO' : 'acesso reativado');
     if (b.password) oQueMudou.push('senha redefinida');
+    // O registro profissional entra na trilha PELO VALOR: e ele que vai
+    // carimbado em receita e atestado, e "quem mudou o CRM, e para qual" e
+    // pergunta que aparece depois de um papel recusado na farmacia.
+    if (b.funcao !== undefined) {
+      oQueMudou.push(String(b.funcao).trim()
+        ? 'funcao para "' + String(b.funcao).trim() + '"' : 'funcao REMOVIDA');
+    }
+    if (b.conselho !== undefined || b.conselhoNumero !== undefined || b.conselhoUf !== undefined) {
+      const reg = [b.conselho, b.conselhoNumero, b.conselhoUf]
+        .map(function (x) { return String(x == null ? '' : x).trim(); })
+        .filter(Boolean).join(' ');
+      oQueMudou.push(reg ? 'registro profissional para ' + reg : 'registro profissional REMOVIDO');
+    }
     await logs.registrar(db, 'USUARIO',
       'Acesso de "' + alvos[0].name + '" alterado: ' + oQueMudou.join(', ') + '.');
 

@@ -241,6 +241,38 @@ function fazerEscopo(clinicaId, executor, identidade) {
       return r[0] || null;
     },
 
+    /** Gravar no cadastro da PRÓPRIA clínica — e só nos campos do timbre.
+     *
+     *  ============================ POR QUE A LISTA DE COLUNAS É FECHADA AQUI
+     *
+     *  `clinicas` guarda três coisas que **não** são da clínica decidir:
+     *  `status` (quem suspende é a plataforma), `chave_captacao` (trocá-la
+     *  desliga o formulário do site) e `evolution_instance` (apontar para a
+     *  instância da vizinha faria mensagem de paciente cair na clínica errada).
+     *
+     *  Uma porta genérica de gravação em `clinicas` deixaria qualquer rota
+     *  futura alcançar essas três por descuido. Então a porta nasce estreita: o
+     *  `id` vem do escopo, e o conjunto de colunas vem daqui — não de quem
+     *  chama. Acrescentar campo é acrescentar uma linha NESTA lista, que é
+     *  exatamente o momento em que alguém pensa duas vezes.
+     */
+    atualizarMinhaClinica: async function (campos) {
+      const PERMITIDAS = ['nome', 'documento', 'endereco', 'telefone', 'contato', 'email'];
+      const sets = [], valores = [];
+      for (const coluna of PERMITIDAS) {
+        if (campos && Object.prototype.hasOwnProperty.call(campos, coluna)) {
+          sets.push('`' + coluna + '` = ?');
+          const v = campos[coluna];
+          valores.push(v === '' || v == null ? null : String(v));
+        }
+      }
+      if (!sets.length) return 0;
+      valores.push(clinicaId);
+      const [r] = await executor.query(
+        'UPDATE clinicas SET ' + sets.join(', ') + ' WHERE id = ?', valores);
+      return r.affectedRows;
+    },
+
     /** Uma transação inteira dentro da mesma clínica.
      *
      *  A função recebe um escopo igual a este, amarrado à conexão da transação.

@@ -97,7 +97,10 @@ router.patch('/api/treatments/:id', async function(req, res) {
   const { id } = req.params;
   const { procedure, sessionDate, notes, price, totalSessions, completedSessions } = req.body;
   try {
-    await db.q('UPDATE treatments SET procedure_name = COALESCE(?, procedure_name), session_date = COALESCE(?, session_date), notes = COALESCE(?, notes), price = COALESCE(?, price), total_sessions = COALESCE(?, total_sessions), completed_sessions = COALESCE(?, completed_sessions) WHERE clinica_id = :clinica AND id = ?', [procedure, sessionDate ? new Date(sessionDate) : null, notes, price !== undefined ? price : null, totalSessions, completedSessions, id]);
+    const [r] = await db.q('UPDATE treatments SET procedure_name = COALESCE(?, procedure_name), session_date = COALESCE(?, session_date), notes = COALESCE(?, notes), price = COALESCE(?, price), total_sessions = COALESCE(?, total_sessions), completed_sessions = COALESCE(?, completed_sessions) WHERE clinica_id = :clinica AND id = ?', [procedure, sessionDate ? new Date(sessionDate) : null, notes, price !== undefined ? price : null, totalSessions, completedSessions, id]);
+    if (!r || r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Tratamento nao encontrado.' });
+    }
     res.json({ message: 'Tratamento atualizado com sucesso!' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao atualizar tratamento', details: error.message });

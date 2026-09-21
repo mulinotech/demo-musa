@@ -100,12 +100,34 @@ function paraTela(l) {
 
 /* ------------------------------------------------------------- categorias */
 
+/** As categorias da clínica.
+ *
+ *  ==================================== POR QUE EXISTE `?incluirInativas=1` (M5.8b)
+ *
+ *  Por padrão esta rota devolve só as ATIVAS, e é o que as listas de lançamento
+ *  precisam: ninguém quer classificar uma despesa de hoje numa categoria que a
+ *  clínica aposentou.
+ *
+ *  A tela que ADMINISTRA categorias precisa do contrário. Categoria desativada
+ *  continua existindo no razão de meses passados e **continua contando no CPL se
+ *  estiver marcada como captação** — porque o dinheiro foi gasto, e apagar isso
+ *  reescreveria o histórico. Se a tela não mostrasse as inativas, a clínica veria
+ *  "2 marcadas como captação" com uma só na lista, e não teria como desmarcar a
+ *  que sumiu. Marcação invisível é a mesma família de defeito da M5.8.
+ */
 router.get('/api/finance/categories', async function (req, res) {
   const db = escopo(req);
+  const todas = String(req.query.incluirInativas || '') === '1';
   try {
     const [r] = await db.q('SELECT * FROM finance_categories ' +
-      'WHERE clinica_id = :clinica AND active = 1 ORDER BY type, name');
-    res.json(r.map((c) => ({ id: c.id, name: c.name, type: c.type })));
+      'WHERE clinica_id = :clinica' + (todas ? '' : ' AND active = 1') +
+      ' ORDER BY type, name');
+    // `contaNoCpl` (M5.8): a categoria e' investimento em captacao, e por isso
+    // entra no Custo por Lead da Visao Geral. So faz sentido em DESPESA.
+    res.json(r.map((c) => ({
+      id: c.id, name: c.name, type: c.type,
+      contaNoCpl: c.conta_no_cpl === 1, ativa: c.active === 1
+    })));
   } catch (e) {
     res.status(500).json({ error: 'Falha ao listar as categorias.' });
   }
@@ -113,16 +135,37 @@ router.get('/api/finance/categories', async function (req, res) {
 
 router.post('/api/finance/categories', async function (req, res) {
   const b = req.body || {};
-  const nome = String(b.name || '').trim();
+  const nome = String(b.name || '').trim().slice(0, 100);
   if (!nome) return res.status(400).json({ error: 'Informe o nome da categoria.' });
   if (TIPOS.indexOf(b.type) === -1) return res.status(400).json({ error: 'Tipo precisa ser RECEITA ou DESPESA.' });
   const db = escopo(req);
   try {
+    /* NOME REPETIDO E' RECUSADO (M5.8b).
+     *
+     * Duas "Anuncios" na mesma clinica nao dao erro nenhum: dao um relatorio com
+     * a mesma linha duas vezes, e um CPL que conta uma e esquece a outra porque
+     * so uma foi marcada. A conferencia inclui as INATIVAS -- reaproveitar o
+     * nome de uma categoria aposentada e' o caso em que a pessoa procura no
+     * relatorio e acha duas historias diferentes com o mesmo rotulo. */
+    const [iguais] = await db.q(
+      'SELECT id, active FROM finance_categories' +
+      ' WHERE clinica_id = :clinica AND type = ? AND LOWER(name) = LOWER(?)',
+      [b.type, nome]);
+    if (iguais.length) {
+      return res.status(409).json({
+        error: iguais[0].active === 1
+          ? 'Ja existe uma categoria com esse nome.'
+          : 'Ja existe uma categoria com esse nome, desativada. Reative-a em vez de criar outra.'
+      });
+    }
     const id = novoId('cat');
     await db.q('INSERT INTO finance_categories (id, name, type, clinica_id) VALUES (?, ?, ?, :clinica)',
       [id, nome, b.type]);
-    res.status(201).json({ id, name: nome, type: b.type });
+    await logs.registrar(db, 'FINANCE',
+      'Categoria financeira criada: "' + nome + '" (' + b.type + ').');
+    res.status(201).json({ id: id, name: nome, type: b.type, contaNoCpl: false, ativa: true });
   } catch (e) {
+    console.error('[finance/categories]', e && e.message);
     res.status(500).json({ error: 'Falha ao criar a categoria.' });
   }
 });
@@ -132,16 +175,32 @@ router.patch('/api/finance/categories/:id', async function (req, res) {
   const b = req.body || {};
   const sets = [], valores = [];
   if (b.name !== undefined) {
-    const nome = String(b.name).trim();
+    const nome = String(b.name).trim().slice(0, 100);
     if (!nome) return res.status(400).json({ error: 'O nome nao pode ficar vazio.' });
     sets.push('name = ?'); valores.push(nome);
   }
+  /* DESATIVAR NAO APAGA, e nao mexe na marcacao de captacao (M5.8b).
+   *
+   * O lancamento de marco continua apontando para a categoria, e o relatorio de
+   * marco continua com o nome dela. Desativar so a tira das listas de escolha
+   * daqui para a frente -- e por isso `conta_no_cpl` fica como esta: o CPL de um
+   * periodo passado nao pode mudar porque hoje alguem aposentou a categoria. */
   if (b.active !== undefined) { sets.push('active = ?'); valores.push(b.active ? 1 : 0); }
+  // A marcacao de captacao (M5.8) so vale para DESPESA: marcar uma categoria de
+  // RECEITA faria o CPL somar faturamento como se fosse gasto com anuncio. A
+  // condicao vai no proprio UPDATE para nao depender de uma leitura antes.
+  if (b.contaNoCpl !== undefined) {
+    sets.push("conta_no_cpl = (CASE WHEN type = 'DESPESA' THEN ? ELSE 0 END)");
+    valores.push(b.contaNoCpl ? 1 : 0);
+  }
   if (!sets.length) return res.status(400).json({ error: 'Nada para atualizar.' });
   try {
     valores.push(req.params.id);
-    await db.q('UPDATE finance_categories SET ' + sets.join(', ') +
+    const [r] = await db.q('UPDATE finance_categories SET ' + sets.join(', ') +
       ' WHERE clinica_id = :clinica AND id = ?', valores);
+    if (!r || r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Categoria nao encontrada.' });
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao atualizar a categoria.' });
@@ -401,8 +460,11 @@ router.patch('/api/recurring-expenses/:id', async function (req, res) {
   if (!sets.length) return res.status(400).json({ error: 'Nada para atualizar.' });
   try {
     valores.push(req.params.id);
-    await db.q('UPDATE recurring_expenses SET ' + sets.join(', ') +
+    const [r] = await db.q('UPDATE recurring_expenses SET ' + sets.join(', ') +
       ' WHERE clinica_id = :clinica AND id = ?', valores);
+    if (!r || r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Despesa recorrente nao encontrada.' });
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao atualizar a despesa recorrente.' });

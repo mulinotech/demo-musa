@@ -80,10 +80,16 @@ router.patch('/api/treatment-plans/:id', async function(req, res) {
   const { id } = req.params;
   const { title, clinicalObjective, totalSessions, periodicity, status, startDate, estimatedEndDate } = req.body;
   try {
-    await db.q(
+    const [r] = await db.q(
       'UPDATE treatment_plans SET title = COALESCE(?, title), clinical_objective = COALESCE(?, clinical_objective), total_sessions = COALESCE(?, total_sessions), periodicity = COALESCE(?, periodicity), status = COALESCE(?, status), start_date = COALESCE(?, start_date), estimated_end_date = COALESCE(?, estimated_end_date) WHERE clinica_id = :clinica AND id = ?',
       [title || null, clinicalObjective || null, totalSessions || null, periodicity || null, status || null, startDate ? new Date(startDate) : null, estimatedEndDate ? new Date(estimatedEndDate) : null, id]
     );
+    /* NENHUMA LINHA ALTERADA = o plano nao e desta clinica (ou nao existe).
+     * Responder "atualizado com sucesso" seria mentir para quem chamou e, de
+     * quebra, confirmar que aquele id existe em algum lugar. Medido na M4.1. */
+    if (!r || r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Plano de tratamento nao encontrado.' });
+    }
     res.json({ message: 'Plano de tratamento atualizado com sucesso!' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao atualizar plano de tratamento', details: error.message });
@@ -98,7 +104,11 @@ router.delete('/api/treatment-plans/:id', async function(req, res) {
   try {
     // Sem o filtro, um id adivinhado apaga o plano de outra clinica -- e o
     // CASCADE leva as sessoes junto.
-    await db.q('DELETE FROM treatment_plans WHERE clinica_id = :clinica AND id = ?', [id]);
+    const [r] = await db.q(
+      'DELETE FROM treatment_plans WHERE clinica_id = :clinica AND id = ?', [id]);
+    if (!r || r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Plano de tratamento nao encontrado.' });
+    }
     res.json({ message: 'Plano de tratamento excluído com sucesso!' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao excluir plano de tratamento', details: error.message });
@@ -112,7 +122,7 @@ router.patch('/api/treatment-sessions/:id', async function(req, res) {
   const { id } = req.params;
   const { sessionType, status, equipmentsUsed, suppliesApplied, professionalInCharge, clinicalEvolution, mediaUrls, sessionDate, nextSessionDate, price } = req.body;
   try {
-    await db.q(
+    const [r] = await db.q(
       'UPDATE treatment_sessions SET session_type = COALESCE(?, session_type), status = COALESCE(?, status), equipments_used = COALESCE(?, equipments_used), supplies_applied = COALESCE(?, supplies_applied), professional_in_charge = COALESCE(?, professional_in_charge), clinical_evolution = COALESCE(?, clinical_evolution), media_urls = COALESCE(?, media_urls), session_date = COALESCE(?, session_date), next_session_date = COALESCE(?, next_session_date), price = COALESCE(?, price) WHERE clinica_id = :clinica AND id = ?',
       [
         sessionType || null,
@@ -128,6 +138,9 @@ router.patch('/api/treatment-sessions/:id', async function(req, res) {
         id
       ]
     );
+    if (!r || r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Sessao nao encontrada.' });
+    }
     res.json({ message: 'Sessão atualizada com sucesso!' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao atualizar sessão', details: error.message });

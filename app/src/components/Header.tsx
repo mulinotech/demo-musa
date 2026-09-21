@@ -59,19 +59,55 @@ export default function Header({ onNavigate, activeSection, onOpenDashboard }: H
               <span className="text-xl sm:text-2xl font-serif tracking-[0.2em] text-neutral font-semibold transition-colors duration-300 group-hover:text-primary">
                 MUSA
               </span>
-              <span className="text-[9px] tracking-[0.35em] text-primary uppercase font-medium mt-0.5">
+              <span className="text-[9px] tracking-[0.22em] text-primary uppercase font-medium mt-0.5">
                 Estética de Elite
               </span>
             </div>
           </div>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-6 xl:gap-9 flex-1 justify-center">
+          {/* ================= O MENU PAROU DE CABER COM A LETRA MAIOR (M5.1)
+              Medido a 1440px: o bloco da direita passava 140px da borda, e o
+              "AGENDAR AGORA" ficava cortado pela metade. `tracking-widest` sao
+              0,1em -- espacejamento em `em` cresce junto com a fonte, entao
+              texto 40% maior fica MAIS de 40% mais largo. Aqui o espacejamento
+              desce para 0,05em e os intervalos encolhem um passo: a linha volta
+              a caber e o ar entre os itens continua existindo.
+
+              E OS TAMANHOS AQUI SAO EXPLICITOS de proposito: 13px e 12,5px nao
+              estao na camada de leitura do `index.css`, entao esta linha nao
+              anda junto quando a escala geral mudar. Menu de topo de site e o
+              unico lugar do sistema onde a largura e um limite rigido -- oito
+              itens numa linha so, sem quebra possivel --, e por isso ele
+              precisa de numero proprio em vez de herdar a escala.
+
+              ============================== E O MENU JA NAO CABIA ANTES (F5, 15/09)
+
+              Medido com as duas versoes lado a lado: o menu de desktop aparecia
+              a partir de 1024px, mas a linha inteira so cabe a partir de ~1359px.
+              Entre 1024 e 1366 ela PASSAVA da borda, e o `overflow-x: hidden` do
+              body transformava isso em corte silencioso -- num notebook de 1280,
+              o botao "AGENDAR AGORA", que e o principal do site, ficava cortado.
+              Isso era assim ANTES da M5.1; a letra maior piorou 19px de um
+              problema que ja existia.
+
+              O conserto tem duas partes, e a escolha entre elas foi da Silvia,
+              olhando as duas renderizadas:
+                1. o menu completo desce ate 1280 -- intervalos um passo menores e
+                   o botao com rotulo curto ("AGENDAR") abaixo de 1440;
+                2. abaixo de 1280 vale o menu sanduiche, que ja existia e agora
+                   e usado na faixa onde ele e de fato necessario.
+
+              Os limites sao `min-[1280px]` e `min-[1440px]`, e nao `lg`/`xl`,
+              porque o que manda aqui e a largura em que a linha cabe -- medida --,
+              e nao um degrau generico do Tailwind.
+
+              Desktop Navigation */}
+          <nav className="hidden min-[1280px]:flex items-center gap-4 min-[1440px]:gap-7 flex-1 justify-center">
             {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleLinkClick(item.id)}
-                className={`text-xs uppercase tracking-widest font-medium transition-all duration-300 hover:text-primary relative py-1 cursor-pointer whitespace-nowrap ${
+                className={`text-[13px] uppercase tracking-wider font-medium transition-all duration-300 hover:text-primary relative py-1 cursor-pointer whitespace-nowrap ${
                   activeSection === item.id
                     ? "text-primary"
                     : "text-neutral-muted"
@@ -86,10 +122,10 @@ export default function Header({ onNavigate, activeSection, onOpenDashboard }: H
           </nav>
 
           {/* Call to Actions */}
-          <div className="hidden sm:flex items-center gap-3 lg:gap-4 shrink-0">
+          <div className="hidden min-[1280px]:flex items-center gap-2.5 min-[1440px]:gap-4 shrink-0">
             <button
               onClick={onOpenDashboard}
-              className="text-[10px] uppercase tracking-widest font-medium text-neutral-muted hover:text-primary border border-secondary hover:border-primary/50 px-2.5 py-1.5 rounded transition-all duration-300 cursor-pointer whitespace-nowrap"
+              className="text-[12.5px] uppercase tracking-wider font-medium text-neutral-muted hover:text-primary border border-secondary hover:border-primary/50 px-2.5 py-1.5 rounded transition-all duration-300 cursor-pointer whitespace-nowrap"
               title="Acessar Área Restrita do CRM"
             >
               Login CRM
@@ -98,15 +134,16 @@ export default function Header({ onNavigate, activeSection, onOpenDashboard }: H
               href={`https://wa.me/5511900000000?text=${encodeURIComponent("Olá! Gostaria de agendar uma consulta de avaliação com a Dra. Musa.")}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center space-x-2 text-xs uppercase tracking-widest font-semibold text-white bg-primary px-5 py-2.5 rounded-sm hover:bg-primary-light transition-all duration-300 shadow-sm transform hover:-translate-y-0.5 cursor-pointer whitespace-nowrap"
+              className="flex items-center space-x-2 text-[13px] uppercase tracking-wider font-semibold text-white bg-primary px-4 py-2.5 rounded-sm hover:bg-primary-light transition-all duration-300 shadow-sm transform hover:-translate-y-0.5 cursor-pointer whitespace-nowrap"
             >
               <Calendar className="w-4 h-4" />
-              <span>Agendar Agora</span>
+              <span className="hidden min-[1440px]:inline">Agendar Agora</span>
+              <span className="min-[1440px]:hidden">Agendar</span>
             </a>
           </div>
 
           {/* Mobile Menu Trigger */}
-          <div className="flex items-center lg:hidden space-x-3">
+          <div className="flex items-center min-[1280px]:hidden space-x-3">
             <button
               onClick={onOpenDashboard}
               className="text-[9px] uppercase tracking-wider text-neutral-muted border border-secondary px-2 py-1 rounded cursor-pointer"
@@ -127,7 +164,7 @@ export default function Header({ onNavigate, activeSection, onOpenDashboard }: H
 
       {/* Mobile Navigation Panel */}
       {isOpen && (
-        <div className="lg:hidden absolute top-full left-0 w-full bg-luxury-dark/95 backdrop-blur-lg border-b border-primary/10 py-6 px-4 animate-in fade-in slide-in-from-top-5 duration-200">
+        <div className="min-[1280px]:hidden absolute top-full left-0 w-full bg-luxury-dark/95 backdrop-blur-lg border-b border-primary/10 py-6 px-4 animate-in fade-in slide-in-from-top-5 duration-200">
           <nav className="flex flex-col space-y-4">
             {navItems.map((item) => (
               <button

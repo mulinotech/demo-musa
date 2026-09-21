@@ -62,15 +62,42 @@ test('financeiro e de admin e gerente: profissional nao ve o caixa da clinica', 
   assert.deepStrictEqual(regraPara('PATCH', '/api/finance/entries/ce_1/pay').papeis, ['admin', 'gerente']);
 });
 
-test('agenda nao entra em REGRAS_DE_PAPEL: o recorte e por dono, nao por papel', function () {
-  // Todo mundo autenticado abre a agenda. Quem e `profissional` so enxerga a
-  // propria, e isso a rota decide comparando o dono do registro - uma linha
-  // nesta tabela nao daria conta, porque ela so conhece papel e caminho.
-  ['GET', 'POST', 'PATCH', 'DELETE'].forEach(function (m) {
-    assert.strictEqual(regraPara(m, '/api/appointments'), null, m);
-    assert.strictEqual(regraPara(m, '/api/appointments/ap_1'), null, m);
-  });
+/* ============ A AGENDA MUDOU DE REGRA NA M5.2 (15/09), e este teste conta a
+ * decisao NOVA -- ele nao foi apagado, foi reescrito.
+ *
+ * ANTES: nenhuma linha na tabela. O recorte era so por DONO, dentro da rota:
+ * todo autenticado abria a agenda, e `profissional` mexia apenas na propria.
+ *
+ * AGORA: a LEITURA continua sem linha nenhuma (o recorte por dono segue
+ * valendo), mas ESCREVER saiu do alcance do `vendedor`. Decisao da Silvia
+ * depois de ver, medido, o que o papel alcancava: o vendedor trabalha o que e
+ * comercial e nao mexe no calendario de quem atende.
+ *
+ * O caso que pesou e `PATCH /api/appointments/:id/status` -- concluir. Concluir
+ * lanca receita, baixa insumo e credita ponto de uma vez. Quem nunca aplicou o
+ * procedimento nao e quem deve declarar que ele aconteceu. */
+test('agenda: a LEITURA e de todos, e ESCREVER nao e do vendedor', function () {
+  // A leitura segue sem linha: quem recorta e o dono, dentro da rota.
+  assert.strictEqual(regraPara('GET', '/api/appointments'), null);
+  assert.strictEqual(regraPara('GET', '/api/appointments/ap_1'), null);
   assert.strictEqual(regraPara('GET', '/api/availability'), null);
+
+  // Escrever tem linha, e ela exclui o vendedor -- nunca os outros tres.
+  ['POST', 'PATCH', 'PUT', 'DELETE'].forEach(function (m) {
+    const r = regraPara(m, '/api/appointments');
+    assert.ok(r, m + ' precisa de regra: sem ela o vendedor volta a marcar');
+    assert.ok(!r.papeis.includes('vendedor'), m + ' nao pode ser do vendedor');
+    ['admin', 'gerente', 'profissional'].forEach(function (p) {
+      assert.ok(r.papeis.includes(p), m + ' tem de continuar valendo para ' + p);
+    });
+  });
+
+  // E o caminho COM ID tambem. A regra e por prefixo, mas quem le precisa ver
+  // isso afirmado: foi um `padrao` esquecido que abriu /api/clients/:id/documents
+  // uma vez, e a licao custou caro.
+  const status = regraPara('PATCH', '/api/appointments/ap_1/status');
+  assert.ok(status && !status.papeis.includes('vendedor'),
+    'concluir atendimento nao pode ser do vendedor');
 });
 
 test('estoque: profissional LE, mas nao mexe no saldo', function () {
@@ -84,4 +111,19 @@ test('estoque: profissional LE, mas nao mexe no saldo', function () {
   assert.ok(!escrever('POST', '/api/stock/entry').includes('profissional'), 'entrada nao');
   assert.ok(!escrever('POST', '/api/products').includes('profissional'), 'cadastro nao');
   assert.ok(!escrever('PUT', '/api/services/cat_1/supplies').includes('profissional'), 'ficha tecnica nao');
+});
+
+test('a Visao Geral abre para quem ve a tela; o dinheiro dela, so para a gestao', function () {
+  // A ordem das duas linhas na tabela e o proprio conserto: /api/dashboard
+  // cobriria /api/dashboard/dinheiro se viesse antes, e a profissional passaria
+  // a ver faturamento e CPL -- justamente o que /api/finance lhe nega.
+  const geral = regraPara('GET', '/api/dashboard/visao-geral');
+  assert.ok(geral, 'a visao geral precisa de regra: sem ela o vendedor entra');
+  assert.deepStrictEqual(geral.papeis, ['admin', 'gerente', 'profissional']);
+  assert.ok(!geral.papeis.includes('vendedor'));
+
+  const dinheiro = regraPara('GET', '/api/dashboard/dinheiro');
+  assert.deepStrictEqual(dinheiro.papeis, ['admin', 'gerente']);
+  assert.ok(!dinheiro.papeis.includes('profissional'),
+    'quem nao ve preco em Precificacao nao pode ver faturamento na abertura');
 });

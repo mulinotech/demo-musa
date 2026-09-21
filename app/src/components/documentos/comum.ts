@@ -1,7 +1,11 @@
 /** Tipos e formatação dos documentos clínicos (Fase 4). */
 
-export type TipoDocumento = "ANAMNESE" | "TERMO_CONSENTIMENTO" | "ORIENTACAO" | "OUTRO";
-export type StatusDocumento = "RASCUNHO" | "AGUARDANDO_ASSINATURA" | "ASSINADO" | "CANCELADO";
+/* RECEITA e ATESTADO entraram na M5.5. Eles se distinguem dos outros por QUEM
+   assina: nos demais, a paciente assina em tela; nestes, quem assina é a
+   profissional, no papel impresso ou por certificado ICP-Brasil fora do
+   sistema. Daí o status EMITIDO, que não é "aguardando assinatura". */
+export type TipoDocumento = "ANAMNESE" | "TERMO_CONSENTIMENTO" | "ORIENTACAO" | "RECEITA" | "ATESTADO" | "OUTRO";
+export type StatusDocumento = "RASCUNHO" | "AGUARDANDO_ASSINATURA" | "ASSINADO" | "EMITIDO" | "CANCELADO";
 export type TipoCampo = "text" | "textarea" | "boolean" | "select" | "multiselect" | "date" | "number" | "scale";
 
 export interface CampoModelo {
@@ -70,6 +74,7 @@ export const ESTILO_STATUS_DOC: Record<StatusDocumento, { rotulo: string; classe
   RASCUNHO: { rotulo: "Rascunho", classe: "text-brand-brown/70 bg-brand-beige border-brand-gold/30" },
   AGUARDANDO_ASSINATURA: { rotulo: "Aguardando assinatura", classe: "text-amber-800 bg-amber-50 border-amber-200" },
   ASSINADO: { rotulo: "Assinado", classe: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+  EMITIDO: { rotulo: "Emitido", classe: "text-emerald-700 bg-emerald-50 border-emerald-200" },
   CANCELADO: { rotulo: "Cancelado", classe: "text-red-700 bg-red-50 border-red-200" },
 };
 
@@ -77,6 +82,8 @@ export const ROTULO_TIPO: Record<TipoDocumento, string> = {
   ANAMNESE: "Anamnese",
   TERMO_CONSENTIMENTO: "Termo de consentimento",
   ORIENTACAO: "Orientação",
+  RECEITA: "Receituário",
+  ATESTADO: "Atestado",
   OUTRO: "Outro",
 };
 

@@ -39,6 +39,7 @@ const escopo = require('../db/escopo');
 const { sendWhatsappText } = require('../services/evolution');
 const lembretes = require('../services/lembretes');
 const logs = require('../services/logs');
+const jid = require('../services/whatsapp-jid');
 
 const MOTIVO_ENVELOPE =
   'o webhook chega sem sessao: a clinica sai da INSTANCIA que recebeu a mensagem, ' +
@@ -134,7 +135,42 @@ router.post('/api/webhook/whatsapp', async function (req, res) {
     return res.json({ status: 'ignored' });
   }
   const senderJid = (key && key.remoteJid) || '';
-  const phone = senderJid.split('@')[0];
+
+  /* ================================= GRUPO NAO E PACIENTE (M5.9a, 18/09)
+   *
+   * Encontrado em producao, com print: o numero da clinica esta num grupo de
+   * trabalho, alguem escreveu, e o CRM respondeu **"Seja muito bem-vinda!"
+   * no grupo**, na frente de um cliente.
+   *
+   * A causa era uma linha -- `senderJid.split('@')[0]`. O WhatsApp identifica a
+   * origem pelo SUFIXO do JID:
+   *
+   *     5511987654321@s.whatsapp.net       uma pessoa
+   *     120363111222333@g.us               um grupo
+   *     ...@broadcast, status@broadcast    transmissao e "status"
+   *
+   * Jogando o sufixo fora, o id do grupo virava "telefone". Nenhum paciente tem
+   * aquele numero, entao o webhook concluia "contato novo", criava um lead
+   * chamado como quem escreveu, com `whatsapp = 120363111222333`, e disparava a
+   * saudacao para o grupo inteiro.
+   *
+   * Duas consequencias, e a segunda e a que doi: o funil enche de leads que sao
+   * grupos, e **a clinica fala sozinha em publico**. A primeira e sujeira; a
+   * segunda e a marca dela.
+   *
+   * POR QUE RECUSAR, e nao "gravar sem responder": em grupo, quem falou esta em
+   * `key.participant`, nao em `remoteJid` -- gravar pelo remoteJid arquivaria a
+   * fala de varias pessoas numa ficha so. E conversa de grupo nao e atendimento
+   * de paciente: nao e isso que a tela de Atendimento mostra.
+   *
+   * A resposta continua 200 de proposito: nao e erro de entrega, e um 4xx faria
+   * a Evolution reenviar a mesma mensagem para sempre. */
+  const origem = jid.origemDoJid(senderJid);
+  if (origem !== 'pessoa') {
+    return res.json({ status: 'ignored', motivo: origem });
+  }
+
+  const phone = jid.telefoneDoJid(senderJid);
   const contactName = messageData.pushName || 'Contato WhatsApp';
 
   // O ENVELOPE. A Evolution manda o nome da instancia em `instance`; versoes

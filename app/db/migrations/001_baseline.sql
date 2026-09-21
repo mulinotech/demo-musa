@@ -1,12 +1,5 @@
--- 001_baseline.sql
--- Esquema atual do Musa CRM, na forma final que o app.js produz hoje.
---
--- Fonte: initializeDatabase() em app.js (9 CREATE TABLE + os ALTER acumulados)
--- em 26/08/2026. O schema.sql antigo descrevia apenas 6 tabelas e ficou defasado
--- — este arquivo passa a ser a fonte de verdade do esquema.
---
--- Todos os CREATE usam IF NOT EXISTS: rodar contra o banco de producao existente
--- e um no-op. Contra um banco vazio, cria tudo do zero.
+-- Esquema atual do Musa CRM, na forma final que o initializeDatabase() produz.
+-- Todos com IF NOT EXISTS: contra o banco de producao e no-op.
 
 CREATE TABLE IF NOT EXISTS leads (
     id VARCHAR(50) PRIMARY KEY,

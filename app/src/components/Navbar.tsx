@@ -41,7 +41,10 @@ export default function Navbar({ isAiConfigured, onAbrirMenu, onSair }: NavbarPr
               {tela ? tela.label : "Console"}
             </h2>
             {/* No celular a marca não cabe na lateral escondida — fica aqui. */}
-            <p className="text-[9px] font-sans tracking-widest uppercase text-brand-gold font-medium truncate lg:hidden">
+            {/* Espacejamento menor pelo mesmo motivo da Sidebar (M5.1): 0,1em cresce
+                junto com a fonte. Aqui o `truncate` fica, porque a barra de cima nao
+                tem altura para uma segunda linha. */}
+            <p className="text-[9px] font-sans tracking-wide uppercase text-brand-gold font-medium truncate lg:hidden">
               Dra. Musa Estética de Elite
             </p>
           </div>

@@ -39,7 +39,7 @@ function ehRotaPublica(metodo, caminho) {
 }
 
 async function porteiro(req, res, next) {
-  res.set('X-Trava-Musa', 'v43');
+  res.set('X-Trava-Musa', 'v54');
   const caminho = req.originalUrl.split('?')[0];
   if (ehRotaPublica(req.method, caminho)) return next();
 
@@ -98,6 +98,10 @@ async function porteiro(req, res, next) {
       console.error('[suporte] falha ao conferir a concessao:', e && e.message);
       return res.status(403).json({ error: 'Nao foi possivel conferir o acesso de suporte.' });
     }
+    const situacaoSup = require('../db/situacao-clinica');
+    if (!(await situacaoSup.estaAtiva(deSuporte.clinicaId))) {
+      return res.status(403).json({ error: 'O acesso desta clinica esta suspenso.' });
+    }
     req.usuario = {
       sub: deSuporte.sub,
       nome: 'Suporte Mulino (' + deSuporte.nome + ')',
@@ -145,6 +149,19 @@ async function porteiro(req, res, next) {
     if (caminho.indexOf('/api/plataforma/') === 0) {
       return res.status(403).json({
         error: 'Esta area e da administracao da plataforma, e nao do CRM da clinica.'
+      });
+    }
+
+    /* CLINICA SUSPENSA OU ENCERRADA NAO ENTRA (M3.2b) -- nem com token valido.
+     *
+     * Conferir so no login deixaria quem ja estava dentro trabalhando por mais
+     * 12 horas depois de a Mulino suspender o acesso. O status vem de um mapa em
+     * memoria recarregado a cada 15s, entao isto nao custa uma ida ao banco por
+     * clique. */
+    const situacao = require('../db/situacao-clinica');
+    if (!(await situacao.estaAtiva(usuario.clinicaId))) {
+      return res.status(403).json({
+        error: 'O acesso desta clinica esta suspenso. Fale com a Mulino.'
       });
     }
 

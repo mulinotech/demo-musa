@@ -107,8 +107,10 @@ app.use(require('./routes/webhook-whatsapp'));
 app.use(require('./routes/evolution'));
 app.use(require('./routes/reports'));
 app.use(require('./routes/users'));
+app.use(require('./routes/clinica'));
 app.use(require('./routes/pricing'));
 app.use(require('./routes/finance'));
+app.use(require('./routes/dashboard'));
 // `lembretes` ANTES de `appointments`, por precaucao de ordem: as quatro rotas
 // de lembrete comecam com /api/appointments/. Ver o cabecalho de
 // routes/lembretes.js.

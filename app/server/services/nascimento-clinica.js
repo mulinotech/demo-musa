@@ -16,7 +16,7 @@
  *      3. as 16 categorias financeiras
  *      4. a configuração de preço
  *      5. o programa de pontos
- *      6. os dois modelos de documento (anamnese e termo)
+ *      6. os quatro modelos de documento (anamnese, termo, receituário e atestado)
  *
  *  **Ou nasce inteira, ou não nasce.** Uma clínica pela metade é pior do que
  *  nenhuma: a pessoa entra, encontra telas que funcionam e telas que recusam,
@@ -48,6 +48,10 @@ const escopo = require('../db/escopo');
 
 const CATEGORIAS = require('../../db/migrations/008_financeiro.js').CATEGORIAS;
 const DOCS = require('../../db/migrations/016_documentos.js');
+const DOCS2 = require('../../db/migrations/034_receita_e_atestado.js');
+// As PERGUNTAS vem da 034; os CORPOS, da 035, que tirou deles o cabecalho --
+// ele passou a ser desenhado pelo timbre.
+const TIMBRE = require('../../db/migrations/035_timbre.js');
 const novaChaveDeCaptacao = require('../../db/migrations/029_chave_de_captacao.js').novaChave;
 
 const MOTIVO = 'nascimento de uma clinica: no inicio deste trabalho a clinica ainda nao ' +
@@ -127,7 +131,8 @@ async function criarClinica(dados) {
       await tx.q('INSERT INTO loyalty_settings (id, clinica_id) VALUES (?, ?)',
         ['default', clinicaId]);
 
-      // 6. os dois modelos de documento, no estado ORIGINAL da migration 016 --
+      // 6. os QUATRO modelos de documento, no estado ORIGINAL das migrations
+      //    016 (anamnese e termo) e 034 (receituario e atestado) --
       //    e nao copiados de outra clinica, que levaria as edicoes clinicas
       //    dela para dentro desta.
       await tx.q(
@@ -142,6 +147,16 @@ async function criarClinica(dados) {
         ' clinica_id) VALUES (?, ?, ?, 1, ?, ?, ?)',
         [novoId('tpl'), 'Termo de consentimento — procedimento estetico', 'TERMO_CONSENTIMENTO',
          JSON.stringify(DOCS.TERMO), DOCS.CORPO_TERMO, clinicaId]);
+      await tx.q(
+        'INSERT INTO document_templates (id, name, type, version, fields_json, body_markdown,' +
+        ' clinica_id) VALUES (?, ?, ?, 1, ?, ?, ?)',
+        [novoId('tpl'), 'Receituário', 'RECEITA',
+         JSON.stringify(DOCS2.RECEITA), TIMBRE.CORPO_RECEITA, clinicaId]);
+      await tx.q(
+        'INSERT INTO document_templates (id, name, type, version, fields_json, body_markdown,' +
+        ' clinica_id) VALUES (?, ?, ?, 1, ?, ?, ?)',
+        [novoId('tpl'), 'Atestado', 'ATESTADO',
+         JSON.stringify(DOCS2.ATESTADO), TIMBRE.CORPO_ATESTADO, clinicaId]);
     });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
@@ -155,13 +170,18 @@ async function criarClinica(dados) {
     throw e;
   }
 
+  /* A clinica nasceu ativa: o mapa de status em memoria precisa saber disso
+   * agora, e nao daqui a 15 segundos. Sem isto, quem recebeu a senha e entra na
+   * hora leva "acesso suspenso". */
+  require('../db/situacao-clinica').esquecer();
+
   return {
     clinicaId: clinicaId,
     nome: d.nome,
     chaveCaptacao: chave,
     administrador: { id: adminId, nome: d.adminNome, email: d.adminEmail },
     categoriasFinanceiras: CATEGORIAS.length,
-    modelosDeDocumento: 2
+    modelosDeDocumento: 4
   };
 }
 
