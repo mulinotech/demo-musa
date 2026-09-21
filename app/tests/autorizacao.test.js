@@ -127,3 +127,13 @@ test('a Visao Geral abre para quem ve a tela; o dinheiro dela, so para a gestao'
   assert.ok(!dinheiro.papeis.includes('profissional'),
     'quem nao ve preco em Precificacao nao pode ver faturamento na abertura');
 });
+
+test('ligar a entrada do WhatsApp e da gestao; LER o diagnostico e de todos', function () {
+  const ligar = regraPara('POST', '/api/evolution/entrada/ligar');
+  assert.ok(ligar, 'sem regra, o vendedor reconfiguraria o WhatsApp da clinica');
+  assert.deepStrictEqual(ligar.papeis, ['admin', 'gerente']);
+
+  // A leitura NAO tem regra, e isso e' deliberado: quem atende e' quem percebe
+  // primeiro que as respostas pararam de chegar.
+  assert.strictEqual(regraPara('GET', '/api/evolution/entrada'), null);
+});

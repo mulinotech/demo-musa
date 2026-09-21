@@ -23,6 +23,7 @@ import {
   Lock
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import EntradaDeMensagens from './EntradaDeMensagens';
 
 interface EvolutionHubProps {
   onWebhookTriggered: () => void;
@@ -240,6 +241,11 @@ export default function EvolutionHub({ onWebhookTriggered }: EvolutionHubProps) 
             Gerencie instâncias de atendimento e utilize nosso Simulador de Webhook exclusivo para testar fluxos de captação e conversas em tempo real.
           </p>
         </div>
+
+        {/* A ENTRADA DE MENSAGENS vem ANTES das instancias, de proposito (M5.9):
+            e' a unica coisa nesta tela que pode estar quebrada sem ninguem
+            notar. Tudo o mais aqui da sinal quando falha. */}
+        <EntradaDeMensagens />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left column: Instances Management */}

@@ -281,6 +281,91 @@ const EvolutionService = {
     const data = response.data?.instance || response.data;
     return { name: data.instanceName || formattedName, status: 'connecting' };
   },
+  /* ================================ O WEBHOOK, LIGADO DE DENTRO (M5.9, 21/09)
+   *
+   * Ate aqui, apontar a instancia para o nosso `/api/webhook/whatsapp` so era
+   * possivel dentro do painel da Evolution -- que a clinica nao tem e nao deve
+   * ter. O resultado foi a Musa passar semanas sem receber nenhuma resposta de
+   * paciente, sem nada avisar (18/09).
+   *
+   * As duas funcoes abaixo existem para que isso vire um botao. Elas tentam o
+   * formato da v2 e caem para o da v1 quando a instalacao e mais antiga -- o
+   * mesmo padrao que `sendText` ja usa, porque nao sabemos de antemao a versao
+   * da Evolution de cada cliente.
+   *
+   * SEM CREDENCIAL, o modo simulado guarda em memoria: e o que permite ao
+   * ensaio exercitar a tela inteira sem uma Evolution de verdade. */
+  definirWebhook: async function (instanceName, urlDoWebhook, eventos) {
+    const instancia = instanceName || await this.getInstanceName();
+    const lista = eventos && eventos.length ? eventos : ['MESSAGES_UPSERT'];
+
+    if (!this.isConfigured()) {
+      // No modo simulado a instancia da clinica pode nao estar na lista de
+      // exemplo. Criar a entrada aqui e' o que faz o ensaio exercitar o fluxo
+      // inteiro -- ligar e depois RELER -- sem uma Evolution de verdade.
+      let inst = SIMULATED_INSTANCES.find((i) => i.name === instancia);
+      if (!inst) { inst = { name: instancia, status: 'open' }; SIMULATED_INSTANCES.push(inst); }
+      inst.webhook = { enabled: true, url: urlDoWebhook, events: lista };
+      console.log('[SIMULADO WhatsApp] webhook de ' + instancia + ' -> ' + urlDoWebhook);
+      return { enabled: true, url: urlDoWebhook, events: lista, simulated: true };
+    }
+
+    const caminho = '/webhook/set/' + encodeURIComponent(instancia);
+    // v2: o corpo vem aninhado em `webhook`.
+    const corpoV2 = {
+      webhook: { enabled: true, url: urlDoWebhook, webhookByEvents: false,
+                 webhookBase64: false, events: lista }
+    };
+    let resposta = await makeHttpsRequest(getRequestOptions('POST', caminho, true), corpoV2);
+
+    if (resposta.statusCode === 400 || resposta.statusCode === 404) {
+      // v1: os mesmos campos, na raiz.
+      const corpoV1 = { enabled: true, url: urlDoWebhook, webhook_by_events: false,
+                        webhook_base64: false, events: lista };
+      const alternativa = await makeHttpsRequest(getRequestOptions('POST', caminho, true), corpoV1);
+      if (alternativa.statusCode >= 200 && alternativa.statusCode < 300) return alternativa.data;
+      resposta = resposta.statusCode === 404 ? alternativa : resposta;
+    }
+
+    if (resposta.statusCode < 200 || resposta.statusCode >= 300) {
+      throw new Error(this.describeApiError(resposta));
+    }
+    return resposta.data;
+  },
+
+  /** O webhook como a Evolution o conhece hoje. Nunca lanca: a tela precisa
+   *  mostrar o resto do diagnostico mesmo quando a Evolution nao responde, e um
+   *  erro aqui viraria uma tela em branco em vez de um aviso. */
+  lerWebhook: async function (instanceName) {
+    const instancia = instanceName || await this.getInstanceName();
+
+    if (!this.isConfigured()) {
+      const inst = SIMULATED_INSTANCES.find((i) => i.name === instancia);
+      const w = (inst && inst.webhook) || null;
+      return w ? { enabled: !!w.enabled, url: w.url || '', events: w.events || [], simulated: true }
+               : { enabled: false, url: '', events: [], simulated: true };
+    }
+
+    try {
+      const r = await makeHttpsRequest(
+        getRequestOptions('GET', '/webhook/find/' + encodeURIComponent(instancia)));
+      if (r.statusCode < 200 || r.statusCode >= 300) {
+        return { enabled: false, url: '', events: [], indisponivel: true };
+      }
+      // A v2 responde { webhook: {...} }; a v1, o objeto na raiz.
+      const w = (r.data && r.data.webhook) || r.data || {};
+      return {
+        enabled: !!(w.enabled !== undefined ? w.enabled : w.url),
+        url: w.url || '',
+        events: w.events || []
+      };
+    } catch (e) {
+      // A Evolution fora do ar nao pode derrubar a tela de diagnostico.
+      return { enabled: false, url: '', events: [], indisponivel: true,
+               erro: (e && e.message) || 'sem resposta' };
+    }
+  },
+
   connectInstance: async function(name) {
     if (!this.isConfigured()) {
       const inst = SIMULATED_INSTANCES.find(i => i.name === name);

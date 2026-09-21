@@ -45,6 +45,7 @@ const router = express.Router();
 const escopo = require('../db/escopo');
 const cfgSvc = require('../services/clinica-config');
 const logs = require('../services/logs');
+const entrada = require('../services/entrada-whatsapp');
 const { SIMULATED_INSTANCES, EvolutionService, sendWhatsappText, getEvolutionManagerUrl, normalizeWhatsappNumber, jidToNumber } = require('../services/evolution');
 
 const MOTIVO_CARIMBAR_INSTANCIA =
@@ -227,6 +228,106 @@ router.get('/api/evolution/status', async function (req, res) {
   } catch (error) {
     console.error('[evolution]', error && error.message);
     res.status(500).json({ error: 'Erro ao consultar o status do WhatsApp.' });
+  }
+});
+
+/* ================================== A ENTRADA DE MENSAGENS (M5.9, 21/09)
+ *
+ * Duas rotas para o defeito que custou semanas de silencio: uma que DIZ se a
+ * entrada esta viva, e outra que a LIGA.
+ *
+ * O endereco do webhook nao e' fixo em codigo: sai do host da propria
+ * requisicao (a aplicacao declara `trust proxy`, entao o `x-forwarded-proto` do
+ * nginx e' respeitado), com `APP_URL` como escape para instalacao atras de
+ * proxy que reescreve o host. Para as 50 clinicas o endereco e' o MESMO -- quem
+ * diz de qual clinica e' a mensagem e' o nome da instancia no envelope, nunca a
+ * URL.
+ */
+function urlDoWebhook(req) {
+  const base = String(process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (base) return base + '/api/webhook/whatsapp';
+  return req.protocol + '://' + req.get('host') + '/api/webhook/whatsapp';
+}
+
+/** As datas da primeira e da ultima mensagem, nos dois sentidos.
+ *
+ * E' o par que separa "ninguem escreveu" de "chegou e se perdeu": clinica que
+ * envia e nunca recebe e' o retrato exato do defeito de 18/09. */
+async function movimento(db) {
+  const [r] = await db.q(
+    "SELECT direction, DATE(MAX(created_at)) AS ultima, COUNT(*) AS n" +
+    " FROM interactions WHERE clinica_id = :clinica AND type = 'whatsapp'" +
+    ' GROUP BY direction');
+  const por = {};
+  for (const x of r) por[x.direction] = { ultima: x.ultima, n: Number(x.n) };
+  return {
+    ultimaRecebida: por.in ? por.in.ultima : null,
+    ultimaEnviada: por.out ? por.out.ultima : null,
+    recebidas: por.in ? por.in.n : 0,
+    enviadas: por.out ? por.out.n : 0
+  };
+}
+
+router.get('/api/evolution/entrada', async function (req, res) {
+  const db = escopo(req);
+  try {
+    const instancia = await cfgSvc.instancia(db);
+    const mov = await movimento(db);
+    // Sem instancia nao ha o que perguntar a' Evolution, e perguntar assim
+    // mesmo so' acrescentaria a espera de uma chamada que vai falhar.
+    const w = instancia ? await EvolutionService.lerWebhook(instancia)
+                        : { enabled: false, url: '', events: [] };
+
+    const d = entrada.diagnosticar({
+      instancia: instancia,
+      webhookLigado: w.enabled,
+      webhookUrl: w.url,
+      urlEsperada: urlDoWebhook(req),
+      eventos: w.events,
+      ultimaRecebida: mov.ultimaRecebida,
+      ultimaEnviada: mov.ultimaEnviada
+    });
+
+    res.json(Object.assign(d, {
+      urlEsperada: urlDoWebhook(req),
+      evolutionIndisponivel: !!w.indisponivel,
+      contagem: { recebidas: mov.recebidas, enviadas: mov.enviadas }
+    }));
+  } catch (e) {
+    console.error('[evolution/entrada]', e && e.message);
+    res.status(500).json({ error: 'Nao foi possivel conferir a entrada de mensagens.' });
+  }
+});
+
+router.post('/api/evolution/entrada/ligar', async function (req, res) {
+  const db = escopo(req);
+  try {
+    const instancia = await cfgSvc.instancia(db);
+    if (!instancia) {
+      return res.status(409).json({
+        error: 'Esta clinica ainda nao tem WhatsApp conectado. Leia o QR Code primeiro.' });
+    }
+    const url = urlDoWebhook(req);
+    await EvolutionService.definirWebhook(instancia, url, ['MESSAGES_UPSERT']);
+    await logs.registrar(db, 'WHATSAPP',
+      'Entrada de mensagens ligada: a instancia "' + instancia + '" passou a entregar em ' + url + '.');
+
+    // RELE A CONFIGURACAO em vez de responder "deu certo" pelo que pedimos: a
+    // Evolution pode aceitar a chamada e guardar outra coisa, e a tela precisa
+    // mostrar o que ficou gravado, nao o que tentamos gravar.
+    const w = await EvolutionService.lerWebhook(instancia);
+    const mov = await movimento(db);
+    const d = entrada.diagnosticar({
+      instancia: instancia, webhookLigado: w.enabled, webhookUrl: w.url,
+      urlEsperada: url, eventos: w.events,
+      ultimaRecebida: mov.ultimaRecebida, ultimaEnviada: mov.ultimaEnviada
+    });
+    res.json(Object.assign(d, { urlEsperada: url, contagem: { recebidas: mov.recebidas, enviadas: mov.enviadas } }));
+  } catch (e) {
+    console.error('[evolution/entrada/ligar]', e && e.message);
+    res.status(502).json({
+      error: 'Nao foi possivel falar com a Evolution para ligar a entrada: ' +
+        ((e && e.message) || 'sem resposta') });
   }
 });
 

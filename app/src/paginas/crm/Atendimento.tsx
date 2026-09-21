@@ -5,11 +5,23 @@ import ChatConsole from "../../components/ChatConsole";
 import WhatsAppManager from "../../components/WhatsAppManager";
 import { papelDoToken } from "../../lib/api";
 import { useCrm } from "./contexto";
+import { useAtualizacaoAutomatica } from "../../lib/atualizacao-automatica";
 
 export default function Atendimento() {
   const crm = useCrm();
   const [visao, setVisao] = useState<"crm" | "evolution">("crm");
   const podeGerenciar = ["admin", "gerente"].includes(papelDoToken());
+
+  /* A TELA SE ATUALIZA SOZINHA (M5.9).
+   *
+   * Até aqui a mensagem da paciente chegava, era gravada, e só aparecia quando
+   * alguém recarregava a página — e a recepção não recarrega: ela deixa esta
+   * tela aberta e espera. A conversa ficava parada enquanto a paciente esperava
+   * resposta do outro lado.
+   *
+   * Vale só na visão de Atendimento: o Gerenciador WhatsApp fala direto com a
+   * Evolution e tem a própria atualização. */
+  useAtualizacaoAutomatica(() => crm.atualizar(true), 20000, visao === "crm");
 
   const classeAba = (ativa: boolean) =>
     `px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all duration-300 ${

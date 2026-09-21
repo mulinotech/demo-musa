@@ -63,6 +63,12 @@ const REGRAS_DE_PAPEL = [
    *
    * A linha de /dinheiro vem ANTES da geral: a busca para na primeira que casa,
    * e /api/dashboard cobriria as duas. */
+  /* LIGAR A ENTRADA DE MENSAGENS e' configuracao da clinica, nao operacao do
+   * dia (M5.9). A LEITURA do diagnostico fica fora de regra de proposito: quem
+   * atende precisa saber que as mensagens nao estao chegando -- e' justamente
+   * essa pessoa que percebe o silencio primeiro. */
+  { metodo: 'POST',   prefixo: '/api/evolution/entrada/ligar', papeis: ['admin', 'gerente'] },
+
   { metodo: '*',      prefixo: '/api/dashboard/dinheiro', papeis: ['admin', 'gerente'] },
   { metodo: '*',      prefixo: '/api/dashboard',          papeis: ['admin', 'gerente', 'profissional'] },
   // Estoque: a profissional PRECISA consultar saldo e validade antes de
