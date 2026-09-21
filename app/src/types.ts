@@ -49,7 +49,21 @@ export interface Lead {
   lastEditedBy?: string;
   salesNotes?: string;
   qualified?: boolean;
+  /** A ficha de paciente deste lead, quando a venda foi fechada (M5.10).
+   *  Vazio também nos leads fechados ANTES da M5.10: aquela conversão rodava no
+   *  navegador e não guardava vínculo nenhum. */
+  clientId?: string | null;
+  convertedAt?: string | null;
   createdAt: string;
+}
+
+/** O que o servidor responde quando um lead entra em "Venda Fechada" (M5.10). */
+export interface ConversaoDeLead {
+  acao: 'vincular' | 'criar' | 'jaVinculado' | 'ambiguo';
+  porque: string;
+  cliente?: { id: string; nome: string; telefone: string };
+  /** Só em 'ambiguo': as fichas que disputam o telefone. */
+  candidatos?: { id: string; nome: string; telefone: string }[];
 }
 
 export interface EvolutionInstance {

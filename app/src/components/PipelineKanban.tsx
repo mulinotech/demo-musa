@@ -17,16 +17,23 @@ import {
   Globe, 
   Search,
   User,
-  Sparkles
+  Sparkles,
+  UserPlus,
+  AlertTriangle
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { comDdi, temNumero, DDI_PADRAO } from '../lib/telefone.mjs';
 
 interface PipelineKanbanProps {
   leads: Lead[];
   onAddLead: (lead: Omit<Lead, 'id' | 'createdAt'>) => void;
   onUpdateLeadStatus: (id: string, status: Lead['status']) => void;
   onSelectLead: (lead: Lead) => void;
+  /** Recarrega os leads depois que uma ficha é escolhida à mão (M5.10). */
+  onRefresh?: () => void;
 }
+
+type FichaCandidata = { id: string; nome: string; telefone: string };
 
 const COLUMNS: { id: Lead['status']; title: string; color: string; desc: string }[] = [
   { id: 'novo', title: 'Lead Novo', color: 'border-brand-gold bg-brand-cream', desc: 'Aguardando primeiro contato' },
@@ -36,13 +43,56 @@ const COLUMNS: { id: Lead['status']; title: string; color: string; desc: string 
   { id: 'perdido', title: 'Perdidos', color: 'border-red-400/50 bg-red-50/10', desc: 'Não convertido' },
 ];
 
-export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, onSelectLead }: PipelineKanbanProps) {
+export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, onSelectLead, onRefresh }: PipelineKanbanProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  /* ESCOLHER A FICHA À MÃO (M5.10)
+   *
+   * Só aparece no caso que o servidor se recusa a resolver sozinho: duas ou
+   * mais fichas com o mesmo telefone. Numa clínica isso não é erro de cadastro
+   * — é a mãe que marca pela filha, o casal com um número só. Adivinhar aqui
+   * poria a sessão de uma no prontuário da outra. */
+  const [leadSemFicha, setLeadSemFicha] = useState<Lead | null>(null);
+  const [candidatas, setCandidatas] = useState<FichaCandidata[] | null>(null);
+  const [motivo, setMotivo] = useState('');
+  const [salvandoFicha, setSalvandoFicha] = useState(false);
+
+  useEffect(() => {
+    if (!leadSemFicha) { setCandidatas(null); setMotivo(''); return; }
+    let vivo = true;
+    setCandidatas(null);
+    fetch(`/api/leads/${leadSemFicha.id}/fichas-candidatas`)
+      .then((r) => r.json())
+      .then((d) => { if (vivo) { setCandidatas(d.candidatos || []); setMotivo(d.porque || ''); } })
+      .catch(() => { if (vivo) { setCandidatas([]); setMotivo('Não foi possível consultar as fichas.'); } });
+    return () => { vivo = false; };
+  }, [leadSemFicha]);
+
+  const vincular = async (corpo: { clientId?: string; criarNova?: boolean }) => {
+    if (!leadSemFicha || salvandoFicha) return;
+    setSalvandoFicha(true);
+    try {
+      const r = await fetch(`/api/leads/${leadSemFicha.id}/vincular`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo)
+      });
+      if (r.ok) {
+        setLeadSemFicha(null);
+        if (onRefresh) onRefresh();
+      } else {
+        const e = await r.json().catch(() => ({}));
+        setMotivo(e.error || 'Não foi possível vincular a ficha.');
+      }
+    } finally {
+      setSalvandoFicha(false);
+    }
+  };
   
   // New Lead Form State
   const [newLeadName, setNewLeadName] = useState('');
-  const [newLeadPhone, setNewLeadPhone] = useState('');
+  const [newLeadPhone, setNewLeadPhone] = useState(DDI_PADRAO);
   const [newLeadEmail, setNewLeadEmail] = useState('');
   const [newLeadInterest, setNewLeadInterest] = useState('Ultraformer MPT');
   const [newLeadSource, setNewLeadSource] = useState<'site' | 'instagram' | 'google' | 'indicação'>('site');
@@ -62,7 +112,9 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
 
   const handleSubmitLead = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLeadName || !newLeadPhone) return;
+    /* `newLeadPhone` comeca em "+55 " e nunca fica vazio, entao testar a
+       string truthy deixaria passar lead sem telefone nenhum. */
+    if (!newLeadName || !temNumero(newLeadPhone)) return;
 
     onAddLead({
       name: newLeadName,
@@ -76,7 +128,7 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
 
     // Reset fields
     setNewLeadName('');
-    setNewLeadPhone('');
+    setNewLeadPhone(DDI_PADRAO);
     setNewLeadEmail('');
     setNewLeadInterest('Ultraformer MPT');
     setNewLeadSource('site');
@@ -248,11 +300,29 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                             <span>Fechar Venda</span>
                           </button>
                         )}
+                        {/* O QUE ESTAVA ESCRITO AQUI ATE 21/09: "PACIENTE PREMIUM".
+                          *
+                          * Lead em Venda Fechada nao era paciente nenhum -- o
+                          * servidor so gravava status = 'arquivado'. A frase
+                          * afirmava o que o banco nao guardava, que e o mesmo
+                          * defeito de 18/09 (o WhatsApp "conectado") em outra
+                          * roupa. Agora o card diz o que de fato aconteceu com a
+                          * ficha, e quando nao aconteceu, pede a decisao. */}
                         {col.id === 'arquivado' && (
-                          <span className="text-emerald-600 text-xxs font-mono font-medium flex items-center space-x-1">
-                            <CheckCircle className="h-3.5 w-3.5" />
-                            <span>PACIENTE PREMIUM</span>
-                          </span>
+                          lead.clientId ? (
+                            <span className="text-emerald-600 text-xxs font-mono font-medium flex items-center space-x-1">
+                              <CheckCircle className="h-3.5 w-3.5" />
+                              <span>Ficha vinculada</span>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setLeadSemFicha(lead); }}
+                              className="flex items-center space-x-1 bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-700 text-xxs px-2 py-1 rounded-md transition-all font-medium border border-amber-200"
+                            >
+                              <UserPlus className="h-3 w-3" />
+                              <span>Escolher a ficha</span>
+                            </button>
+                          )
                         )}
                       </div>
                     </motion.div>
@@ -263,6 +333,74 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
           );
         })}
       </div>
+
+      {/* ESCOLHER A FICHA DA PACIENTE (M5.10) */}
+      {leadSemFicha && (
+        <div className="fixed inset-0 bg-brand-brown/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white border border-brand-gold max-w-lg w-full rounded-2xl p-6 shadow-2xl"
+          >
+            <div className="flex items-start space-x-3 mb-4">
+              <div className="bg-amber-50 text-amber-600 p-2 rounded-full shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-brand-brown">
+                  Qual é a ficha de {leadSemFicha.name}?
+                </h3>
+                <p className="text-xs text-brand-brown/70 leading-relaxed mt-1">
+                  {motivo || 'Procurando fichas com este telefone…'}
+                </p>
+              </div>
+            </div>
+
+            {candidatas === null ? (
+              <p className="text-xs text-brand-brown/50 py-6 text-center">Consultando…</p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {candidatas.map((f) => (
+                  <button
+                    key={f.id}
+                    disabled={salvandoFicha}
+                    onClick={() => vincular({ clientId: f.id })}
+                    className="w-full flex items-center justify-between text-left border border-brand-gold/25 hover:border-brand-gold hover:bg-brand-cream/40 rounded-xl px-4 py-3 transition-all disabled:opacity-50"
+                  >
+                    <span className="text-sm font-medium text-brand-brown">{f.nome}</span>
+                    <span className="text-xxs font-mono text-brand-brown/60">{f.telefone}</span>
+                  </button>
+                ))}
+                {/* "Nenhuma dessas" precisa existir: a filha que usa o telefone da
+                    mae e nunca veio a clinica nao tem ficha, e forcar o vinculo
+                    numa das existentes seria o erro que este modal evita. */}
+                <button
+                  disabled={salvandoFicha}
+                  onClick={() => vincular({ criarNova: true })}
+                  className="w-full text-left border border-dashed border-brand-gold/40 hover:bg-brand-cream/40 rounded-xl px-4 py-3 transition-all disabled:opacity-50"
+                >
+                  <span className="text-sm font-medium text-brand-brown flex items-center space-x-2">
+                    <UserPlus className="h-4 w-4 text-brand-gold" />
+                    <span>Nenhuma dessas — criar ficha nova</span>
+                  </span>
+                  <span className="block text-xxs text-brand-brown/60 mt-0.5">
+                    Cria a ficha com o nome e o telefone do lead.
+                  </span>
+                </button>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={() => setLeadSemFicha(null)}
+                className="px-4 py-2.5 text-sm font-medium text-brand-brown/70 hover:bg-brand-brown/5 rounded-xl"
+              >
+                Decidir depois
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* New Lead Capture Modal */}
       {showAddModal && (
@@ -295,9 +433,9 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                 <input
                   type="tel"
                   required
-                  placeholder="Ex: 5511977776666"
+                  placeholder="+55 11977776666"
                   value={newLeadPhone}
-                  onChange={(e) => setNewLeadPhone(e.target.value)}
+                  onChange={(e) => setNewLeadPhone(comDdi(e.target.value))}
                   className="w-full px-4 py-2.5 rounded-xl border border-brand-gold/30 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown font-mono"
                 />
               </div>

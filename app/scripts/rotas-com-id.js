@@ -35,7 +35,14 @@ const FAMILIAS = [
   ]],
   ['funil', 'leads', [
     ['PUT',    '/api/leads/{ID}', { status: 'arquivado' }],
-    ['DELETE', '/api/leads/{ID}', null]
+    ['DELETE', '/api/leads/{ID}', null],
+    /* M5.10: as duas portas da conversao em paciente. A de vincular e' a mais
+       sensivel do arquivo inteiro -- ela amarra um lead a uma FICHA CLINICA, e
+       vazar por aqui poria o prontuario de uma clinica debaixo do lead de
+       outra. Por isso ela entra na varredura com um clientId plausivel: a
+       recusa tem de vir do lead, antes de a ficha ser sequer procurada. */
+    ['GET',    '/api/leads/{ID}/fichas-candidatas', null],
+    ['POST',   '/api/leads/{ID}/vincular', { clientId: 'c_invadido' }]
   ]],
   ['equipe comercial', 'salespeople', [
     ['PATCH',  '/api/salespeople/{ID}', { name: 'Invadido' }],

@@ -18,6 +18,7 @@ export default function Funil() {
           onAddLead={crm.onAddLead}
           onUpdateLeadStatus={crm.onUpdateLeadStatus}
           onSelectLead={(lead) => crm.onSelectLead(lead)}
+          onRefresh={() => crm.atualizar(true)}
         />
       </div>
     </div>

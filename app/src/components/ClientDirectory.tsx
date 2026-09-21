@@ -21,6 +21,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { comDdi, temNumero, DDI_PADRAO } from '../lib/telefone.mjs';
 
 const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -130,7 +131,7 @@ export default function ClientDirectory({
 
   // New Client Form
   const [clientName, setClientName] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
+  const [clientPhone, setClientPhone] = useState(DDI_PADRAO);
   const [clientEmail, setClientEmail] = useState('');
 
   // New Treatment Form
@@ -192,10 +193,11 @@ export default function ClientDirectory({
 
   const handleCreateClient = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName || !clientPhone) return;
+    /* `clientPhone` ja nasce com "+55 ": string nao-vazia nao prova telefone. */
+    if (!clientName || !temNumero(clientPhone)) return;
     onAddClient({ name: clientName, phone: clientPhone, email: clientEmail });
     setClientName('');
-    setClientPhone('');
+    setClientPhone(DDI_PADRAO);
     setClientEmail('');
     setShowAddClient(false);
   };
@@ -701,9 +703,9 @@ export default function ClientDirectory({
                 <input
                   type="tel"
                   required
-                  placeholder="Ex: 5511988887777"
+                  placeholder="+55 11988887777"
                   value={clientPhone}
-                  onChange={(e) => setClientPhone(e.target.value)}
+                  onChange={(e) => setClientPhone(comDdi(e.target.value))}
                   className="w-full px-4 py-2 rounded-xl border border-brand-gold/30 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown font-mono"
                 />
               </div>

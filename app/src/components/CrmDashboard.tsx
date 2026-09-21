@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "motion/react";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
 import { ContextoCrm } from "../paginas/crm/contexto";
-import { Client, Lead, Interaction, Treatment, TreatmentCatalog, TreatmentPlan, TreatmentSession } from "../types";
+import { Client, Lead, Interaction, Treatment, TreatmentCatalog, TreatmentPlan, TreatmentSession, ConversaoDeLead } from "../types";
 
 /**
  * Da T0.5 em diante este arquivo e o *layout* do console: barra de navegacao,
@@ -166,6 +166,11 @@ export default function CrmDashboard({
           salesNotes: item.sales_notes || "",
           qualified: !!item.qualified,
           scoreResult: item.score_result,
+          /* M5.10: o vinculo com a ficha da paciente. Vazio em lead nao fechado
+             -- e tambem nos leads fechados ANTES da M5.10, cuja conversao rodou
+             no navegador e nao deixou rastro. */
+          clientId: item.client_id || null,
+          convertedAt: item.converted_at || null,
           createdAt: item.date || new Date().toISOString()
         }));
         setLocalLeads(mappedLeads);
@@ -204,19 +209,34 @@ export default function CrmDashboard({
         })
       });
       if (response.ok) {
-        if (mappedStatus === 'arquivado') {
-          const leadToConvert = localLeads.find(l => l.id === id);
-          const finalPhone = phone !== undefined ? phone : (leadToConvert?.phone || "");
-          const finalEmail = email !== undefined ? email : (leadToConvert?.email || "");
-          const clientExists = clients.some(c => c.phone === finalPhone);
-          if (leadToConvert && !clientExists) {
-            await handleAddClient({
-              name: leadToConvert.name,
-              phone: finalPhone,
-              email: finalEmail,
-              salespersonId: leadToConvert.salespersonId
-            });
-          }
+        /* A CONVERSAO SAIU DAQUI (M5.10, 21/09).
+         *
+         * Ate 21/09 a ficha da paciente nascia NESTAS LINHAS, e elas eram a
+         * causa da duplicidade que o time comercial relatou:
+         *
+         *     const clientExists = clients.some(c => c.phone === finalPhone);
+         *
+         * Comparacao de texto cru. O lead chega do WhatsApp como
+         * "5511998765432" e a ficha foi digitada como "(11) 99876-5432": mesma
+         * mulher, textos diferentes, ficha nova. E se a aba fechasse entre o
+         * PUT e o handleAddClient, o lead ficava fechado sem ficha nenhuma --
+         * sem erro, sem log, sem sintoma.
+         *
+         * Agora quem converte e o servidor, dentro da mesma transacao que fecha
+         * o lead, comparando telefone por regra testada. Aqui so se conta o que
+         * aconteceu. */
+        const corpo = await response.json().catch(() => ({} as any));
+        const c: ConversaoDeLead | null = corpo?.conversao || null;
+        if (c?.acao === 'criar') {
+          showToast('ok', `Venda fechada. Ficha de paciente criada para ${c.cliente?.nome}.`);
+        } else if (c?.acao === 'vincular') {
+          showToast('ok',
+            `Venda fechada. Vinculada à ficha que já existia de ${c.cliente?.nome} — nenhuma ficha nova foi criada.`);
+        } else if (c?.acao === 'ambiguo') {
+          /* Aviso, e nao erro: o lead FECHOU. O que ficou pendente e' saber qual
+             das fichas e' a pessoa -- e so quem conhece as duas responde. */
+          showToast('warn',
+            `Venda fechada, mas a ficha não foi vinculada: ${c.porque} Abra o lead para escolher.`);
         }
         await fetchCrmData();
         if (parentUpdateStatus) parentUpdateStatus(id, status, phone, email);
