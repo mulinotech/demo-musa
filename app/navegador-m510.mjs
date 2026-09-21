@@ -68,6 +68,32 @@ console.log('\n[1] O CAMPO DE TELEFONE JA NASCE COM +55');
   await pag.click('button:has-text("Cancelar")');
 }
 
+console.log('\n[1b] O CAMPO DE EDITAR TAMBEM -- que foi o que a Silvia usou');
+{
+  /* A primeira versao da M5.10 ligou o `+55` so nos campos de CADASTRAR. Quem
+     apaga o numero de um lead que JA existe e digita outro caia no campo da
+     gaveta, que tinha ficado de fora. Foi o primeiro retorno de producao. */
+  await pag.click('text=Ana P.');
+  await pag.waitForSelector('button[title="Editar Telefone"]', { timeout: 10000 });
+  await pag.click('button[title="Editar Telefone"]');
+  const campo = pag.locator('input[type="tel"]').first();
+  /* O lead da montagem foi gravado como "5511998765432", sem DDI separado. A
+     gaveta tem de exibi-lo ja com o +55 na frente -- e' o que a Silvia esperava
+     ver quando abriu o campo. */
+  ok('o telefone GRAVADO aparece com +55 ao abrir a gaveta',
+     await campo.inputValue(), '+55 11998765432');
+  await campo.fill('');
+  ok('apagar tudo na gaveta traz o +55 de volta', await campo.inputValue(), '+55 ');
+  await campo.fill('11981149310');
+  ok('e digitar o numero novo mantem o +55', await campo.inputValue(), '+55 11981149310');
+  await pag.keyboard.press('Escape');
+  await pag.waitForTimeout(500);
+  const fechou = await pag.locator('button[title="Editar Telefone"]').count();
+  if (fechou > 0) { await pag.click('button[aria-label="Fechar"], button:has(svg.lucide-x)').catch(() => {}); }
+  await pag.goto(BASE + '/crm/funil');
+  await pag.waitForSelector('text=Funil de Vendas', { timeout: 15000 });
+}
+
 console.log('\n[2] FECHAR A VENDA: a tela conta o que aconteceu com a ficha');
 {
   const card = pag.locator('div').filter({ hasText: /^Ana P\./ }).first();

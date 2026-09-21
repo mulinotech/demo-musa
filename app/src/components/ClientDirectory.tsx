@@ -73,13 +73,13 @@ export default function ClientDirectory({
   // Edit Client Modal State
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [editClientName, setEditClientName] = useState('');
-  const [editClientPhone, setEditClientPhone] = useState('');
+  const [editClientPhone, setEditClientPhone] = useState(DDI_PADRAO);
   const [editClientEmail, setEditClientEmail] = useState('');
 
   useEffect(() => {
     if (editingClient) {
       setEditClientName(editingClient.name);
-      setEditClientPhone(editingClient.phone);
+      setEditClientPhone(comDdi(editingClient.phone));
       setEditClientEmail(editingClient.email || '');
     }
   }, [editingClient]);
@@ -98,7 +98,7 @@ export default function ClientDirectory({
 
   const handleEditClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingClient || !editClientName || !editClientPhone) return;
+    if (!editingClient || !editClientName || !temNumero(editClientPhone)) return;
     if (onUpdateClient) {
       await onUpdateClient(editingClient.id, {
         name: editClientName,
@@ -770,7 +770,7 @@ export default function ClientDirectory({
                   required
                   placeholder="Ex: 5511988887777"
                   value={editClientPhone}
-                  onChange={(e) => setEditClientPhone(e.target.value)}
+                  onChange={(e) => setEditClientPhone(comDdi(e.target.value))}
                   className="w-full px-4 py-2 rounded-xl border border-brand-gold/30 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown font-mono"
                 />
               </div>

@@ -18,6 +18,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { comDdi, DDI_PADRAO } from '../lib/telefone.mjs';
 
 interface ChatConsoleProps {
   clients: Client[];
@@ -41,7 +42,7 @@ export default function ChatConsole({
   // Modal de novo chat
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [newContactName, setNewContactName] = useState('');
-  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState(DDI_PADRAO);
   const [creatingChat, setCreatingChat] = useState(false);
   const [newChatError, setNewChatError] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
@@ -128,7 +129,7 @@ export default function ChatConsole({
     const closeModal = () => {
       setShowNewChatModal(false);
       setNewContactName('');
-      setNewContactPhone('');
+      setNewContactPhone(DDI_PADRAO);
       setNewChatError('');
     };
 
@@ -338,9 +339,9 @@ export default function ChatConsole({
                 <input
                   type="tel"
                   required
-                  placeholder="Ex: 15 99733-7628"
+                  placeholder="+55 15997337628"
                   value={newContactPhone}
-                  onChange={(e) => setNewContactPhone(e.target.value)}
+                  onChange={(e) => setNewContactPhone(comDdi(e.target.value))}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-brand-gold/25 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
                 />
               </div>

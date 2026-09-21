@@ -1,6 +1,7 @@
 import { useState, FormEvent } from "react";
 import { Sparkles, Calendar, ChevronRight, CheckCircle2, User, Phone, ArrowRight, RotateCcw } from "lucide-react";
 import { Lead } from "../data";
+import { comDdi, temNumero, DDI_PADRAO } from "../lib/telefone.mjs";
 
 interface LeadQuizProps {
   onLeadCaptured: (newLead: Lead) => void;
@@ -16,7 +17,7 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
   
   // Lead info
   const [name, setName] = useState<string>("");
-  const [whatsapp, setWhatsapp] = useState<string>("");
+  const [whatsapp, setWhatsapp] = useState<string>(DDI_PADRAO);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showResult, setShowResult] = useState<boolean>(false);
   const [recommendedProtocol, setRecommendedProtocol] = useState<{
@@ -82,7 +83,8 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
 
   const handleFormSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !whatsapp.trim()) return;
+    // idem ContactForm: "+55 " sozinho nao e telefone.
+    if (!name.trim() || !temNumero(whatsapp)) return;
 
     setIsSubmitting(true);
 
@@ -116,7 +118,7 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
     setArea("");
     setRecovery("");
     setName("");
-    setWhatsapp("");
+    setWhatsapp(DDI_PADRAO);
     setShowResult(false);
     setRecommendedProtocol(null);
   };
@@ -367,7 +369,7 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
                       type="tel"
                       required
                       value={whatsapp}
-                      onChange={(e) => setWhatsapp(e.target.value)}
+                      onChange={(e) => setWhatsapp(comDdi(e.target.value))}
                       placeholder="Ex: (15) 99999-9999"
                       className="w-full bg-bg-luxe border border-primary/15 focus:border-primary rounded px-4 py-3 pl-11 text-sm text-neutral font-light focus:outline-none transition-colors animate-fade-in"
                     />

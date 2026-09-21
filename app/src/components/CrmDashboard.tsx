@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "motion/react";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
 import { ContextoCrm } from "../paginas/crm/contexto";
+import { comDdi, DDI_PADRAO } from "../lib/telefone.mjs";
 import { Client, Lead, Interaction, Treatment, TreatmentCatalog, TreatmentPlan, TreatmentSession, ConversaoDeLead } from "../types";
 
 /**
@@ -78,7 +79,7 @@ export default function CrmDashboard({
   };
 
   // Lead Drawer Edit States
-  const [editPhone, setEditPhone] = useState("");
+  const [editPhone, setEditPhone] = useState(DDI_PADRAO);
   const [editEmail, setEditEmail] = useState("");
   const [editSalesNotes, setEditSalesNotes] = useState("");
   const [editQualified, setEditQualified] = useState(false);
@@ -89,7 +90,10 @@ export default function CrmDashboard({
 
   useEffect(() => {
     if (selectedLead) {
-      setEditPhone(selectedLead.phone || "");
+      /* Passa pelo `comDdi` tambem na ABERTURA: lead antigo gravado sem DDI
+         aparece com o +55 na frente, que e o que se espera de um campo que
+         diz vir com DDI. */
+      setEditPhone(comDdi(selectedLead.phone || ""));
       setEditEmail(selectedLead.email || "");
       setEditSalesNotes(selectedLead.salesNotes || "");
       setEditQualified(!!selectedLead.qualified);
@@ -97,7 +101,7 @@ export default function CrmDashboard({
       setIsEditingPhone(false);
       setIsEditingEmail(false);
     } else {
-      setEditPhone("");
+      setEditPhone(DDI_PADRAO);
       setEditEmail("");
       setEditSalesNotes("");
       setEditQualified(false);
@@ -1017,7 +1021,7 @@ export default function CrmDashboard({
                         <input 
                           type="tel" 
                           value={editPhone} 
-                          onChange={(e) => setEditPhone(e.target.value)}
+                          onChange={(e) => setEditPhone(comDdi(e.target.value))}
                           className="w-full px-3 py-2 border border-brand-gold/30 rounded-xl text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold bg-white font-mono"
                           autoFocus
                         />

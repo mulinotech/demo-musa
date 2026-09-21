@@ -19,6 +19,7 @@ import {
   X
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { comDdi, DDI_PADRAO } from '../lib/telefone.mjs';
 
 interface WaContact {
   jid: string;
@@ -68,7 +69,7 @@ export default function WhatsAppManager({ onMessageSent }: WhatsAppManagerProps)
 
   const [search, setSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
-  const [newNumber, setNewNumber] = useState('');
+  const [newNumber, setNewNumber] = useState(DDI_PADRAO);
   const [newName, setNewName] = useState('');
   const [newMessage, setNewMessage] = useState('');
   const [startingChat, setStartingChat] = useState(false);
@@ -238,7 +239,7 @@ export default function WhatsAppManager({ onMessageSent }: WhatsAppManagerProps)
       setChats((prev) => (prev.some((c) => c.number === normalized) ? prev : [{ ...contact, lastMessage: newMessage.trim() }, ...prev]));
       setListMode('chats');
       setShowNewChat(false);
-      setNewNumber('');
+      setNewNumber(DDI_PADRAO);
       setNewName('');
       setNewMessage('');
       handleSelect(contact);
@@ -555,11 +556,11 @@ export default function WhatsAppManager({ onMessageSent }: WhatsAppManagerProps)
                   required
                   autoFocus
                   value={newNumber}
-                  onChange={(e) => setNewNumber(e.target.value)}
-                  placeholder="Ex: 15 99756-9764"
+                  onChange={(e) => setNewNumber(comDdi(e.target.value))}
+                  placeholder="+55 15997569764"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-brand-gold/25 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
                 />
-                <p className="text-[10px] text-brand-brown/50 mt-1">O código do Brasil (55) é adicionado automaticamente.</p>
+                <p className="text-[10px] text-brand-brown/50 mt-1">O +55 já vem escrito. Digite só o DDD e o número.</p>
               </div>
 
               <div>

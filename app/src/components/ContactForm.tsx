@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { TREATMENTS, Lead } from "../data";
+import { comDdi, temNumero, DDI_PADRAO } from "../lib/telefone.mjs";
 import { MapPin, Phone, Mail, Clock, Calendar, Check, Send, AlertCircle } from "lucide-react";
 
 interface ContactFormProps {
@@ -11,7 +12,7 @@ interface ContactFormProps {
 export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onClearSelectedTreatment }: ContactFormProps) {
   const [name, setName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
-  const [whatsapp, setWhatsapp] = useState<string>("");
+  const [whatsapp, setWhatsapp] = useState<string>(DDI_PADRAO);
   const [treatment, setTreatment] = useState<string>(selectedTreatmentName || "");
   const [message, setMessage] = useState<string>("");
   
@@ -51,7 +52,9 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
     e.preventDefault();
     setErrorMsg("");
 
-    if (!name.trim() || !whatsapp.trim() || !treatment) {
+    /* `whatsapp` ja nasce com "+55 ": `.trim()` seria sempre verdadeiro e
+       deixaria entrar lead sem telefone. */
+    if (!name.trim() || !temNumero(whatsapp) || !treatment) {
       setErrorMsg("Por favor, preencha todos os campos obrigatórios (*).");
       return;
     }
@@ -76,7 +79,7 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
       // Reset form variables
       setName("");
       setEmail("");
-      setWhatsapp("");
+      setWhatsapp(DDI_PADRAO);
       setTreatment("");
       setMessage("");
       if (onClearSelectedTreatment) onClearSelectedTreatment();
@@ -287,7 +290,7 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
                         type="tel"
                         required
                         value={whatsapp}
-                        onChange={(e) => setWhatsapp(e.target.value)}
+                        onChange={(e) => setWhatsapp(comDdi(e.target.value))}
                         placeholder="Ex: (15) 98888-8888"
                         className="w-full bg-white border border-primary/15 focus:border-primary rounded px-4 py-3 text-xs sm:text-sm text-neutral font-light focus:outline-none transition-colors"
                       />
