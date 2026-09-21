@@ -48,6 +48,10 @@ const FAMILIAS = [
     ['PATCH',  '/api/salespeople/{ID}', { name: 'Invadido' }],
     ['DELETE', '/api/salespeople/{ID}', null]
   ]],
+  ['equipamentos', 'equipments', [
+    ['PATCH',  '/api/equipments/{ID}', { name: 'Invadido' }],
+    ['DELETE', '/api/equipments/{ID}', null]
+  ]],
   ['catalogo', 'treatment_catalog', [
     ['PATCH',  '/api/treatment-catalog/{ID}', { name: 'Invadido' }],
     ['DELETE', '/api/treatment-catalog/{ID}', null],

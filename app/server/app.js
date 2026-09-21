@@ -117,6 +117,7 @@ app.use(require('./routes/dashboard'));
 app.use(require('./routes/lembretes'));
 app.use(require('./routes/appointments'));
 app.use(require('./routes/stock'));
+app.use(require('./routes/equipamentos'));
 // `expiracao-pontos` ANTES de `loyalty`, por precaucao de ordem: a rota dela
 // comeca com /api/loyalty/. Ver o cabecalho de routes/expiracao-pontos.js.
 app.use(require('./routes/expiracao-pontos'));

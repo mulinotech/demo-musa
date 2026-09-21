@@ -1,12 +1,18 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, Users, Plus, Edit2, Trash2, Tag, X, Building2 } from 'lucide-react';
+import { Settings, Users, Plus, Edit2, Trash2, Tag, X, Building2, Wrench } from 'lucide-react';
 import TimbreDaClinica from './TimbreDaClinica';
+import Equipamentos from './Equipamentos';
+import { papelDoToken } from '../lib/api';
 import { Salesperson, TreatmentCatalog } from '../types';
 import { TREATMENTS } from '../data';
 
 export default function CrmSettings() {
-  const [activeTab, setActiveTab] = useState<'salespersons' | 'treatments' | 'timbre'>('treatments');
+  const [activeTab, setActiveTab] = useState<'salespersons' | 'treatments' | 'timbre' | 'equipamentos'>('treatments');
+  /* Cadastrar equipamento e gestao; escolher, na hora da sessao, e de quem
+     atende. A tela esconde os botoes para quem a API ja recusaria -- botao que
+     so erra quando clicado e pior do que botao ausente. */
+  const podeGerenciar = ['admin', 'gerente'].includes(papelDoToken());
 
   // Data states
   const [salespersons, setSalespersons] = useState<Salesperson[]>([]);
@@ -215,12 +221,25 @@ export default function CrmSettings() {
               <Building2 className="w-4 h-4" />
               Timbre da Clínica
             </button>
+            {/* EQUIPAMENTOS (M5.11). Fica aqui, e nao dentro de Estoque, porque
+                equipamento nao acaba: insumo tem lote e validade, aparelho tem
+                patrimonio. Misturar os dois faria um herdar as telas do outro. */}
+            <button
+              onClick={() => setActiveTab('equipamentos')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                activeTab === 'equipamentos' ? 'bg-brand-brown text-brand-beige' : 'text-brand-brown/70 hover:bg-brand-beige'
+              }`}
+            >
+              <Wrench className="w-4 h-4" />
+              Equipamentos
+            </button>
           </nav>
         </div>
 
         {/* Settings Content */}
         <div className="flex-1 p-6 md:p-8">
           {activeTab === 'timbre' && <TimbreDaClinica />}
+          {activeTab === 'equipamentos' && <Equipamentos podeGerenciar={podeGerenciar} />}
 
           {activeTab === 'treatments' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">

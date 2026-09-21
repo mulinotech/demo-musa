@@ -18,6 +18,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { SeletorUnico, SeletorMultiplo } from './CamposDeSelecao';
 
 interface TreatmentJourneyProps {
   plans: TreatmentPlan[];
@@ -82,7 +83,41 @@ export default function TreatmentJourney({
   const [sessionType, setSessionType] = useState<TreatmentSession['sessionType']>('SESSAO_TRATAMENTO');
   const [equipments, setEquipments] = useState('');
   const [supplies, setSupplies] = useState('');
-  const [professional, setProfessional] = useState('Dra. Musa');
+  /* O padrao era a string 'Dra. Musa', escrita no codigo. Num sistema de 50
+     clinicas isso poe o nome de UMA clinica como responsavel padrao de todas --
+     e no prontuario, onde "quem aplicou" e' a informacao que responde por
+     aquele atendimento. Agora nasce vazio e alguem escolhe. */
+  const [professional, setProfessional] = useState('');
+
+  /* AS TRES LISTAS QUE SUBSTITUIRAM O TEXTO LIVRE (M5.11).
+   *
+   * Cada uma cai para lista vazia em silencio se a rota recusar -- um vendedor
+   * nao le /api/products, por exemplo. Lista vazia faz o campo voltar a ser
+   * texto digitado, que e' pior do que a lista e melhor do que travar o
+   * lancamento da sessao. */
+  const [equipamentosCadastrados, setEquipamentosCadastrados] = useState<string[]>([]);
+  const [insumosCadastrados, setInsumosCadastrados] = useState<string[]>([]);
+  const [quemAtende, setQuemAtende] = useState<string[]>([]);
+
+  useEffect(() => {
+    const nomes = async (caminho: string) => {
+      try {
+        const r = await fetch(caminho);
+        if (!r.ok) return [];
+        const d = await r.json();
+        return Array.isArray(d) ? d.map((x: any) => String(x.name || '').trim()).filter(Boolean) : [];
+      } catch { return []; }
+    };
+    let vivo = true;
+    Promise.all([nomes('/api/equipments'), nomes('/api/products'), nomes('/api/profissionais')])
+      .then(([eq, ins, pro]) => {
+        if (!vivo) return;
+        setEquipamentosCadastrados(eq);
+        setInsumosCadastrados(ins);
+        setQuemAtende(pro);
+      });
+    return () => { vivo = false; };
+  }, []);
   const [price, setPrice] = useState('');
 
   // Maintenance follow-up modal
@@ -320,7 +355,7 @@ export default function TreatmentJourney({
                                 setSessionType(sess.sessionType);
                                 setEquipments(sess.equipmentsUsed || '');
                                 setSupplies(sess.suppliesApplied || '');
-                                setProfessional(sess.professionalInCharge || 'Dra. Musa');
+                                setProfessional(sess.professionalInCharge || '');
                                 setPrice(sess.price ? sess.price.toString() : '');
                               }}
                               className="flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-brand-cream/30 border border-brand-gold/20 text-brand-brown rounded-lg text-xxs font-semibold transition-colors"
@@ -595,37 +630,32 @@ export default function TreatmentJourney({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Profissional Responsável</label>
-                <input
-                  type="text"
-                  value={professional}
-                  onChange={(e) => setProfessional(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown"
-                />
-              </div>
+              <SeletorUnico
+                rotulo="Profissional Responsável"
+                valor={professional}
+                aoMudar={setProfessional}
+                cadastrados={quemAtende}
+                placeholder="Nome de quem aplicou"
+                ondeCadastrar="A lista vem dos acessos da clínica, em Usuários."
+              />
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Equipamentos Utilizados</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Ultraformer MPT, Lavien"
-                    value={equipments}
-                    onChange={(e) => setEquipments(e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Insumos Aplicados</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Ácido Hialurônico, Bioestimulador Y"
-                    value={supplies}
-                    onChange={(e) => setSupplies(e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown"
-                  />
-                </div>
+                <SeletorUnico
+                  rotulo="Equipamento Utilizado"
+                  valor={equipments}
+                  aoMudar={setEquipments}
+                  cadastrados={equipamentosCadastrados}
+                  placeholder="Ex: Ultraformer MPT"
+                  ondeCadastrar="Cadastre os aparelhos em Cadastros → Equipamentos para escolher da lista."
+                />
+                <SeletorMultiplo
+                  rotulo="Insumos Aplicados"
+                  valor={supplies}
+                  aoMudar={setSupplies}
+                  cadastrados={insumosCadastrados}
+                  placeholder="Ex: Ácido Hialurônico, Bioestimulador Y"
+                  ondeCadastrar="A lista vem do Estoque."
+                />
               </div>
 
               <div>

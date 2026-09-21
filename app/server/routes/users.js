@@ -219,4 +219,41 @@ router.patch('/api/users/:id', express.json({ limit: '1mb' }), async function (r
   }
 });
 
+/** QUEM ATENDE — a lista curta, para o campo "Profissional Responsável" (M5.11).
+ *
+ *  ======================================== POR QUE NÃO É `GET /api/users`
+ *
+ *  `/api/users` é de `admin`, e com razão: ela devolve e-mail, papel, último
+ *  acesso e registro de conselho — o cadastro de acesso da clínica inteira.
+ *
+ *  Mas quem lança a sessão é a profissional, e sem a lista de nomes o campo
+ *  "Profissional Responsável" voltaria a ser texto digitado, que é exatamente o
+ *  que a M5.11 veio desfazer. Abrir `/api/users` para todos os papéis por causa
+ *  de um campo seria abrir o cadastro inteiro pela porta errada.
+ *
+ *  Então esta rota devolve **só o que o seletor precisa**: id, nome e função.
+ *  Sem e-mail, sem papel, sem conselho, sem data de acesso.
+ *
+ *  O caminho é `/api/profissionais`, e **não** `/api/users/algo`: a tabela de
+ *  permissões casa por PREFIXO, e qualquer coisa pendurada em `/api/users`
+ *  herdaria a regra de `admin` e a rota nasceria inalcançável para quem ela foi
+ *  feita. É a mesma armadilha de rota aninhada já anotada em `autorizacao.js`.
+ *
+ *  `vendedor` fica de fora da LISTA (não da rota): vendedor não aplica
+ *  procedimento, e um nome que não pode ser o responsável só atrapalha na hora
+ *  de escolher. */
+router.get('/api/profissionais', async function (req, res) {
+  const db = escopo(req);
+  try {
+    const [r] = await db.q(
+      "SELECT id, name, funcao FROM users" +
+      " WHERE clinica_id = :clinica AND status = 'active' AND role <> 'vendedor'" +
+      ' ORDER BY name');
+    res.json(r);
+  } catch (e) {
+    console.error('[usuarios]', e && e.message);
+    res.status(500).json({ error: 'Falha ao listar quem atende.' });
+  }
+});
+
 module.exports = router;

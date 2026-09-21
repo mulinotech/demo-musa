@@ -16,6 +16,17 @@ const REGRAS_DE_PAPEL = [
   { metodo: 'DELETE', prefixo: '/api/treatment-catalog', papeis: ['admin', 'gerente'] },
   { metodo: 'DELETE', prefixo: '/api/clients',           papeis: ['admin', 'gerente'] },
 
+  /* EQUIPAMENTOS (M5.11) -- mesmo desenho do catalogo, e pelo mesmo motivo:
+   * cadastrar e' gestao, escolher e' trabalho de quem atende.
+   *
+   * A LEITURA fica FORA da tabela de proposito. Quem lanca a sessao e a
+   * profissional, e sem a lista ela nao teria o que escolher -- o campo voltaria
+   * a ser texto livre na pratica, que e exatamente o que esta tarefa veio
+   * desfazer. */
+  { metodo: 'POST',   prefixo: '/api/equipments',        papeis: ['admin', 'gerente'] },
+  { metodo: 'PATCH',  prefixo: '/api/equipments',        papeis: ['admin', 'gerente'] },
+  { metodo: 'DELETE', prefixo: '/api/equipments',        papeis: ['admin', 'gerente'] },
+
   /* A AGENDA E DE LEITURA PARA O VENDEDOR (M5.2, 15/09).
    *
    * Decisao da Silvia depois de ver, MEDIDO, o que o papel alcancava: o
