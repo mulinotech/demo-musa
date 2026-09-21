@@ -1008,7 +1008,7 @@
   </section>
 
   <section>
-    <h2>Fase M5 — o que o uso de verdade pediu <span class="conta">M5.1 feita · restam 2,5 a 4,5 dev-days</span></h2>
+    <h2>Fase M5 — o que o uso de verdade pediu <span class="conta">falta só a faxina · 0,5 a 1,5 dev-days</span></h2>
     <p>Pedida em 14/09, depois de a M4 fechar. Nenhuma destas é dívida das fases anteriores: são o que aparece quando alguém usa o sistema para <em>vender, instalar e operar</em>, e não para construir. Nenhuma bloqueia o time comercial começar a negociar.</p>
 
     <div class="tarefas">
@@ -1018,23 +1018,23 @@
           <em>eram <strong>523 tamanhos abaixo de 12px</strong>. Hoje o rótulo miúdo é 14px no site e 13px no CRM, e o console ficou um passo abaixo do site <strong>sem que nenhuma das 65 telas fosse tocada</strong>.</em></span>
         <span class="chip feito">Feito 15/09</span>
       </div>
-      <div class="t chave">
+      <div class="t feito">
         <span class="cod">F5</span>
-        <span class="desc">O menu do site não cabe abaixo de 1366px
-          <em>achado ao medir a M5.1, e <strong>é anterior a ela</strong>: num notebook de 1280 o botão "AGENDAR AGORA" está cortado hoje, em produção.</em></span>
-        <span class="chip">0,5 d</span>
+        <span class="desc">O menu do site voltou a caber
+          <em>o menu aparecia a partir de 1024px mas só cabia a partir de ~1359 — <strong>desde antes da M5.1</strong>. Agora o menu completo desce até 1280 e o sanduíche entra abaixo disso.</em></span>
+        <span class="chip feito">Feito 15/09</span>
       </div>
-      <div class="t">
+      <div class="t feito">
         <span class="cod">M5.2</span>
         <span class="desc">O que cada aba faz — material para vendas
-          <em>não a descrição da tela, mas a consequência: que decisão cada cadastro controla, e quais abas se ligam a quais</em></span>
-        <span class="chip">1–1,5 d</span>
+          <em>o mapa de consequências, em 9 páginas. E escrevê-lo achou <strong>dois defeitos de papel</strong> que 391 testes não pegavam — porque documento obriga a enunciar o comportamento inteiro, e enunciar expõe a lacuna.</em></span>
+        <span class="chip feito">Feito 15/09</span>
       </div>
-      <div class="t">
+      <div class="t feito">
         <span class="cod">M5.3</span>
         <span class="desc">O passo a passo de instalar uma clínica
-          <em>do cadastro em /plataforma ao primeiro login da cliente, incluindo quem digita a senha e como se presta suporte sem pedir a senha de ninguém</em></span>
-        <span class="chip">0,5–1 d</span>
+          <em>9 páginas para a equipe e o mesmo texto no repositório, dividido em <strong>o que qualquer pessoa faz pela tela</strong> e <strong>o que ainda exige o terminal</strong> — esta segunda lista é uma dívida, e deve encolher.</em></span>
+        <span class="chip feito">Feito 15/09</span>
       </div>
       <div class="t">
         <span class="cod">M5.4</span>
@@ -1067,16 +1067,16 @@
           <tr><td>M3 — Plataforma <em style="display:inline;font-style:normal;color:var(--feito)">✓</em></td><td>fechada em 14/09 — operador, cadastro, suporte com prazo, suspender/encerrar e o painel</td><td class="num">—</td><td class="num">—</td></tr>
           <tr><td>M4 — Verificação <em style="display:inline;font-style:normal;color:var(--feito)">✓</em></td><td>fechada em 14/09 — a varredura adversarial e a LGPD do desenho novo</td><td class="num">—</td><td class="num">—</td></tr>
           <tr><td>F — Telas</td><td>cadastro de produto, harness de navegação, limpeza do <code>dist</code></td><td class="num">1</td><td class="num">2</td></tr>
-          <tr><td>M5 — Uso de verdade</td><td>as letras ✓ · falta o material de vendas, o roteiro de instalação e a faxina</td><td class="num">2</td><td class="num">4</td></tr>
+          <tr><td>M5 — Uso de verdade</td><td>as letras ✓ · o roteiro ✓ · o material de vendas ✓ · falta a faxina</td><td class="num">0,5</td><td class="num">1,5</td></tr>
         </tbody>
         <tfoot>
-          <tr><td>Falta fazer</td><td>8 por fazer · 36 concluídas</td><td class="num">5</td><td class="num">9,5</td></tr>
+          <tr><td>Falta fazer</td><td>5 por fazer · 39 concluídas</td><td class="num">3</td><td class="num">6,5</td></tr>
         </tfoot>
       </table>
     </div>
 
     <div class="nota">
-      <p><strong>Prazo de calendário</strong>, a 75% de foco: o que resta são <strong>5 a 9,5 dev-days</strong> — de <strong>uma semana e meia a duas semanas com um desenvolvedor</strong>. As fases M0 a M4, que autorizam a primeira clínica pagante, foram entregues entre 04/09 e 14/09 e estão fechadas.</p>
+      <p><strong>Prazo de calendário</strong>, a 75% de foco: o que resta são <strong>3 a 6,5 dev-days</strong> — de <strong>uma semana e meia a duas semanas com um desenvolvedor</strong>. As fases M0 a M4, que autorizam a primeira clínica pagante, foram entregues entre 04/09 e 14/09 e estão fechadas.</p>
       <p><strong>Onde começar a vender — e a resposta mudou em 14/09.</strong> O plano dizia que dava para receber as primeiras cinco clínicas ao fim da M2 <em>desde que a M4.1 tivesse sido feita antes</em>, porque o teste de vazamento não é opcional em nenhum cenário. <strong>M0 a M4 estão fechadas.</strong> O sistema atende várias clínicas, a Mulino cadastra e suspende pela tela sem tocar em dado clínico, a separação foi medida em 291 conferências e o documento de LGPD descreve o desenho que existe. O time comercial pode negociar.</p>
       <p><strong>O que continua aberto, e o que cada coisa impede.</strong> A M1.9 não impede vender: impede afirmar que a exclusão de uma paciente é completa, porque as conversas dela ficam. E duas dívidas são de <em>contrato</em>, não de código — não existe exportação da base inteira de uma clínica que sai, e o contrato com cada clínica (art. 39) precisa existir por escrito dizendo finalidade, duração, segurança e o que acontece no fim. O sistema dá a prova técnica; o contrato dá a previsão jurídica, e um não substitui o outro.</p>
     </div>
