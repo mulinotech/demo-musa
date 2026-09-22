@@ -44,7 +44,10 @@ export interface Lead {
   email: string;
   interest: string; // e.g., 'Ultraformer MPT', 'Lavien BB Laser'
   status: 'novo' | 'contatado' | 'agendado' | 'arquivado' | 'perdido';
-  source: 'site' | 'instagram' | 'google' | 'indicação';
+  /** De onde o lead veio. Texto livre de propósito (M5.13): a lista vive em
+   *  `src/lib/origens.mjs`, e origem gravada antes dela continua valendo —
+   *  travar no tipo faria o TypeScript apagar da tela o que o banco já tem. */
+  source: string;
   salespersonId?: string;
   lastEditedBy?: string;
   salesNotes?: string;

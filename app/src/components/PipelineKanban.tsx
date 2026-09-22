@@ -19,10 +19,13 @@ import {
   User,
   Sparkles,
   UserPlus,
-  AlertTriangle
+  AlertTriangle,
+  Megaphone,
+  MessageCircle
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { comDdi, temNumero, DDI_PADRAO } from '../lib/telefone.mjs';
+import { opcoesDeOrigem, rotuloCurto, rotuloDaOrigem } from '../lib/origens.mjs';
 
 interface PipelineKanbanProps {
   leads: Lead[];
@@ -90,12 +93,41 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
     }
   };
   
+  /* ARRASTAR OS CARDS (M5.13, 22/09).
+   *
+   * Pedido do time no PDF de 19/09. Ate aqui o funil so andava pelos botoes
+   * ("Contatar", "Enviar Proposta", "Fechar Venda"), que so existiam na coluna
+   * seguinte -- nao havia como VOLTAR um lead nem pula-lo de etapa.
+   *
+   * E' `draggable` do HTML, sem biblioteca. Duas coisas que o desenho precisa
+   * garantir, e que sao o motivo de haver estado aqui:
+   *
+   * 1. **O clique que abre o lead nao pode virar arrasto.** `onDragStart` marca
+   *    `arrastando`; se o mouse soltar sem ter mudado de coluna, o clique
+   *    segue normal.
+   * 2. **Soltar na mesma coluna nao chama o servidor.** Sem isso, cada arrasto
+   *    curto gravaria um PUT -- e soltar em "Venda Fechada" o lead que ja esta
+   *    la rodaria a conversao de novo a cada esbarrao. */
+  const [arrastando, setArrastando] = useState<string | null>(null);
+  const [colunaAlvo, setColunaAlvo] = useState<string | null>(null);
+
+  const soltarEm = (destino: Lead['status']) => {
+    const id = arrastando;
+    setArrastando(null);
+    setColunaAlvo(null);
+    if (!id) return;
+    const lead = leads.find((l) => l.id === id);
+    // Mesma coluna: nada mudou, e chamar o servidor aqui seria trabalho a toa.
+    if (!lead || lead.status === destino) return;
+    onUpdateLeadStatus(id, destino);
+  };
+
   // New Lead Form State
   const [newLeadName, setNewLeadName] = useState('');
   const [newLeadPhone, setNewLeadPhone] = useState(DDI_PADRAO);
   const [newLeadEmail, setNewLeadEmail] = useState('');
   const [newLeadInterest, setNewLeadInterest] = useState('Ultraformer MPT');
-  const [newLeadSource, setNewLeadSource] = useState<'site' | 'instagram' | 'google' | 'indicação'>('site');
+  const [newLeadSource, setNewLeadSource] = useState<string>('site');
   const [newLeadSalespersonId, setNewLeadSalespersonId] = useState('');
   const [salespeople, setSalespeople] = useState<any[]>([]);
 
@@ -136,14 +168,23 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
     setShowAddModal(false);
   };
 
-  const getSourceIcon = (source: Lead['source']) => {
-    switch (source) {
+  /* O megafone marca MIDIA PAGA, e e' a unica diferenca de icone que carrega
+     significado: e' a origem paga que responde pelo investimento que o Custo
+     por Lead divide. Ver `src/lib/origens.mjs`. */
+  const getSourceIcon = (source: string) => {
+    switch (String(source || '').toLowerCase()) {
+      case 'meta_ads':
+      case 'google_ads':
+      case 'tiktok_ads':
+        return <Megaphone className="h-3.5 w-3.5 text-amber-600" />;
       case 'instagram':
         return <Instagram className="h-3.5 w-3.5 text-pink-600" />;
       case 'site':
         return <Globe className="h-3.5 w-3.5 text-blue-600" />;
       case 'google':
         return <Search className="h-3.5 w-3.5 text-emerald-600" />;
+      case 'whatsapp':
+        return <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />;
       default:
         return <User className="h-3.5 w-3.5 text-brand-gold" />;
     }
@@ -161,7 +202,10 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl border border-brand-gold/20 shadow-xs">
         <div>
           <h2 className="text-xl font-serif font-semibold text-brand-brown">Funil de Vendas Concierge</h2>
-          <p className="text-sm text-brand-brown/70">Acompanhe a jornada de agendamento e conversão de cada paciente de luxo</p>
+          <p className="text-sm text-brand-brown/70">
+            Acompanhe a jornada de agendamento e conversão de cada paciente de luxo.
+            <span className="text-brand-brown/50"> Arraste os cards para mudar de etapa.</span>
+          </p>
         </div>
         <div className="flex w-full md:w-auto items-center space-x-3">
           <div className="relative flex-1 md:flex-initial">
@@ -189,7 +233,18 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
         {COLUMNS.map((col) => {
           const colLeads = filteredLeads.filter(l => l.status === col.id);
           return (
-            <div key={col.id} className="flex flex-col h-[calc(100vh-280px)] min-h-[500px] bg-white rounded-2xl border border-brand-gold/15 p-4 shadow-xs">
+            <div
+              key={col.id}
+              data-coluna={col.id}
+              onDragOver={(e) => { e.preventDefault(); setColunaAlvo(col.id); }}
+              onDragLeave={() => setColunaAlvo((c) => (c === col.id ? null : c))}
+              onDrop={(e) => { e.preventDefault(); soltarEm(col.id); }}
+              className={`flex flex-col h-[calc(100vh-280px)] min-h-[500px] bg-white rounded-2xl border p-4 shadow-xs transition-colors ${
+                colunaAlvo === col.id && arrastando
+                  ? 'border-brand-gold border-2 bg-brand-cream/40'
+                  : 'border-brand-gold/15'
+              }`}
+            >
               {/* Header */}
               <div className="flex justify-between items-center pb-3 mb-4 border-b border-brand-beige">
                 <div>
@@ -214,8 +269,14 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                     <motion.div
                       layoutId={`lead-card-${lead.id}`}
                       key={lead.id}
+                      draggable
+                      onDragStart={() => setArrastando(lead.id)}
+                      onDragEnd={() => { setArrastando(null); setColunaAlvo(null); }}
                       onClick={() => onSelectLead(lead)}
-                      className="bg-brand-cream/40 hover:bg-white border border-brand-gold/20 hover:border-brand-gold rounded-xl p-4 shadow-xs hover:shadow-md transition-all duration-300 cursor-pointer group relative overflow-hidden"
+                      title="Arraste para mover de etapa"
+                      className={`bg-brand-cream/40 hover:bg-white border border-brand-gold/20 hover:border-brand-gold rounded-xl p-4 shadow-xs hover:shadow-md transition-all duration-300 cursor-grab active:cursor-grabbing group relative overflow-hidden ${
+                        arrastando === lead.id ? 'opacity-40' : ''
+                      }`}
                     >
                       {/* Accent Strip */}
                       <div className="absolute top-0 left-0 w-1 h-full bg-brand-gold group-hover:bg-brand-brown transition-colors" />
@@ -225,10 +286,13 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                         <span className="text-xs font-semibold text-brand-brown group-hover:text-brand-gold transition-colors font-serif">
                           {lead.name}
                         </span>
-                        <div className="flex items-center space-x-1 bg-white px-2 py-0.5 rounded-full border border-brand-gold/10 shadow-xxs">
+                        <div
+                          title={'Origem: ' + rotuloDaOrigem(lead.source)}
+                          className="flex items-center space-x-1 bg-white px-2 py-0.5 rounded-full border border-brand-gold/10 shadow-xxs shrink-0 max-w-[55%]"
+                        >
                           {getSourceIcon(lead.source)}
-                          <span className="text-xxs capitalize font-medium text-brand-brown/70 font-mono">
-                            {lead.source}
+                          <span className="text-xxs font-medium text-brand-brown/70 font-mono truncate">
+                            {rotuloCurto(lead.source)}
                           </span>
                         </div>
                       </div>
@@ -474,10 +538,9 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                     onChange={(e) => setNewLeadSource(e.target.value as any)}
                     className="w-full px-4 py-2.5 rounded-xl border border-brand-gold/30 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown"
                   >
-                    <option value="site">Website / Formulário</option>
-                    <option value="instagram">Instagram Direct</option>
-                    <option value="google">Google Search</option>
-                    <option value="indicação">Indicação</option>
+                    {opcoesDeOrigem(newLeadSource).map((o: { valor: string; rotulo: string }) => (
+                      <option key={o.valor} value={o.valor}>{o.rotulo}</option>
+                    ))}
                   </select>
                 </div>
 
