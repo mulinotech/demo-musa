@@ -90,7 +90,14 @@ export interface TreatmentCatalog {
   name: string;
   price: number;
   packagePrice?: number;
+  /** O TEXTO da duração, como está no cadastro. Pode ser herdado e irregular
+   *  ("40 a 60 minutos"), e por isso não é número. */
+  durationText?: string;
   duration?: number; // in minutes
+  /** Os MINUTOS que a Agenda usa para calcular o fim do compromisso (M5.14).
+   *  `null` quando o texto do cadastro não permitiu ter certeza — e aí a tela
+   *  avisa, em vez de deixar a agenda descobrir sozinha. */
+  durationMin?: number | null;
   description?: string;
   indicatedRegions?: string;
   restrictions?: string;

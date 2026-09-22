@@ -7,6 +7,15 @@ import { papelDoToken } from '../lib/api';
 import { Salesperson, TreatmentCatalog } from '../types';
 import { TREATMENTS } from '../data';
 
+/** Minutos viram frase de gente. A REGRA de LER a duração vive no servidor
+ *  (`server/services/duracao.js`, com testes); aqui é só apresentação. */
+function descreverDuracao(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (!h) return m + ' min';
+  return m ? h + ' h ' + m + ' min' : h + ' h';
+}
+
 export default function CrmSettings() {
   const [activeTab, setActiveTab] = useState<'salespersons' | 'treatments' | 'timbre' | 'equipamentos'>('treatments');
   /* Cadastrar equipamento e gestao; escolher, na hora da sessao, e de quem
@@ -33,7 +42,12 @@ export default function CrmSettings() {
           name: item.name,
           price: Number(item.price),
           packagePrice: item.package_price ? Number(item.package_price) : undefined,
-          duration: item.duration ? Number(item.duration) : undefined,
+          /* O TEXTO fica inteiro: `Number("40 a 60 minutos")` e NaN, e a tela
+             antiga mostrava vazio -- o servico parecia sem duracao nenhuma. */
+          durationText: item.duration ? String(item.duration) : undefined,
+          duration: item.duration && !isNaN(Number(item.duration)) ? Number(item.duration) : undefined,
+          durationMin: item.duration_min === null || item.duration_min === undefined
+            ? null : Number(item.duration_min),
           description: item.description || "",
           indicatedRegions: item.target_regions || "",
           restrictions: item.restrictions || ""
@@ -277,7 +291,19 @@ export default function CrmSettings() {
                       <tr key={t.id} className="hover:bg-brand-beige/20">
                         <td className="px-4 py-4">
                           <div className="text-brand-brown font-medium">{t.name}</div>
-                          <div className="text-xs text-brand-brown/60 mt-0.5">{t.duration ? `${t.duration} min` : ''}</div>
+                          {/* A DURACAO QUE A AGENDA USA, e nao a que a tela
+                              guardou (M5.14). Enquanto as duas colunas andavam
+                              separadas, esta linha mostrava 90 e a agenda
+                              marcava 60, sem nada avisar. */}
+                          {t.durationMin ? (
+                            <div className="text-xs text-brand-brown/60 mt-0.5">{descreverDuracao(t.durationMin)}</div>
+                          ) : t.durationText ? (
+                            <div className="text-xs text-amber-700 mt-0.5" title="A agenda não sabe quanto tempo reservar para este serviço. Edite e informe a duração em minutos.">
+                              {t.durationText} · duração não entendida
+                            </div>
+                          ) : (
+                            <div className="text-xs text-brand-brown/40 mt-0.5">sem duração</div>
+                          )}
                         </td>
                         <td className="px-4 py-4">
                            <div className="text-xs text-brand-brown truncate max-w-xs">{t.description || '-'}</div>
@@ -295,7 +321,7 @@ export default function CrmSettings() {
                                 setTName(t.name);
                                 setTPrice(t.price.toString());
                                 setTPackagePrice(t.packagePrice?.toString() || '');
-                                setTDuration(t.duration?.toString() || '');
+                                setTDuration((t.durationMin ?? t.duration)?.toString() || '');
                                 setTDesc(t.description || '');
                                 setTRegions((t as any).targetRegions || (t as any).indicatedRegions || '');
                                 setTRestrictions(t.restrictions || '');

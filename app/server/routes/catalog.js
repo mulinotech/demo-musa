@@ -21,6 +21,7 @@ const express = require('express');
 const router = express.Router();
 const escopo = require('../db/escopo');
 const logs = require('../services/logs');
+const duracao = require('../services/duracao');
 
 router.get('/api/treatment-catalog', async function (req, res) {
   const db = escopo(req);
@@ -42,14 +43,32 @@ router.post('/api/treatment-catalog', async function (req, res) {
 
   const id = 'tc_' + Math.random().toString(36).substring(2, 9);
   try {
+    /* `duration_min` PASSA A SER GRAVADA AQUI (M5.14).
+     *
+     * Ate 22/09 esta rota so escrevia `duration` (texto). A coluna de minutos,
+     * que e' a que a AGENDA usa para calcular o fim do compromisso, era
+     * preenchida uma unica vez pela migration 007 e depois so mudava quando
+     * alguem salvava uma simulacao na tela de Precificacao. Servico novo
+     * nascia sem ela; servico editado ficava com o valor velho, enquanto a
+     * tela de Cadastros mostrava o novo. Duas telas, dois numeros, nenhum
+     * aviso. */
+    const minutos = duracao.minutosDe(duration);
+
     await db.q(
-      'INSERT INTO treatment_catalog (id, name, price, package_price, duration, description,' +
-      ' target_regions, restrictions, clinica_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, :clinica)',
-      [id, name, price, packagePrice || null, duration || '', description || '',
+      'INSERT INTO treatment_catalog (id, name, price, package_price, duration, duration_min,' +
+      ' description, target_regions, restrictions, clinica_id)' +
+      ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, :clinica)',
+      [id, name, price, packagePrice || null, duration || '', minutos, description || '',
        targetRegions || '', restrictions || '']
     );
     await logs.registrar(db, 'CATALOGO', 'Tratamento cadastrado no catalogo: "' + name + '".');
-    res.status(201).json({ id, name, price, packagePrice, duration, description, targetRegions, restrictions });
+    res.status(201).json({
+      id, name, price, packagePrice, duration, description, targetRegions, restrictions,
+      durationMin: minutos,
+      /* A tela precisa saber que a duracao nao foi entendida -- senao a clinica
+         so descobre quando a agenda nao souber quanto tempo reservar. */
+      duracaoEntendida: minutos !== null
+    });
   } catch (error) {
     console.error('[catalogo]', error && error.message);
     res.status(500).json({ error: 'Erro ao salvar tratamento no catalogo' });
@@ -72,17 +91,31 @@ router.patch('/api/treatment-catalog/:id', async function (req, res) {
       'SELECT id, name FROM treatment_catalog WHERE clinica_id = :clinica AND id = ?', [id]);
     if (!alvo.length) return res.status(404).json({ error: 'Tratamento nao encontrado.' });
 
+    /* Quando a duracao vem nesta chamada, os DOIS campos andam juntos -- o
+       texto e os minutos. Era essa separacao que fazia a tela mostrar 90 e a
+       agenda marcar 60. Quando ela NAO vem, nenhum dos dois e' tocado: o
+       COALESCE cuida do texto, e o `duration_min` so entra no SET se houver
+       duracao no pedido. */
+    const mexeNaDuracao = duration !== undefined && duration !== null;
+    const minutos = mexeNaDuracao ? duracao.minutosDe(duration) : undefined;
+
     await db.q(
       'UPDATE treatment_catalog SET name = COALESCE(?, name), price = COALESCE(?, price),' +
       ' package_price = COALESCE(?, package_price), duration = COALESCE(?, duration),' +
+      (mexeNaDuracao ? ' duration_min = ?,' : '') +
       ' description = COALESCE(?, description), target_regions = COALESCE(?, target_regions),' +
       ' restrictions = COALESCE(?, restrictions) WHERE clinica_id = :clinica AND id = ?',
-      [name, price, packagePrice === undefined ? null : packagePrice, duration, description,
-       targetRegions, restrictions, id]
+      [name, price, packagePrice === undefined ? null : packagePrice, duration]
+        .concat(mexeNaDuracao ? [minutos] : [])
+        .concat([description, targetRegions, restrictions, id])
     );
     await logs.registrar(db, 'CATALOGO',
       'Tratamento "' + (name || alvo[0].name) + '" atualizado no catalogo.');
-    res.json({ message: 'Tratamento atualizado com sucesso!' });
+    res.json({
+      message: 'Tratamento atualizado com sucesso!',
+      durationMin: mexeNaDuracao ? minutos : undefined,
+      duracaoEntendida: mexeNaDuracao ? minutos !== null : undefined
+    });
   } catch (error) {
     console.error('[catalogo]', error && error.message);
     res.status(500).json({ error: 'Erro ao atualizar tratamento no catalogo' });
