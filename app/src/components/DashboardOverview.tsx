@@ -265,10 +265,10 @@ export default function DashboardOverview() {
   const rosca = useMemo(() => {
     const f = painel?.funil;
     return [
-      { name: 'Fechados', value: f?.fechados ?? 0, color: '#c1a68d' },
-      { name: 'Em Negociação', value: f?.emNegociacao ?? 0, color: '#8e735b' },
-      { name: 'Novos', value: f?.novos ?? 0, color: '#f5f0eb' },
-      { name: 'Perdidos', value: f?.perdidos ?? 0, color: '#d6c6b8' }
+      { name: 'Fechados', value: f?.fechados ?? 0, color: '#0E7FA6' },
+      { name: 'Em Negociação', value: f?.emNegociacao ?? 0, color: '#5A6478' },
+      { name: 'Novos', value: f?.novos ?? 0, color: '#EDF2F8' },
+      { name: 'Perdidos', value: f?.perdidos ?? 0, color: '#7A62F2' }
     ];
   }, [painel]);
 
@@ -369,14 +369,14 @@ export default function DashboardOverview() {
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={serie} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f0eb" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#8e735b' }} dy={10} interval="preserveStartEnd" />
-                    <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fontSize: 13.5, fill: '#8e735b' }} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EDF2F8" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5A6478' }} dy={10} interval="preserveStartEnd" />
+                    <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fontSize: 13.5, fill: '#5A6478' }} />
                     <RechartsTooltip
-                      cursor={{ fill: '#f5f0eb', opacity: 0.4 }}
-                      contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5dbcf', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      cursor={{ fill: '#EDF2F8', opacity: 0.4 }}
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #DCE6F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     />
-                    <Bar dataKey="leads" fill="#c1a68d" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="leads" fill="#0E7FA6" radius={[4, 4, 0, 0]} maxBarSize={40} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -394,8 +394,8 @@ export default function DashboardOverview() {
                       {rosca.map((e, i) => <Cell key={i} fill={e.color} />)}
                     </Pie>
                     <RechartsTooltip
-                      contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5dbcf', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      itemStyle={{ color: '#2a1b15' }}
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #DCE6F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      itemStyle={{ color: '#141E33' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>

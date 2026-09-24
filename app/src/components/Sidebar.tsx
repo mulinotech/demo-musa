@@ -24,7 +24,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { LogOut, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { DIA_A_DIA, GESTAO, ItemDeMenu, visivelPara } from "./navegacao";
 import { papelDoToken } from "../lib/api";
-import logoMusa from "../assets/logo-musa-crm.png";
+import logoMusa from "../assets/simbolo-musa.png";
 
 const ROTULO_DO_PAPEL: Record<string, string> = {
   admin: "Administração",
@@ -130,7 +130,7 @@ export default function Sidebar(p: {
       >
         {/* marca */}
         <div className="flex items-center gap-2.5 px-4 h-20 shrink-0 border-b border-brand-gold/15">
-          <div className="bg-brand-brown text-brand-beige p-2 rounded-full shadow-inner flex items-center justify-center shrink-0">
+          <div className="bg-white p-2 rounded-full shadow-inner flex items-center justify-center shrink-0 border border-brand-gold/20">
             <img src={logoMusa} alt="Musa CRM" className="h-6 w-6 object-contain" />
           </div>
           <div className={"min-w-0 " + (p.recolhida ? "lg:hidden" : "")}>

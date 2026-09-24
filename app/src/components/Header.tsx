@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Menu, X, Phone, Calendar, Heart, Shield } from "lucide-react";
-import logoMusa from "../assets/logo-musa-crm.png";
+import logoMusa from "../assets/simbolo-musa.png";
 
 interface HeaderProps {
   onNavigate: (sectionId: string) => void;

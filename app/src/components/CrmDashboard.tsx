@@ -711,7 +711,7 @@ export default function CrmDashboard({
             }
             .report-header {
               text-align: center;
-              border-bottom: 2px solid #D4AF37;
+              border-bottom: 2px solid #0E7FA6;
               padding-bottom: 20px;
               margin-bottom: 30px;
             }
@@ -725,7 +725,7 @@ export default function CrmDashboard({
               font-size: 11px;
               text-transform: uppercase;
               letter-spacing: 2px;
-              color: #D4AF37;
+              color: #0E7FA6;
               margin: 0 0 10px 0;
               font-weight: 600;
             }
