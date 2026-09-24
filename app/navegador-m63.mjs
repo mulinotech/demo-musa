@@ -42,7 +42,9 @@ const ok = (nome, real, esperado) => {
 const bd = () => mysql.createConnection({ host: H, port: P, user: U, password: S, database: B });
 
 const nav = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-const pag = await nav.newPage({ viewport: { width: 1700, height: 1100 } });
+/* 900px de altura: e' a altura util de um notebook comum, e e' nela que a
+   janela de programar estourou em producao. */
+const pag = await nav.newPage({ viewport: { width: 1500, height: 900 } });
 
 await pag.goto(BASE + '/login');
 await pag.fill('input[type="email"]', 'adm@ensaio.invalido');
@@ -209,6 +211,34 @@ console.log('\n[4] LEVAR AS SESSOES DO PLANO PARA A AGENDA');
   const [ap2] = await c2.query('SELECT COUNT(*) n FROM appointments');
   await c2.end();
   ok('e a agenda continua com tres', ap2[0].n, 3);
+}
+
+console.log('\n[5] A JANELA CABE NA TELA, E DA PARA SAIR DELA');
+{
+  /* O defeito visto em producao (M6.3b): com o bloco da agenda a janela passou
+     de sete para treze campos, ficou mais alta que a tela, e o botao de fechar
+     caiu para fora -- sem nada para rolar, porque quem rolava era o fundo. */
+  const caixa = pag.locator('div.fixed.inset-0 > div').last();
+  const m = await caixa.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { topo: Math.round(r.top), base: Math.round(r.bottom),
+             altura: Math.round(r.height), janela: window.innerHeight,
+             rola: el.scrollHeight > el.clientHeight };
+  });
+  ok('a caixa nao comeca acima da tela', m.topo >= -2, true);
+  ok('e nao passa da altura da janela', m.altura <= m.janela, true);
+
+  // O botao de fechar tem de estar alcancavel -- rolando por DENTRO da caixa.
+  const fechar = caixa.locator('button:has-text("Fechar"), button:has-text("Cancelar")').first();
+  await fechar.scrollIntoViewIfNeeded();
+  const v = await fechar.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= window.innerHeight + 1;
+  });
+  ok('o botao de sair fica visivel', v, true);
+  await fechar.click();
+  await pag.waitForTimeout(1500);
+  ok('e a janela fecha', await pag.locator('text=Programar as datas').count(), 0);
 }
 
 await pag.screenshot({ path: '/tmp/claude-0/m63.png', fullPage: false });

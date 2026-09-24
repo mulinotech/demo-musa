@@ -834,15 +834,28 @@ export default function TreatmentJourney({
 
       {/* PROGRAMAR AS DATAS DO PLANO (M5.12) */}
       {programando && (
-        <div className="fixed inset-0 bg-brand-brown/40 backdrop-blur-xs flex items-center justify-center z-[110] p-4">
+        /* ============================== A JANELA CRESCEU E PRECISA CABER (M6.3b)
+           `items-center` com altura livre centraliza uma caixa MAIOR que a tela,
+           e aí as duas pontas ficam fora dela: o botão de fechar some embaixo e
+           não há o que rolar, porque quem rola é o fundo, não o modal. Com o
+           bloco da agenda a janela passou de sete para treze campos e o defeito
+           apareceu em produção.
+
+           `items-start` + `overflow-y-auto` no fundo e `max-h` na caixa: a
+           janela rola por dentro, e a caixa nunca passa da altura da tela.
+
+           A caixa também alargou (`max-w-md`): a mesma quantidade de texto numa
+           coluna mais larga ocupa menos linhas, e era a estreiteza que fazia a
+           fonte parecer grande. */
+        <div className="fixed inset-0 bg-brand-brown/40 backdrop-blur-xs flex items-start justify-center z-[110] p-4 overflow-y-auto">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-brand-beige border border-brand-gold max-w-sm w-full rounded-2xl p-6 shadow-2xl space-y-4"
+            className="bg-brand-beige border border-brand-gold max-w-md w-full rounded-2xl p-5 my-6 shadow-2xl space-y-3.5 max-h-[calc(100vh-3rem)] overflow-y-auto"
           >
             <div>
-              <h3 className="text-base font-serif font-bold text-brand-brown">Programar as datas</h3>
-              <p className="text-xxs text-brand-brown/70 leading-relaxed mt-1">
+              <h3 className="text-sm font-serif font-bold text-brand-brown">Programar as datas</h3>
+              <p className="text-[10px] text-brand-brown/70 leading-relaxed mt-1">
                 Preenche a data prevista de cada sessão de <strong>{programando.title}</strong>.
                 Sessões já realizadas, canceladas ou com falta <strong>não são tocadas</strong> —
                 a data delas é o dia em que a paciente esteve aqui.
@@ -851,20 +864,20 @@ export default function TreatmentJourney({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Primeira sessão</label>
+                <label className="block text-[10px] font-bold text-brand-brown uppercase mb-1">Primeira sessão</label>
                 <input
                   type="date"
                   value={progInicio}
                   onChange={(e) => setProgInicio(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-[11px] text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
                 />
               </div>
               <div>
-                <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">De quanto em quanto</label>
+                <label className="block text-[10px] font-bold text-brand-brown uppercase mb-1">De quanto em quanto</label>
                 <select
                   value={progPeriodo}
                   onChange={(e) => setProgPeriodo(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-[11px] text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold"
                 >
                   <option value="Semanal">Semanal</option>
                   <option value="Quinzenal">Quinzenal</option>
@@ -876,14 +889,14 @@ export default function TreatmentJourney({
 
             {progPeriodo === 'Customizado' && (
               <div>
-                <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">A cada quantos dias</label>
+                <label className="block text-[10px] font-bold text-brand-brown uppercase mb-1">A cada quantos dias</label>
                 <input
                   type="number"
                   min="1"
                   max="365"
                   value={progIntervalo}
                   onChange={(e) => setProgIntervalo(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                  className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-[11px] text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
                 />
               </div>
             )}
@@ -904,7 +917,7 @@ export default function TreatmentJourney({
                 hora e profissional que a primeira não sabe. */}
             <div className="pt-3 border-t border-brand-gold/20 space-y-3">
               <div>
-                <p className="text-xxs font-bold text-brand-brown uppercase">Levar para a agenda</p>
+                <p className="text-[10px] font-bold text-brand-brown uppercase">Levar para a agenda</p>
                 <p className="text-[10px] text-brand-brown/60 leading-relaxed mt-0.5">
                   Cria o horário de cada sessão programada. Sessão já realizada, data que já
                   passou e sessão que já está na agenda ficam de fora — e a tela diz quais.
@@ -912,31 +925,31 @@ export default function TreatmentJourney({
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Hora</label>
+                  <label className="block text-[10px] font-bold text-brand-brown uppercase mb-1">Hora</label>
                   <input
                     type="time"
                     value={ageHora}
                     onChange={(e) => setAgeHora(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-[11px] text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
                   />
                 </div>
                 <div>
-                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Duração (min)</label>
+                  <label className="block text-[10px] font-bold text-brand-brown uppercase mb-1">Duração (min)</label>
                   <input
                     type="number"
                     min="5"
                     max="600"
                     value={ageDuracao}
                     onChange={(e) => setAgeDuracao(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-[11px] text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
                   />
                 </div>
                 <div>
-                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Profissional</label>
+                  <label className="block text-[10px] font-bold text-brand-brown uppercase mb-1">Profissional</label>
                   <select
                     value={ageProf}
                     onChange={(e) => setAgeProf(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-[11px] text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold"
                   >
                     <option value="">Escolha…</option>
                     {profissionais.map((pr) => (
@@ -961,20 +974,20 @@ export default function TreatmentJourney({
               <button
                 type="button"
                 onClick={fecharProgramacao}
-                className="px-4 py-2 text-xs font-medium text-brand-brown/70"
+                className="px-4 py-2 text-[11px] font-medium text-brand-brown/70"
               >
                 {progResposta && progResposta.ok ? 'Fechar' : 'Cancelar'}
               </button>
               <button
                 onClick={levarParaAgenda}
                 disabled={ageOcupado}
-                className="bg-white border border-brand-gold/40 text-brand-brown px-4 py-2 rounded-xl text-xs font-semibold hover:bg-brand-beige disabled:opacity-60 cursor-pointer"
+                className="bg-white border border-brand-gold/40 text-brand-brown px-4 py-2 rounded-xl text-[11px] font-semibold hover:bg-brand-beige disabled:opacity-60 cursor-pointer"
               >
                 {ageOcupado ? 'Levando...' : 'Levar para a agenda'}
               </button>
               <button
                 onClick={programar}
-                className="bg-brand-brown text-brand-beige px-4 py-2 rounded-xl text-xs font-semibold hover:bg-brand-brown/90 shadow-md"
+                className="bg-brand-brown text-brand-beige px-4 py-2 rounded-xl text-[11px] font-semibold hover:bg-brand-brown/90 shadow-md"
               >
                 Programar
               </button>
