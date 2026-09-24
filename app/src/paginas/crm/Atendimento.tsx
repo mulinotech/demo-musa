@@ -50,6 +50,8 @@ export default function Atendimento() {
           isAiConfigured={crm.isAiConfigured}
           onDeleteLead={crm.onDeleteLead}
           onRefreshData={() => crm.atualizar(true)}
+          treatments={crm.treatments}
+          treatmentPlans={crm.treatmentPlans}
         />
       ) : (
         <div className="relative flex-1 h-[calc(100vh-200px)] overflow-hidden">

@@ -15,10 +15,14 @@ import {
   CheckCheck,
   Phone,
   Bot,
-  Trash2
+  Trash2,
+  Target,
+  X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { comDdi, DDI_PADRAO } from '../lib/telefone.mjs';
+import FichaRapida from './FichaRapida';
+import type { Treatment, TreatmentPlan } from '../types';
 
 interface ChatConsoleProps {
   clients: Client[];
@@ -28,6 +32,8 @@ interface ChatConsoleProps {
   isAiConfigured: boolean;
   onDeleteLead?: (id: string) => void;
   onRefreshData?: () => void;
+  treatments?: Treatment[];
+  treatmentPlans?: TreatmentPlan[];
 }
 
 export default function ChatConsole({ 
@@ -37,7 +43,9 @@ export default function ChatConsole({
   onSendMessage,
   isAiConfigured,
   onDeleteLead,
-  onRefreshData
+  onRefreshData,
+  treatments = [],
+  treatmentPlans = []
 }: ChatConsoleProps) {
   // Modal de novo chat
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -73,6 +81,12 @@ export default function ChatConsole({
   const [typedMessage, setTypedMessage] = useState('');
   const [suggestingReply, setSuggestingReply] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+
+  /* A FICHA RAPIDA e O FUNIL (M6.2). Os dois vivem no cabecalho da conversa
+     porque e onde a pergunta aparece: "quem e essa?" e "isso aqui e venda?". */
+  const [verFicha, setVerFicha] = useState(false);
+  const [jogando, setJogando] = useState(false);
+  const [avisoFunil, setAvisoFunil] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // Guarda o contato criado agora, que ainda não apareceu na lista recarregada
@@ -146,19 +160,22 @@ export default function ChatConsole({
         return;
       }
 
-      // Criar novo lead
-      const response = await fetch('/api/leads', {
+      /* A ROTA E A DE DENTRO DO CRM (M6.2), e nao mais `/api/leads`.
+       *
+       * `/api/leads` e a rota PUBLICA, a do formulario do site: ela nao tem
+       * sessao e descobre a clinica pela chave de captacao. Sem chave, ela so
+       * responde enquanto existe UMA clinica ativa na instalacao -- com duas,
+       * recusa com 503 e a recepcao le "Cadastro indisponivel no momento"
+       * dentro do CRM, logada. `/api/leads/manual` tira a clinica do token. */
+      const response = await fetch('/api/leads/manual', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': localStorage.getItem('userRole') || '',
-          'x-salesperson-name': localStorage.getItem('salespersonName') || ''
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
           whatsapp: formattedPhone,
           treatment: 'Atendimento Geral',
           message: 'Conversa iniciada manualmente no Atendimento CRM.',
+          source: 'whatsapp',
           status: 'novo'
         })
       });
@@ -176,6 +193,44 @@ export default function ChatConsole({
       setNewChatError('Erro ao conectar com o servidor.');
     } finally {
       setCreatingChat(false);
+    }
+  };
+
+  /* JOGAR NO FUNIL (M6.2).
+   *
+   * A decisao de criar ou nao criar e do SERVIDOR (`POST /api/leads/do-whatsapp`),
+   * e nao desta tela. A tela tem em memoria a lista que baixou quando abriu; o
+   * card pode ter nascido no computador da recepcao ha dez segundos, e comparar
+   * com a lista velha e como a duplicata comeca.
+   *
+   * Tambem nao e mais a rota publica `/api/leads`: aquela descobre a clinica
+   * pela chave de captacao do site e, sem chave, so funciona enquanto existe
+   * UMA clinica ativa. */
+  const jogarNoFunil = async () => {
+    if (!selectedContact || selectedContact.type !== 'Paciente') return;
+    setJogando(true);
+    setAvisoFunil(null);
+    try {
+      const r = await fetch('/api/leads/do-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: selectedContact.name, telefone: selectedContact.phone })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setAvisoFunil({ tipo: 'erro', texto: d.error || 'Nao foi possivel jogar a conversa no funil.' });
+        return;
+      }
+      if (d.acao === 'jaNoFunil') {
+        setAvisoFunil({ tipo: 'ok', texto: d.porque + ' Nenhum card novo foi criado.' });
+      } else {
+        setAvisoFunil({ tipo: 'ok', texto: 'Card criado no funil, em "Lead Novo". ' + (d.porque || '') });
+      }
+      if (onRefreshData) onRefreshData();
+    } catch {
+      setAvisoFunil({ tipo: 'erro', texto: 'Erro de conexao ao falar com o servidor.' });
+    } finally {
+      setJogando(false);
     }
   };
 
@@ -391,6 +446,34 @@ export default function ChatConsole({
                 <p className="text-xxs font-mono text-brand-brown/60">Canal Ativo: WhatsApp ({selectedContact.phone})</p>
               </div>
 
+              <div className="flex items-center gap-2">
+              {/* A FICHA e O FUNIL (M6.2): so aparecem para PACIENTE.
+                  Contato que ja e Lead esta no funil por definicao -- um botao
+                  "jogar no funil" ali prometeria uma acao que nao existe. */}
+              {selectedContact.type === 'Paciente' && (
+                <>
+                  <button
+                    onClick={() => setVerFicha(true)}
+                    title="Ver a ficha desta paciente sem sair da conversa"
+                    className="flex items-center space-x-1.5 bg-white hover:bg-brand-beige text-brand-brown border border-brand-gold/30 text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer"
+                  >
+                    <User className="h-3.5 w-3.5 text-brand-gold" />
+                    <span>Ver ficha</span>
+                  </button>
+                  <button
+                    onClick={jogarNoFunil}
+                    disabled={jogando}
+                    title="Cria um card no funil com o nome e o telefone desta conversa"
+                    className="flex items-center space-x-1.5 bg-white hover:bg-brand-beige disabled:opacity-60 text-brand-brown border border-brand-gold/30 text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer"
+                  >
+                    {jogando
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-gold" />
+                      : <Target className="h-3.5 w-3.5 text-brand-gold" />}
+                    <span>Jogar no funil</span>
+                  </button>
+                </>
+              )}
+
               {/* Smart AI Reply Suggestion Button */}
               <button
                 onClick={handleSuggestReply}
@@ -409,7 +492,27 @@ export default function ChatConsole({
                   </>
                 )}
               </button>
+              </div>
             </div>
+
+            {avisoFunil && (
+              <div
+                className={`mx-4 mt-3 rounded-xl border px-4 py-2.5 text-xs flex items-start justify-between gap-3 ${
+                  avisoFunil.tipo === 'ok'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-red-50 border-red-200 text-red-700'
+                }`}
+              >
+                <p>{avisoFunil.texto}</p>
+                <button
+                  onClick={() => setAvisoFunil(null)}
+                  title="Fechar o aviso"
+                  className="cursor-pointer shrink-0 opacity-70 hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* AI Suggestion Box */}
             {aiSuggestion && (
@@ -519,6 +622,16 @@ export default function ChatConsole({
           </div>
         )}
       </div>
+
+      {verFicha && selectedContact && selectedContact.type === 'Paciente' &&
+       clients.some(c => c.id === selectedContact.id) && (
+        <FichaRapida
+          cliente={clients.filter(c => c.id === selectedContact.id)[0]}
+          treatments={treatments}
+          planos={treatmentPlans}
+          aoFechar={() => setVerFicha(false)}
+        />
+      )}
     </div>
   );
 }

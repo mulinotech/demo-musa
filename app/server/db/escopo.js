@@ -257,7 +257,8 @@ function fazerEscopo(clinicaId, executor, identidade) {
      *  exatamente o momento em que alguém pensa duas vezes.
      */
     atualizarMinhaClinica: async function (campos) {
-      const PERMITIDAS = ['nome', 'documento', 'endereco', 'telefone', 'contato', 'email'];
+      const PERMITIDAS = ['nome', 'documento', 'endereco', 'telefone', 'contato', 'email',
+        'logo'];
       const sets = [], valores = [];
       for (const coluna of PERMITIDAS) {
         if (campos && Object.prototype.hasOwnProperty.call(campos, coluna)) {

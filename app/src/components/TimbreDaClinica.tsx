@@ -10,9 +10,10 @@
  * digita e só descobre que ficou torto quando a paciente já levou o papel para
  * o trabalho — ver como vai imprimir, na hora de digitar, é o que evita isso.
  */
-import { useEffect, useState } from "react";
-import { Building2, Check, AlertTriangle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Building2, Check, AlertTriangle, ImagePlus, Trash2, Loader2 } from "lucide-react";
 import { papelDoToken } from "../lib/api";
+import { reduzirLogo, LARGURA_MAXIMA_LOGO } from "../lib/logo.mjs";
 
 interface Timbre {
   nome: string;
@@ -21,9 +22,12 @@ interface Timbre {
   telefone: string;
   email: string;
   contato: string;
+  logo: string | null;
 }
 
-const VAZIO: Timbre = { nome: "", documento: "", endereco: "", telefone: "", email: "", contato: "" };
+const VAZIO: Timbre = {
+  nome: "", documento: "", endereco: "", telefone: "", email: "", contato: "", logo: null,
+};
 
 export default function TimbreDaClinica() {
   const podeEditar = papelDoToken() === "admin" || papelDoToken() === "gerente";
@@ -31,6 +35,8 @@ export default function TimbreDaClinica() {
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+  const [enviandoLogo, setEnviandoLogo] = useState(false);
+  const campoArquivo = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     fetch("/api/clinica")
@@ -57,6 +63,48 @@ export default function TimbreDaClinica() {
       window.setTimeout(() => setAviso(null), 6000);
     } finally {
       setSalvando(false);
+    }
+  };
+
+  /* O envio é em dois passos de propósito: o navegador reduz a imagem, o
+     servidor decide se ela serve. A reclamação que chega à pessoa é sempre a do
+     servidor, porque é ela que vale — dizer "ok" aqui e o papel sair sem logo
+     seria o pior dos dois mundos. */
+  const enviarLogo = async (arquivo: File | null) => {
+    if (!arquivo) return;
+    setEnviandoLogo(true);
+    setAviso(null);
+    try {
+      const r = await reduzirLogo(arquivo, LARGURA_MAXIMA_LOGO);
+      if (!r.ok) return setAviso({ tipo: "erro", texto: r.erro });
+      const resp = await fetch("/api/clinica/logo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl: r.dataUrl }),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) return setAviso({ tipo: "erro", texto: d.error || "Não foi possível salvar o logo." });
+      setT({ ...VAZIO, ...d });
+      setAviso({ tipo: "ok", texto: "Logo salvo. Já sai no próximo documento impresso — os que já foram emitidos continuam como estão." });
+      window.setTimeout(() => setAviso(null), 8000);
+    } finally {
+      setEnviandoLogo(false);
+      if (campoArquivo.current) campoArquivo.current.value = "";
+    }
+  };
+
+  const removerLogo = async () => {
+    setEnviandoLogo(true);
+    setAviso(null);
+    try {
+      const resp = await fetch("/api/clinica/logo", { method: "DELETE" });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) return setAviso({ tipo: "erro", texto: d.error || "Não foi possível remover o logo." });
+      setT({ ...VAZIO, ...d });
+      setAviso({ tipo: "ok", texto: "Logo removido do timbre." });
+      window.setTimeout(() => setAviso(null), 6000);
+    } finally {
+      setEnviandoLogo(false);
     }
   };
 
@@ -102,6 +150,58 @@ export default function TimbreDaClinica() {
               O nome identifica a clínica na plataforma inteira e já aparece em documentos
               emitidos — trocá-lo é pedido à Mulino, para ficar registrado quem mudou.
             </p>
+          </div>
+          {/* O LOGO (M6.2). Fica junto do nome porque é a outra metade da
+              identificação da clínica no papel — e logo abaixo da prévia, que
+              é onde a pessoa confere se ficou do tamanho certo. */}
+          <div>
+            <label className={rotulo}>Logo da clínica</label>
+            <div className="flex items-center gap-3">
+              <div className="h-16 w-28 shrink-0 rounded border border-brand-gold/25 bg-white flex items-center justify-center overflow-hidden">
+                {t.logo ? (
+                  <img src={t.logo} alt="Logo da clínica" className="max-h-14 max-w-24 object-contain" />
+                ) : (
+                  <span className="text-[10px] text-brand-brown/40">sem logo</span>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <input
+                  ref={campoArquivo}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={!podeEditar || enviandoLogo}
+                  onChange={(e) => enviarLogo(e.target.files && e.target.files[0])}
+                  className="hidden"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={!podeEditar || enviandoLogo}
+                    onClick={() => campoArquivo.current?.click()}
+                    className="flex items-center gap-1.5 bg-brand-gold/10 hover:bg-brand-gold/20 disabled:opacity-50 text-brand-brown border border-brand-gold/30 px-3 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer"
+                  >
+                    {enviandoLogo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+                    <span>{t.logo ? "Trocar logo" : "Enviar logo"}</span>
+                  </button>
+                  {t.logo && podeEditar && (
+                    <button
+                      type="button"
+                      disabled={enviandoLogo}
+                      onClick={removerLogo}
+                      title="O timbre volta a sair sem logo. Documento já emitido continua com o logo que tinha."
+                      className="flex items-center gap-1.5 bg-white hover:bg-brand-beige disabled:opacity-50 text-brand-brown/70 border border-brand-gold/25 px-3 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Remover</span>
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-brand-brown/55 leading-snug">
+                  PNG, JPG ou WEBP. A imagem é reduzida aqui mesmo — pode enviar o arquivo
+                  original. <strong>SVG não é aceito no timbre.</strong>
+                </p>
+              </div>
+            </div>
           </div>
           <div>
             <label className={rotulo}>Endereço</label>
@@ -164,6 +264,9 @@ export default function TimbreDaClinica() {
         <div>
           <p className={rotulo}>Como vai sair no papel</p>
           <div className="bg-white border border-brand-gold/25 rounded-xl p-5 font-serif text-brand-brown">
+            {t.logo && (
+              <img src={t.logo} alt="Logo da clínica" className="block max-h-12 max-w-[55%] object-contain mb-3" />
+            )}
             <div className="flex justify-between items-start gap-4 pb-6 border-b border-dashed border-brand-gold/25">
               <div>
                 <p className="text-base font-bold leading-tight">Dra. Fulana de Tal</p>

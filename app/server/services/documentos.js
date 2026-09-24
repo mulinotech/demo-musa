@@ -242,6 +242,16 @@ const CSS = [
   '.assinatura{margin-top:2rem;padding-top:1rem;border-top:1px solid #ddd}',
   '.assinatura img{max-width:16rem;display:block;margin:.5rem 0}',
   '.aviso{font-family:system-ui,sans-serif;font-size:.72rem;color:#6b5443;background:#faf7f2;border:1px solid #e6dbc9;padding:.6rem .8rem;margin-top:1rem}',
+  /* ================================== O LOGO DA CLINICA (M6.2, 24/09)
+   *
+   * `max-height` e nao `height`: o logo de cada clinica tem uma proporcao, e
+   * fixar os dois lados esticaria a marca de alguem. A altura de 18mm e a que
+   * cabe acima do nome sem empurrar a prescricao para a segunda folha.
+   *
+   * Alinhado a ESQUERDA porque o nome de quem assina (`.timbre-nome`) esta a
+   * esquerda desde a M5.6. Centralizar so o logo deixaria a marca fora de
+   * prumo com o nome logo abaixo -- e isso so aparece depois de impresso. */
+  '.timbre-logo{display:block;margin:0 0 .9rem;max-height:18mm;max-width:60%}',
   '.timbre{margin-bottom:.2rem}',
   '.timbre-nome{font-size:1.6rem;font-weight:700;line-height:1.15}',
   '.timbre-funcao{font-family:system-ui,sans-serif;font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:#6b5443;margin-top:.3rem}',
@@ -394,7 +404,8 @@ function paginaCompleta(doc, opcoes) {
     endereco: doc.timbre_endereco || atual.endereco || '',
     telefone: doc.timbre_telefone || atual.telefone || '',
     contato: doc.timbre_contato || atual.contato || '',
-    email: doc.timbre_email || atual.email || ''
+    email: doc.timbre_email || atual.email || '',
+    logo: doc.timbre_logo || atual.logo || ''
   };
 
   /* O RECEITUARIO TEM O PE PROPRIO (M5.7, 17/09).
@@ -453,6 +464,19 @@ function paginaCompleta(doc, opcoes) {
   const titular = emitido && doc.emitido_por_nome
     ? esc(doc.emitido_por_nome) : esc(timbre.clinica);
   const funcao = emitido && doc.emitido_por_funcao ? esc(doc.emitido_por_funcao) : '';
+
+  /* O LOGO VEM ANTES DO NOME, e sai mesmo em rascunho: quem confere a previa
+   * precisa ver o papel como ele vai ficar, e o logo e a primeira coisa que
+   * quem recebe o documento enxerga.
+   *
+   * So entra se for data URL de imagem -- a mesma lista de `timbre-logo.js`.
+   * A validacao ja aconteceu na gravacao; esta segunda conferencia existe
+   * porque aqui se escreve HTML, e documento antigo pode ter sido carimbado
+   * antes de a regra existir. */
+  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(timbre.logo)) {
+    partes.push('<img class="timbre-logo" src="' + timbre.logo + '" alt="' +
+      esc(timbre.clinica || 'Logo da clinica') + '">');
+  }
 
   if (titular || funcao) {
     partes.push('<div class="timbre">' +

@@ -58,6 +58,12 @@ const REGRAS_DE_PAPEL = [
    * token. Uma regra de papel aqui so tiraria da profissional o acesso ao
    * proprio nome. */
   { metodo: 'PATCH',  prefixo: '/api/clinica',           papeis: ['admin', 'gerente'] },
+  /* O LOGO (M6.2) entra pela mesma porta: `PUT` e `DELETE` em `/api/clinica/logo`
+   * caem neste prefixo. Sao duas linhas, e nao um `metodo: '*'`, porque o GET
+   * tem de continuar passando para todo papel -- a profissional le o timbre
+   * inteiro, logo incluso, antes de escrever a receita. */
+  { metodo: 'PUT',    prefixo: '/api/clinica',           papeis: ['admin', 'gerente'] },
+  { metodo: 'DELETE', prefixo: '/api/clinica',           papeis: ['admin', 'gerente'] },
   // Preco e informacao sensivel de negocio: profissional e vendedor nao veem.
   { metodo: '*',      prefixo: '/api/pricing',           papeis: ['admin', 'gerente'] },
   { metodo: '*',      prefixo: '/api/fixed-costs',       papeis: ['admin', 'gerente'] },

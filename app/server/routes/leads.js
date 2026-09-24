@@ -25,6 +25,7 @@ const router = express.Router();
 const escopo = require('../db/escopo');
 const logs = require('../services/logs');
 const conversao = require('../services/conversao-de-lead');
+const funil = require('../services/funil-do-whatsapp');
 
 const primeiroNome = (nome) => (nome || '').trim().split(' ')[0] || nome;
 
@@ -180,6 +181,84 @@ router.post('/api/leads/manual', async function (req, res) {
   } catch (error) {
     console.error('[leads]', error && error.message);
     res.status(500).json({ error: 'Erro ao cadastrar o lead' });
+  }
+});
+
+
+/** Jogar a conversa do WhatsApp no funil (M6.2, 24/09).
+ *
+ *  ====================================== POR QUE NÃO SERVIU `POST /api/leads`
+ *
+ *  A tela de Atendimento já criava lead — e criava pela rota **pública**, a do
+ *  formulário do site. Aquela rota não tem sessão: ela descobre a clínica pela
+ *  chave de captação e, **sem chave, só funciona enquanto existe uma única
+ *  clínica ativa na instalação**. Com duas, ela recusa com 503 e a recepção lê
+ *  *"Cadastro indisponível no momento"* — dentro do CRM, logada, olhando a
+ *  conversa. Num SaaS de 50 clínicas isso não é um risco futuro: é o dia em que
+ *  a segunda clínica entra.
+ *
+ *  Aqui há sessão, e a clínica vem do token. É o mesmo motivo pelo qual esta
+ *  rota não aceita `clinicaId` no corpo.
+ *
+ *  A decisão de criar ou não criar está em `services/funil-do-whatsapp.js`, em
+ *  função pura e com teste: os casos que importam — o número com DDI, o card
+ *  aberto que já existe, a mãe e a filha com um telefone só — são exatamente os
+ *  que ninguém reproduz à mão numa tela.
+ *
+ *  Fica **sem regra de papel**, como o resto do funil: quem está na conversa é
+ *  quem sabe que ali tem venda. Quem jogou fica na trilha. */
+router.post('/api/leads/do-whatsapp', async function (req, res) {
+  const db = escopo(req);
+  const b = req.body || {};
+  const telefone = String(b.telefone || b.phone || b.whatsapp || '').trim();
+  const interesse = String(b.treatment || '').trim() || 'A definir';
+
+  try {
+    const [leads] = await db.q(
+      'SELECT id, name, whatsapp, status, date FROM leads WHERE clinica_id = :clinica');
+    const [fichas] = await db.q(
+      'SELECT id, name, phone FROM clients WHERE clinica_id = :clinica');
+
+    const d = funil.decidirEntrada({ nome: b.nome || b.name, telefone: telefone }, leads, fichas);
+
+    if (d.acao === 'telefoneInvalido') {
+      return res.status(400).json({ acao: d.acao, error: d.porque });
+    }
+
+    if (d.acao === 'jaNoFunil') {
+      // 200, e não 409: para quem clicou, achar o card que já existe É o
+      // resultado desejado. A tela seleciona o lead e segue a conversa.
+      return res.json({
+        acao: 'jaNoFunil', porque: d.porque,
+        lead: { id: d.lead.id, name: d.lead.name, status: d.lead.status }
+      });
+    }
+
+    const nome = funil.nomeDoContato(b.nome || b.name, telefone);
+    const leadId = Math.random().toString(36).substring(2, 9);
+    await db.q(
+      `INSERT INTO leads (id, name, whatsapp, treatment, message, source, date, status,
+                          client_id, clinica_id)
+       VALUES (?, ?, ?, ?, ?, 'whatsapp', NOW(), 'novo', ?, :clinica)`,
+      [leadId, nome, telefone, interesse,
+       'Conversa do WhatsApp jogada no funil por ' + db.autor + '.',
+       d.clienteId || null]);
+
+    await logs.registrar(db, 'LEAD_CREATE',
+      'Conversa do WhatsApp jogada no funil: "' + primeiroNome(nome) + '" (' + telefone + ').' +
+      (d.clienteId ? ' Card ja nasceu apontando para a ficha da paciente.' : '') +
+      (d.historico ? ' Ha um lead anterior desta pessoa, ' + d.historico.status + '.' : ''));
+
+    res.status(201).json({
+      acao: 'criado', porque: d.porque,
+      lead: { id: leadId, name: nome, status: 'novo' },
+      clienteId: d.clienteId,
+      candidatos: d.candidatos.map((c) => ({ id: c.id, nome: c.name })),
+      historico: d.historico
+    });
+  } catch (error) {
+    console.error('[leads]', error && error.message);
+    res.status(500).json({ error: 'Erro ao jogar a conversa no funil.' });
   }
 });
 

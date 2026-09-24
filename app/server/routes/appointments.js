@@ -155,6 +155,11 @@ router.get('/api/appointments', async function (req, res) {
     if (req.query.from) { cond.push('a.ends_at >= ?'); params.push(String(req.query.from).slice(0, 10) + ' 00:00:00'); }
     if (req.query.to) { cond.push('a.starts_at <= ?'); params.push(String(req.query.to).slice(0, 10) + ' 23:59:59'); }
     if (req.query.status) { cond.push('a.status = ?'); params.push(req.query.status); }
+    /* POR PACIENTE (M6.2). A ficha rápida do Atendimento precisa responder "ela
+     * tem horário marcado?" enquanto a conversa está aberta. Sem este filtro a
+     * tela teria de baixar a agenda inteira e peneirar no navegador — o que
+     * funciona com 40 compromissos e para de funcionar com 4.000. */
+    if (req.query.clientId) { cond.push('a.client_id = ?'); params.push(String(req.query.clientId)); }
 
     let profissional = req.query.professionalId;
     if (soVeAPropria(req)) profissional = req.usuario.sub;

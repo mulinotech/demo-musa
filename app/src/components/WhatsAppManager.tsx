@@ -16,6 +16,7 @@ import {
   ExternalLink,
   AlertTriangle,
   CheckCheck,
+  Target,
   X
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -59,6 +60,12 @@ export default function WhatsAppManager({ onMessageSent }: WhatsAppManagerProps)
   const [listError, setListError] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<WaContact | null>(null);
+  /* JOGAR NO FUNIL (M6.2). Aqui e' onde a conversa que ainda NAO existe no CRM
+     aparece: a lista deste painel vem da Evolution, e nao das nossas tabelas.
+     E' o caso que o time comercial descreveu -- a pessoa mandou mensagem, tem
+     venda ali, e nao ha card nenhum para trabalhar. */
+  const [jogando, setJogando] = useState(false);
+  const [avisoFunil, setAvisoFunil] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
@@ -154,7 +161,39 @@ export default function WhatsAppManager({ onMessageSent }: WhatsAppManagerProps)
   const handleSelect = (contact: WaContact) => {
     setSelected(contact);
     setDraft('');
+    setAvisoFunil(null);
     fetchMessages(contact);
+  };
+
+  /* Quem decide se cria card e' o servidor, com a lista de leads de agora --
+     nao esta tela, que nem baixa a lista de leads. */
+  const jogarNoFunil = async () => {
+    if (!selected) return;
+    setJogando(true);
+    setAvisoFunil(null);
+    try {
+      const r = await fetch('/api/leads/do-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: selected.name, telefone: selected.number })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setAvisoFunil({ tipo: 'erro', texto: d.error || 'Nao foi possivel jogar a conversa no funil.' });
+        return;
+      }
+      setAvisoFunil({
+        tipo: 'ok',
+        texto: d.acao === 'jaNoFunil'
+          ? d.porque + ' Nenhum card novo foi criado.'
+          : 'Card criado no funil, em "Lead Novo". ' + (d.porque || '')
+      });
+      onMessageSent?.();
+    } catch {
+      setAvisoFunil({ tipo: 'erro', texto: 'Erro de conexao ao falar com o servidor.' });
+    } finally {
+      setJogando(false);
+    }
   };
 
   const handleSend = async (e?: React.FormEvent) => {
@@ -442,11 +481,41 @@ export default function WhatsAppManager({ onMessageSent }: WhatsAppManagerProps)
                     <User className="h-4 w-4 text-brand-gold" />
                   </span>
                 )}
-                <div className="leading-tight">
+                <div className="leading-tight flex-1 min-w-0">
                   <h4 className="text-sm font-serif font-bold text-brand-brown">{selected.name}</h4>
                   <p className="text-[10px] font-mono text-brand-brown/60">{formatNumber(selected.number)}</p>
                 </div>
+                <button
+                  onClick={jogarNoFunil}
+                  disabled={jogando}
+                  title="Cria um card no funil com o nome e o telefone desta conversa"
+                  className="flex items-center space-x-1.5 shrink-0 bg-white hover:bg-brand-beige disabled:opacity-60 text-brand-brown border border-brand-gold/30 text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer"
+                >
+                  {jogando
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-gold" />
+                    : <Target className="h-3.5 w-3.5 text-brand-gold" />}
+                  <span>Jogar no funil</span>
+                </button>
               </div>
+
+              {avisoFunil && (
+                <div
+                  className={`mx-4 mt-3 rounded-xl border px-4 py-2.5 text-xs flex items-start justify-between gap-3 ${
+                    avisoFunil.tipo === 'ok'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-red-50 border-red-200 text-red-700'
+                  }`}
+                >
+                  <p>{avisoFunil.texto}</p>
+                  <button
+                    onClick={() => setAvisoFunil(null)}
+                    title="Fechar o aviso"
+                    className="cursor-pointer shrink-0 opacity-70 hover:opacity-100"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
 
               <div className="flex-1 overflow-y-auto p-5 space-y-3">
                 {loadingMessages ? (

@@ -63,7 +63,22 @@ export default function ClientDirectory({
   onDeleteTreatmentPlan,
   onUpdateTreatmentSession
 }: ClientDirectoryProps) {
-  const [selectedClient, setSelectedClient] = useState<Client | null>(clients[0] || null);
+  /* ?paciente=<id> NA URL (M6.2). A ficha rápida do Atendimento manda para cá
+     com a paciente escolhida; sem isto o link abriria a lista na primeira em
+     ordem alfabética, e quem clicou teria de procurar o nome de novo — que é
+     exatamente o trabalho que aquela janela veio tirar.
+     Lido UMA vez, no estado inicial: reler a cada render roubaria a seleção de
+     quem clicasse em outra paciente com o parâmetro ainda na barra. */
+  const [selectedClient, setSelectedClient] = useState<Client | null>(() => {
+    try {
+      const pedido = new URLSearchParams(window.location.search).get('paciente');
+      if (pedido) {
+        const achada = clients.find((c) => c.id === pedido);
+        if (achada) return achada;
+      }
+    } catch { /* sem URL utilizável, segue o padrão */ }
+    return clients[0] || null;
+  });
   const [showAddClient, setShowAddClient] = useState(false);
   const [showAddTreatment, setShowAddTreatment] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -105,7 +120,15 @@ export default function ClientDirectory({
         setSelectedClient(updated);
       }
     } else if (clients.length > 0) {
-      setSelectedClient(clients[0]);
+      /* A LISTA CHEGA DEPOIS DA TELA. No primeiro render `clients` costuma
+         estar vazia, então o `?paciente=` do estado inicial não acha ninguém e
+         cai aqui — onde escolher `clients[0]` desfaria o pedido do link. */
+      let pedida: Client | undefined;
+      try {
+        const pedido = new URLSearchParams(window.location.search).get('paciente');
+        if (pedido) pedida = clients.find((c) => c.id === pedido);
+      } catch { /* sem URL utilizável, segue o padrão */ }
+      setSelectedClient(pedida || clients[0]);
     }
   }, [clients]);
 

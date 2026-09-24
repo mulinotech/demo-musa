@@ -362,7 +362,7 @@ router.post('/api/documents/:id/finalize', async function (req, res) {
               emitido_por_id = ?, emitido_por_nome = ?, emitido_por_funcao = ?,
               emitido_por_conselho = ?, emitido_por_numero = ?, emitido_por_uf = ?,
               timbre_clinica = ?, timbre_endereco = ?, timbre_telefone = ?, timbre_contato = ?,
-              timbre_email = ?,
+              timbre_email = ?, timbre_logo = ?,
               emitido_em = ` + (emitido ? 'NOW()' : 'NULL') + `
         WHERE clinica_id = :clinica AND id = ? AND status = 'RASCUNHO'`,
       [html, hash, novoStatus,
@@ -380,6 +380,9 @@ router.post('/api/documents/:id/finalize', async function (req, res) {
        (minha && minha.telefone) || null,
        (minha && minha.contato) || null,
        (minha && minha.email) || null,
+       // O LOGO vai carimbado pelo mesmo motivo (M6.2): a clinica troca de
+       // marca, e o atestado do ano passado sai com a marca de quando saiu.
+       (minha && minha.logo) || null,
        req.params.id]
     );
     await logs.registrar(db, 'DOCUMENTOS', emitido
@@ -464,7 +467,7 @@ router.get('/api/documents/:id/view', async function (req, res) {
       hashConfere: confere,
       timbre: minha ? {
         clinica: minha.nome, endereco: minha.endereco, telefone: minha.telefone,
-        contato: minha.contato, email: minha.email
+        contato: minha.contato, email: minha.email, logo: minha.logo
       } : null
     }));
   } catch (e) {

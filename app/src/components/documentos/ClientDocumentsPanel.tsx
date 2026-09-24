@@ -42,7 +42,7 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
    * deduzi-la aqui de tres campos criaria uma segunda versao dela. */
   const [timbre, setTimbre] = useState<{
     nome: string; funcao: string; conselho: string; conselhoNumero: string; conselhoUf: string;
-    podeEmitir: boolean; clinica: { nome: string; endereco: string; telefone: string; email: string; contato: string };
+    podeEmitir: boolean; clinica: { nome: string; endereco: string; telefone: string; email: string; contato: string; logo?: string | null };
   } | null>(null);
 
   const carregar = useCallback(async () => {
@@ -367,6 +367,13 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
               <p className="text-[9px] uppercase tracking-widest text-brand-brown/55 font-sans mb-1">
                 Vai sair assim no papel
               </p>
+              {timbre.clinica && timbre.clinica.logo && (
+                <img
+                  src={timbre.clinica.logo}
+                  alt="Logo da clínica"
+                  className="block max-h-9 max-w-[50%] object-contain mb-2"
+                />
+              )}
               <p className="text-sm font-bold leading-tight">{timbre.nome}</p>
               <p className="text-[10px] text-brand-brown/65 font-sans">
                 {[timbre.funcao, [timbre.conselho, timbre.conselhoNumero].filter(Boolean).join(" ") +
