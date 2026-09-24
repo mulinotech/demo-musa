@@ -472,12 +472,37 @@ export default function CrmDashboard({
     }
   };
 
+  /* =============== O NUMERO QUE NAO FOI MEDIDO NAO VIRA NUMERO (M6.4)
+   *
+   * Seis valores deste PDF eram constantes escritas no codigo -- 3,5 dias de
+   * conversao, 12 minutos de resposta, 4,9 de satisfacao, 24% de retorno, um
+   * horario de pico de reserva e uma lista de ANIVERSARIOS de pacientes reais
+   * calculada pela posicao delas na lista, numa tabela sem data de nascimento.
+   *
+   * Tres viraram medicao de verdade; tres sairam da folha. E onde o servidor
+   * responde `null`, o papel escreve a frase, em cinza, no lugar do numero.
+   * Uma linha feia custa menos que um 4,9 inventado numa reuniao. */
+  const semDado = (frase: string) =>
+    `<span style="font-size:.7em;font-weight:400;color:#5A6478;">${frase}</span>`;
+  const ouEntao = (v: number | null | undefined, formatar: (n: number) => string, frase: string) =>
+    (v === null || v === undefined) ? semDado(frase) : formatar(v);
+
   const handleGenerateReport = async (aba: string) => {
     try {
+      /* O PDF passa a seguir o filtro de periodo da tela (M6.4). Ate aqui ele
+         consolidava sempre o mes, e a propria faixa da tela avisava disso --
+         duas respostas para a mesma pergunta, e a impressa era a que ia para a
+         reuniao. O filtro vive na Visao Geral e chega aqui pela URL. */
+      const busca = new URLSearchParams(window.location.search);
+      const de = busca.get('de');
+      const ate = busca.get('ate');
       const response = await fetch('/api/reports/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aba }),
+        body: JSON.stringify({
+          aba,
+          periodo: de && ate ? { inicio: de, fim: ate + 'T23:59:59' } : undefined,
+        }),
       });
       if (!response.ok) {
         alert('Erro ao obter dados do relatório.');
@@ -501,21 +526,21 @@ export default function CrmDashboard({
         contentHtml = `
           <div class="report-header">
             <h2>Relatório de Gestão Comercial & Financeira</h2>
-            <p class="subtitle">Dra. Musa Estética de Elite | Concierge & Skin AI</p>
+            <p class="subtitle">${report.clinica}</p>
             <p class="period">Período: ${inicioStr} a ${fimStr}</p>
           </div>
           <div class="metrics-grid">
             <div class="metric-card">
-              <span class="label">Faturamento Total</span>
+              <span class="label">Faturamento Total <em style="font-weight:400;color:#5A6478;">(${data.faturamentoFonte})</em></span>
               <span class="value font-serif">R$ ${data.faturamentoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
             </div>
             <div class="metric-card">
-              <span class="label">Ticket Médio por Sessão</span>
-              <span class="value font-serif">R$ ${data.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              <span class="label">Ticket Médio por Paciente</span>
+              <span class="value font-serif">${ouEntao(data.ticketMedio, (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), 'nenhuma paciente atendida no período')}</span>
             </div>
             <div class="metric-card">
-              <span class="label">Conversão Geral</span>
-              <span class="value font-serif">${data.taxaConversao.toFixed(1)}%</span>
+              <span class="label">Conversão Geral <em style="font-weight:400;color:#5A6478;">(venda fechada ÷ leads do período)</em></span>
+              <span class="value font-serif">${ouEntao(data.taxaConversao, (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%', 'nenhum lead no período')}</span>
             </div>
             <div class="metric-card">
               <span class="label">Pacientes Ativos</span>
@@ -523,20 +548,25 @@ export default function CrmDashboard({
             </div>
           </div>
           <div class="section-title">Top 3 Procedimentos por Faturamento</div>
+          <p class="nota">Este quadro sai das <strong>sessões lançadas</strong>, e não do razão — o
+          Financeiro não sabe qual procedimento gerou cada receita. Por isso a soma das três linhas
+          não fecha com o Faturamento Total acima.</p>
           <table>
             <thead>
               <tr>
                 <th>Procedimento / Tipo de Sessão</th>
-                <th style="text-align: right;">Total Faturado</th>
+                <th style="text-align: right;">Sessões</th>
+                <th style="text-align: right;">Total das Sessões</th>
               </tr>
             </thead>
             <tbody>
-              ${data.top3ProcedimentosPorFaturamento.map((p: any) => `
+              ${data.top3ProcedimentosPorFaturamento.length ? data.top3ProcedimentosPorFaturamento.map((p: any) => `
                 <tr>
                   <td style="font-weight: bold;">${p.nome}</td>
+                  <td style="text-align: right;">${p.sessoes}</td>
                   <td style="text-align: right; color: #10B981; font-weight: bold;">R$ ${p.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                 </tr>
-              `).join('')}
+              `).join('') : '<tr><td colspan="3" style="color:#5A6478;">Nenhuma sessão realizada no período.</td></tr>'}
             </tbody>
           </table>
         `;
@@ -544,13 +574,14 @@ export default function CrmDashboard({
         contentHtml = `
           <div class="report-header">
             <h2>Relatório de Leads & Funil de Atração</h2>
-            <p class="subtitle">Dra. Musa Estética de Elite | Concierge & Skin AI</p>
+            <p class="subtitle">${report.clinica}</p>
             <p class="period">Período: ${inicioStr} a ${fimStr}</p>
           </div>
           <div class="metrics-grid">
             <div class="metric-card">
-              <span class="label">Tempo Médio de Conversão</span>
-              <span class="value font-serif">${data.tempoMedioConversaoEmDias} dias</span>
+              <span class="label">Tempo Mediano até a Venda Fechada</span>
+              <span class="value font-serif">${ouEntao(data.tempoMedioConversaoEmDias, (n: number) => n.toLocaleString('pt-BR') + ' dias', 'ainda não há venda fechada medida no período')}</span>
+              ${data.tempoConversaoAmostra ? `<span class="nota">medido sobre ${data.tempoConversaoAmostra} lead(s) fechado(s)</span>` : ''}
             </div>
           </div>
           <div class="section-title">Distribuição de Leads por Estágio</div>
@@ -576,7 +607,7 @@ export default function CrmDashboard({
               <tr>
                 <th>Canal / Origem</th>
                 <th style="text-align: right;">Total Leads</th>
-                <th style="text-align: right;">Convertidos</th>
+                <th style="text-align: right;">Vendas fechadas</th>
                 <th style="text-align: right;">Taxa Conversão</th>
               </tr>
             </thead>
@@ -588,7 +619,7 @@ export default function CrmDashboard({
                     <td style="font-weight: bold;">${c.nome}</td>
                     <td style="text-align: right;">${c.leads}</td>
                     <td style="text-align: right;">${c.convertidos}</td>
-                    <td style="text-align: right; color: #b45309; font-weight: bold;">${tx.toFixed(1)}%</td>
+                    <td style="text-align: right; color: #b45309; font-weight: bold;">${tx.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
                   </tr>
                 `;
               }).join('')}
@@ -599,13 +630,14 @@ export default function CrmDashboard({
         contentHtml = `
           <div class="report-header">
             <h2>Relatório de Análise de Fichas & Retorno</h2>
-            <p class="subtitle">Dra. Musa Estética de Elite | Concierge & Skin AI</p>
+            <p class="subtitle">${report.clinica}</p>
             <p class="period">Período: ${inicioStr} a ${fimStr}</p>
           </div>
           <div class="metrics-grid">
             <div class="metric-card">
-              <span class="label">Taxa Geral de Retorno</span>
-              <span class="value font-serif">${data.taxaRetorno}%</span>
+              <span class="label">Taxa Geral de Retorno <em style="font-weight:400;color:#5A6478;">(pacientes com mais de um plano)</em></span>
+              <span class="value font-serif">${ouEntao(data.taxaRetorno, (n: number) => n.toLocaleString('pt-BR') + '%', 'nenhuma paciente com plano de tratamento')}</span>
+              ${data.retornoDetalhe && data.retornoDetalhe.total ? `<span class="nota">${data.retornoDetalhe.comMaisDeUm} de ${data.retornoDetalhe.total} pacientes</span>` : ''}
             </div>
           </div>
           <div class="section-title">Top 10 Pacientes com Maior Investimento no Período</div>
@@ -644,49 +676,34 @@ export default function CrmDashboard({
               `).join('')}
             </tbody>
           </table>
-          <div class="section-title">Aniversariantes do Mês</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Nome da Paciente</th>
-                <th>WhatsApp</th>
-                <th style="text-align: right;">Data do Aniversário</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${data.alertasAniversario.map((a: any) => `
-                <tr>
-                  <td>${a.nome}</td>
-                  <td style="font-family: monospace;">${a.telefone}</td>
-                  <td style="text-align: right; font-weight: bold; color: #d97706;">${a.dataAniversario}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
         `;
       } else if (report.aba === 'ATENDIMENTO') {
         contentHtml = `
           <div class="report-header">
             <h2>Relatório de Conversas WhatsApp & SAC</h2>
-            <p class="subtitle">Dra. Musa Estética de Elite | Concierge & Skin AI</p>
+            <p class="subtitle">${report.clinica}</p>
             <p class="period">Período: ${inicioStr} a ${fimStr}</p>
           </div>
           <div class="metrics-grid">
             <div class="metric-card">
-              <span class="label">Tempo Médio de Resposta</span>
-              <span class="value font-serif">${data.tempoMedioResposta}</span>
+              <span class="label">Tempo Mediano de Resposta</span>
+              <span class="value font-serif">${ouEntao(data.tempoMedioResposta, (n: number) => n.toLocaleString('pt-BR') + ' min', 'nenhuma mensagem respondida no período')}</span>
+              ${data.respostaAmostra ? `<span class="nota">medido sobre ${data.respostaAmostra} resposta(s)</span>` : ''}
             </div>
             <div class="metric-card">
-              <span class="label">Total de Mensagens Trocadas</span>
+              <span class="label">Mensagens Trocadas</span>
               <span class="value font-serif">${data.totalMensagens}</span>
+              <span class="nota">${data.recebidas} recebida(s) · ${data.enviadas} enviada(s)</span>
             </div>
             <div class="metric-card">
               <span class="label">Horário de Pico</span>
-              <span class="value font-serif">${data.horarioPico}</span>
+              <span class="value font-serif">${data.horarioPico || semDado('nenhuma mensagem no período')}</span>
+              ${data.horarioPicoMensagens ? `<span class="nota">${data.horarioPicoMensagens} mensagem(ns) nessa faixa</span>` : ''}
             </div>
             <div class="metric-card">
-              <span class="label">Satisfação Média (CSAT)</span>
-              <span class="value font-serif">${data.satisfacaoMedia}</span>
+              <span class="label">Conversas sem Resposta</span>
+              <span class="value font-serif" style="${data.conversasSemResposta ? 'color:#b45309;' : ''}">${data.conversasSemResposta}</span>
+              <span class="nota">pacientes que escreveram e não foram respondidas</span>
             </div>
           </div>
         `;
@@ -696,18 +713,18 @@ export default function CrmDashboard({
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Relatório Dra. Musa Estética de Elite - ${report.aba}</title>
+          <title>Relatório ${report.clinica} - ${report.aba}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@400;600&display=swap');
             body {
-              font-family: 'Plus Jakarta Sans', sans-serif;
-              color: #4A3C31;
+              font-family: Inter, Georgia, serif;
+              color: #141E33;
               background-color: #ffffff;
               margin: 40px;
               padding: 0;
             }
             .font-serif {
-              font-family: 'Playfair Display', serif;
+              font-family: Poppins, Georgia, serif;
             }
             .report-header {
               text-align: center;
@@ -716,9 +733,9 @@ export default function CrmDashboard({
               margin-bottom: 30px;
             }
             .report-header h2 {
-              font-family: 'Playfair Display', serif;
+              font-family: Poppins, Georgia, serif;
               font-size: 24px;
-              color: #4A3C31;
+              color: #141E33;
               margin: 0 0 5px 0;
             }
             .report-header .subtitle {
@@ -731,18 +748,18 @@ export default function CrmDashboard({
             }
             .report-header .period {
               font-size: 11px;
-              color: #7A695E;
+              color: #5A6478;
               margin: 0;
             }
             .metrics-grid {
               display: grid;
-              grid-template-cols: repeat(auto-fit, minmax(200px, 1fr));
+              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
               gap: 20px;
               margin-bottom: 40px;
             }
             .metric-card {
-              background: #FAF7F5;
-              border: 1px solid #E8DED3;
+              background: #F6F8FB;
+              border: 1px solid #DCE6F0;
               border-radius: 12px;
               padding: 18px;
               text-align: center;
@@ -750,20 +767,31 @@ export default function CrmDashboard({
             .metric-card .label {
               font-size: 10px;
               text-transform: uppercase;
-              color: #7A695E;
+              color: #5A6478;
               letter-spacing: 1px;
               display: block;
               margin-bottom: 6px;
             }
             .metric-card .value {
               font-size: 20px;
-              color: #4A3C31;
+              color: #141E33;
               font-weight: bold;
             }
+            /* A linha pequena que diz sobre quantos casos o numero foi medido,
+               ou de onde ele vem. Ela e' o que impede um numero de ser lido
+               como mais firme do que e'. */
+            .nota {
+              display: block;
+              font-size: 10px;
+              color: #5A6478;
+              margin-top: 6px;
+              line-height: 1.5;
+            }
+            p.nota { margin: -8px 0 12px; }
             .section-title {
-              font-family: 'Playfair Display', serif;
+              font-family: Poppins, Georgia, serif;
               font-size: 16px;
-              border-bottom: 1px solid #E8DED3;
+              border-bottom: 1px solid #DCE6F0;
               padding-bottom: 8px;
               margin: 30px 0 15px 0;
               font-weight: bold;
@@ -777,38 +805,38 @@ export default function CrmDashboard({
               padding: 10px 12px;
               text-align: left;
               font-size: 12px;
-              border-bottom: 1px solid #FAF7F5;
+              border-bottom: 1px solid #EDF2F8;
             }
             th {
-              background-color: #FAF7F5;
-              color: #7A695E;
+              background-color: #F6F8FB;
+              color: #5A6478;
               text-transform: uppercase;
               font-size: 10px;
               letter-spacing: 1px;
             }
             tr:nth-child(even) {
-              background-color: #FCFAF8;
+              background-color: #F6F8FB;
             }
             .footer {
               text-align: center;
               font-size: 9px;
-              color: #7A695E;
+              color: #5A6478;
               margin-top: 50px;
-              border-top: 1px dashed #E8DED3;
+              border-top: 1px dashed #DCE6F0;
               padding-top: 20px;
               opacity: 0.7;
             }
             @media print {
               body { margin: 20px; }
-              .metric-card { background: #FAF7F5 !important; -webkit-print-color-adjust: exact; }
-              th { background: #FAF7F5 !important; -webkit-print-color-adjust: exact; }
+              .metric-card { background: #F6F8FB !important; -webkit-print-color-adjust: exact; }
+              th { background: #F6F8FB !important; -webkit-print-color-adjust: exact; }
             }
           </style>
         </head>
         <body>
           ${contentHtml}
           <div class="footer">
-            <p>Relatório gerado automaticamente pelo CRM Dra. Musa Estética de Elite em ${new Date().toLocaleString('pt-BR')}. Documento confidencial.</p>
+            <p>Relatório gerado pelo Musa CRM — ${report.clinica} — em ${new Date().toLocaleString('pt-BR')}. Documento confidencial.</p>
           </div>
           <script>
             window.onload = function() {
@@ -899,15 +927,16 @@ export default function CrmDashboard({
                   <h3 className="text-xs font-serif font-bold text-brand-brown uppercase tracking-wider">
                     {relatorioDaRota.titulo}
                   </h3>
-                  {/* A frase diz o periodo do PDF de proposito (M5.8). A Visao Geral
-                      abaixo tem filtro proprio -- 7 dias, 30 dias, periodo -- e o
-                      relatorio NAO o acompanha: ele consolida sempre o mes. Sem esta
-                      linha, a mesma tela mostra dois faturamentos diferentes e nenhum
-                      dos dois se explica. Fazer o PDF seguir o filtro esta na fila
-                      como M5.10, junto com a fonte dele (hoje ele soma
-                      `treatment_sessions`, e nao o razao do Financeiro). */}
+                  {/* A frase continua dizendo o periodo do PDF (M5.8), mas agora
+                      ela diz OUTRA coisa: desde a M6.4 o relatorio segue o filtro
+                      da tela e le o faturamento do mesmo razao que o Financeiro.
+                      Nas telas sem filtro proprio (Funil, Pacientes, Atendimento)
+                      ele continua consolidando o mes -- e e isso que a segunda
+                      metade da frase diz. */}
                   <p className="text-[10px] text-brand-brown/65">
-                    O PDF consolida o <strong>mês atual</strong>, independentemente do filtro de período desta tela.
+                    {relatorioDaRota.aba === 'dashboard'
+                      ? <>O PDF segue o <strong>filtro de período</strong> desta tela e usa o mesmo faturamento do Financeiro.</>
+                      : <>Esta tela não tem filtro de período; o PDF consolida o <strong>mês atual</strong>.</>}
                   </p>
                 </div>
                 <button

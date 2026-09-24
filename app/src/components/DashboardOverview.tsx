@@ -187,6 +187,31 @@ export default function DashboardOverview() {
     [filterRange, startDate, endDate]
   );
 
+  /* ================= O FILTRO DESTA TELA VAI PARA A URL (M6.4)
+   *
+   * O botão que gera o PDF vive no `CrmDashboard`, que é o pai desta tela e não
+   * enxerga este estado. Até aqui o PDF consolidava sempre o mês, e a faixa da
+   * tela avisava isso — duas respostas para a mesma pergunta, e a impressa era
+   * a que ia para a reunião.
+   *
+   * A URL é o lugar onde os dois se encontram sem levantar o estado para o pai
+   * nem criar um contexto só para duas datas. De quebra, uma Visão Geral
+   * filtrada vira um link que se manda para alguém.
+   *
+   * `replace` e não `push`: cada clique no filtro viraria uma entrada no
+   * histórico, e o botão "voltar" do navegador andaria filtro a filtro em vez
+   * de sair da tela. */
+  useEffect(() => {
+    if (!janela.from || !janela.to) return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('de') === janela.from && url.searchParams.get('ate') === janela.to) return;
+      url.searchParams.set('de', janela.from);
+      url.searchParams.set('ate', janela.to);
+      window.history.replaceState(null, '', url.toString());
+    } catch { /* sem URL utilizável, o PDF segue consolidando o mês */ }
+  }, [janela]);
+
   useEffect(() => {
     if (!janela.from || !janela.to) return;
     let vivo = true;
