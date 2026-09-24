@@ -32,8 +32,18 @@ interface ItemFicha {
   parcial: number;
 }
 
-export default function FichaTecnicaPanel(p: { produtos: Produto[]; servicos: Servico[] }) {
-  const [servicoId, setServicoId] = useState("");
+/* `servicoFixo` (M6.3): quando este painel e' aberto DE DENTRO da Precificacao,
+   o servico ja esta escolhido -- e mostrar o seletor ali convidaria a pessoa a
+   trocar de servico dentro de um modal que fala de outro. `aoMudar` avisa quem
+   abriu, para o custo de insumo da calculadora ser relido depois da edicao:
+   sem isso, a tela continuaria mostrando a soma de antes da mudanca. */
+export default function FichaTecnicaPanel(p: {
+  produtos: Produto[];
+  servicos: Servico[];
+  servicoFixo?: string;
+  aoMudar?: () => void;
+}) {
+  const [servicoId, setServicoId] = useState(p.servicoFixo || "");
   const [itens, setItens] = useState<ItemFicha[]>([]);
   const [origem, setOrigem] = useState<"FICHA_TECNICA" | "MANUAL">("MANUAL");
   const [custo, setCusto] = useState(0);
@@ -71,6 +81,7 @@ export default function FichaTecnicaPanel(p: { produtos: Produto[]; servicos: Se
       setItens(lista);
       setCusto(d.valor || 0);
       setOrigem(lista.length ? "FICHA_TECNICA" : "MANUAL");
+      if (p.aoMudar) p.aoMudar();
       setErro("");
       setRecado(
         lista.length
@@ -103,15 +114,17 @@ export default function FichaTecnicaPanel(p: { produtos: Produto[]; servicos: Se
   return (
     <div className="space-y-4">
       <div className="bg-white border border-brand-gold/15 rounded-2xl p-4 space-y-3">
-        <div>
-          <label className={rotulo}>Serviço do catálogo</label>
-          <select className={campo} value={servicoId} onChange={(e) => setServicoId(e.target.value)}>
-            <option value="">Escolha um serviço…</option>
-            {p.servicos.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </div>
+        {!p.servicoFixo && (
+          <div>
+            <label className={rotulo}>Serviço do catálogo</label>
+            <select className={campo} value={servicoId} onChange={(e) => setServicoId(e.target.value)}>
+              <option value="">Escolha um serviço…</option>
+              {p.servicos.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {erro && (
           <div className="rounded-xl px-4 py-3 text-xs border bg-red-50 border-red-200 text-red-700 flex items-start gap-2">

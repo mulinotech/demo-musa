@@ -18,7 +18,28 @@ const express = require('express');
 const router = express.Router();
 const escopo = require('../db/escopo');
 const agenda = require('../services/agenda-de-sessoes');
+const naAgenda = require('../services/sessoes-na-agenda');
+const ag = require('../services/agenda');
 const logs = require('../services/logs');
+
+const novoId = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
+
+/** Os compromissos do profissional que podem colidir com esta janela.
+ *  Um dia a mais dos dois lados para não perder o que atravessa a meia-noite --
+ *  a mesma leitura de `routes/appointments.js`. */
+async function agendaDoProfissional(db, professionalId, inicio, fim) {
+  const [r] = await db.q(
+    `SELECT id, professional_id, title, status,
+            DATE_FORMAT(starts_at, '%Y-%m-%d %H:%i:%s') AS starts_at,
+            DATE_FORMAT(ends_at, '%Y-%m-%d %H:%i:%s') AS ends_at
+       FROM appointments
+      WHERE clinica_id = :clinica AND professional_id = ?
+        AND status <> 'CANCELADO'
+        AND ends_at > DATE_SUB(?, INTERVAL 1 DAY)
+        AND starts_at < DATE_ADD(?, INTERVAL 1 DAY)`,
+    [professionalId, inicio, fim]);
+  return r;
+}
 
 router.get('/api/treatment-plans', async function(req, res) {
   const db = escopo(req);
@@ -223,6 +244,144 @@ router.post('/api/treatment-plans/:id/programar', async function (req, res) {
   } catch (error) {
     console.error('[planos]', error && error.message);
     res.status(500).json({ error: 'Erro ao programar as datas do plano.' });
+  }
+});
+
+
+/** LEVAR AS SESSÕES PROGRAMADAS PARA A AGENDA (M6.3).
+ *
+ *  ================================ POR QUE PROGRAMAR NÃO ERA AGENDAR
+ *
+ *  Desde a M5.12 o plano calcula as datas das dez sessões. Elas ficavam na
+ *  ficha da paciente — e a agenda da clínica não sabia de nenhuma. A recepção
+ *  remarcava as dez à mão lendo da outra tela, ou não marcava, e o horário
+ *  aparecia livre num dia que já tinha dona.
+ *
+ *  Uma data não é um compromisso: compromisso tem HORA e PROFISSIONAL, e nada
+ *  disso o ritmo do tratamento sabe. Os dois são perguntados uma vez e valem
+ *  para a série — que é o que a clínica faz de verdade ao vender um protocolo
+ *  ("toda terça às 9h, com a Carla").
+ *
+ *  ============================================ CONFLITO É DITO, NUNCA RESOLVIDO
+ *
+ *  Quando o horário já está ocupado, aquela sessão **fica sem compromisso** e a
+ *  resposta diz a data e o nome do que já estava lá. Empurrar para o dia
+ *  seguinte, ou para a hora seguinte, seria o sistema remarcando a paciente por
+ *  conta própria — e a clínica talvez preferisse outro profissional, outra
+ *  hora, ou mover a própria sessão. O que não pode é escolher e não contar.
+ *
+ *  As demais entram: uma sessão conflitada não cancela a série inteira. Cada
+ *  compromisso é uma gravação independente, e é por isso que **não** há uma
+ *  transação em volta de todas: recusar as dez porque a sétima bateu devolveria
+ *  a recepção ao trabalho manual justamente no caso em que ela mais ajuda.
+ *
+ *  ===================================== O VÍNCULO FECHA O CICLO QUE JÁ EXISTIA
+ *
+ *  `treatment_sessions.appointment_id` já era lido em dois lugares: concluir o
+ *  atendimento marca a sessão como REALIZADA, e reabrir a devolve para AGENDADA.
+ *  O que faltava era alguém ESCREVER esse vínculo fora da remarcação. Com ele,
+ *  a sessão da ficha e o horário da agenda passam a ser a mesma coisa vista de
+ *  dois lugares — em vez de dois registros que ninguém garante iguais. */
+router.post('/api/treatment-plans/:id/agendar', async function (req, res) {
+  const db = escopo(req);
+  const { id } = req.params;
+  const b = req.body || {};
+
+  try {
+    const [plano] = await db.q(
+      'SELECT id, client_id, title FROM treatment_plans' +
+      ' WHERE clinica_id = :clinica AND id = ?', [id]);
+    if (!plano[0]) return res.status(404).json({ error: 'Plano nao encontrado.' });
+
+    /* O PROFISSIONAL É CONFERIDO COM O FILTRO DA CLÍNICA. Sem isso, um id da
+       clínica vizinha criaria compromissos DESTA clínica na agenda de gente de
+       LÁ -- linha com o `clinica_id` certo e o conteúdo errado, que nenhum
+       filtro de leitura acusa. É a mesma conferência de `appointments.js`. */
+    const profissionalId = String(b.professionalId || '');
+    const [prof] = await db.q(
+      'SELECT id, name FROM users WHERE clinica_id = :clinica AND id = ?', [profissionalId]);
+    if (!prof[0]) return res.status(404).json({ error: 'Profissional nao encontrado.' });
+
+    /* A DURAÇÃO vem do catálogo quando há serviço escolhido -- é a mesma coluna
+       que a M5.14 passou a manter atual (`duration_min`). Sem serviço, vale o
+       que a tela informou. Chutar 60 minutos em silêncio marcaria a agenda
+       errada para um procedimento de duas horas. */
+    let duracao = Number(b.duracaoMin) || 0;
+    let catalogId = b.catalogId ? String(b.catalogId) : null;
+    if (catalogId) {
+      const [c] = await db.q(
+        'SELECT id, name, duration_min FROM treatment_catalog' +
+        ' WHERE clinica_id = :clinica AND id = ?', [catalogId]);
+      if (!c[0]) return res.status(404).json({ error: 'Servico nao encontrado no catalogo.' });
+      if (!duracao) duracao = Number(c[0].duration_min) || 0;
+      if (!duracao) {
+        return res.status(400).json({
+          error: 'O servico "' + c[0].name + '" nao tem duracao entendida no cadastro. ' +
+                 'Corrija a duracao dele em Cadastros, ou informe os minutos aqui.'
+        });
+      }
+    }
+
+    const [sessoes] = await db.q(
+      'SELECT id, session_number AS n, status, appointment_id AS appointmentId,' +
+      " DATE_FORMAT(session_date, '%Y-%m-%d') AS sessionDate" +
+      ' FROM treatment_sessions WHERE clinica_id = :clinica AND plan_id = ?' +
+      ' ORDER BY session_number', [id]);
+
+    /* HOJE vem do relógio deste servidor, e não de `CURDATE()`: a camada recusa
+       consulta sem `:clinica`, e com razão -- abrir exceção para ler uma data
+       abriria a exceção para tudo. É o mesmo relógio que já escreve `starts_at`
+       nas outras rotas da agenda, então as duas pontas concordam. */
+    const agora = new Date();
+    const hoje = agora.getFullYear() + '-' +
+      String(agora.getMonth() + 1).padStart(2, '0') + '-' +
+      String(agora.getDate()).padStart(2, '0');
+    const plano_ = naAgenda.horariosDasSessoes({
+      sessoes: sessoes, hora: b.hora, duracaoMin: duracao, hoje: hoje });
+    if (plano_.erro) return res.status(400).json({ error: plano_.erro });
+
+    const criados = [], conflitos = [];
+    for (const m of plano_.marcar) {
+      const existentes = await agendaDoProfissional(db, profissionalId, m.inicio, m.fim);
+      const titulo = plano[0].title + ' \u2014 sessao ' + m.n;
+      const problema = ag.validar(
+        { professionalId: profissionalId, startsAt: m.inicio, endsAt: m.fim }, existentes);
+      if (problema) {
+        conflitos.push({ n: m.n, dia: m.dia, porque: problema.error });
+        continue;
+      }
+      const apId = novoId('ap');
+      await db.transacao(async function (tx) {
+        await tx.q(
+          `INSERT INTO appointments
+            (id, client_id, professional_id, catalog_id, title, starts_at, ends_at, kind,
+             price, notes, created_by, clinica_id)
+           VALUES (?,?,?,?,?,?,?, 'ATENDIMENTO', NULL, ?, ?, :clinica)`,
+          [apId, plano[0].client_id, profissionalId, catalogId, titulo, m.inicio, m.fim,
+           'Sessao ' + m.n + ' do plano "' + plano[0].title + '".',
+           (req.usuario && req.usuario.sub) || null]);
+        await tx.q(
+          "UPDATE treatment_sessions SET appointment_id = ?, status = 'AGENDADA'" +
+          ' WHERE clinica_id = :clinica AND id = ?', [apId, m.id]);
+      });
+      criados.push({ n: m.n, id: apId, inicio: m.inicio });
+    }
+
+    await logs.registrar(db, 'AGENDA',
+      'Plano "' + plano[0].title + '": ' + criados.length + ' sessao(oes) levada(s) para a ' +
+      'agenda de ' + prof[0].name + ' as ' + String(b.hora) + '.' +
+      (conflitos.length ? ' ' + conflitos.length + ' nao entrou(entraram) por conflito de horario.' : ''));
+
+    res.json({
+      criados: criados.length,
+      conflitos: conflitos,
+      pulados: plano_.pular,
+      profissional: prof[0].name,
+      duracaoMin: duracao
+    });
+  } catch (error) {
+    console.error('[planos]', error && error.message);
+    res.status(500).json({ error: 'Erro ao levar as sessoes para a agenda.' });
   }
 });
 

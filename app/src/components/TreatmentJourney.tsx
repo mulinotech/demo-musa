@@ -134,6 +134,72 @@ export default function TreatmentJourney({
   const [progResposta, setProgResposta] = useState<{ ok: boolean; texto: string } | null>(null);
   const [progPrecisaRecarregar, setProgPrecisaRecarregar] = useState(false);
 
+  /* ================== LEVAR AS SESSÕES PARA A AGENDA (M6.3)
+   *
+   * Programar é escrever a data na ficha; agendar é ocupar o horário da
+   * clínica. Até aqui só existia o primeiro, e a recepção remarcava as dez
+   * sessões à mão lendo da outra tela.
+   *
+   * Hora e profissional são perguntados UMA vez e valem para a série -- que é
+   * o que a clínica faz de verdade ao vender um protocolo de dez sessões. */
+  const [profissionais, setProfissionais] = useState<{ id: string; name: string; funcao?: string }[]>([]);
+  const [ageHora, setAgeHora] = useState('09:00');
+  const [ageProf, setAgeProf] = useState('');
+  const [ageDuracao, setAgeDuracao] = useState('60');
+  const [ageOcupado, setAgeOcupado] = useState(false);
+  const [ageResposta, setAgeResposta] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  useEffect(() => {
+    if (!programando || profissionais.length) return;
+    fetch('/api/profissionais')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => {
+        const lista = Array.isArray(d) ? d : [];
+        setProfissionais(lista);
+        if (lista.length === 1) setAgeProf(lista[0].id);
+      })
+      .catch(() => setProfissionais([]));
+  }, [programando, profissionais.length]);
+
+  const levarParaAgenda = async () => {
+    if (!programando) return;
+    if (!ageProf) return setAgeResposta({ ok: false, texto: 'Escolha o profissional que vai atender.' });
+    setAgeOcupado(true);
+    setAgeResposta(null);
+    try {
+      const r = await fetch(`/api/treatment-plans/${programando.id}/agendar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hora: ageHora,
+          professionalId: ageProf,
+          duracaoMin: Number(String(ageDuracao).replace(',', '.')) || undefined
+        })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setAgeResposta({ ok: false, texto: d.error || 'Nao foi possivel levar para a agenda.' }); return; }
+
+      /* A resposta conta TUDO: quantas entraram, quais bateram com horario
+         ocupado, e quais foram puladas e por que. "7 de 10 agendadas" sem dizer
+         quais e' a mesma coisa que nao dizer nada. */
+      const partes = [d.criados + (d.criados === 1 ? ' sessao entrou na agenda' : ' sessoes entraram na agenda')];
+      if (d.conflitos && d.conflitos.length) {
+        partes.push(d.conflitos.length + (d.conflitos.length === 1 ? ' nao entrou' : ' nao entraram') +
+          ' porque o horario ja estava ocupado: ' +
+          d.conflitos.map((c: { n: number; dia: string }) => 'sessao ' + c.n + ' em ' + c.dia).join(', '));
+      }
+      if (d.pulados && d.pulados.length) {
+        partes.push(d.pulados.map((x: { n: number; porque: string }) => 'sessao ' + x.n + ' ' + x.porque).join('; '));
+      }
+      setAgeResposta({ ok: d.criados > 0, texto: partes.join('. ') + '.' });
+      setProgPrecisaRecarregar(true);
+    } catch {
+      setAgeResposta({ ok: false, texto: 'Falha de rede ao levar as sessoes para a agenda.' });
+    } finally {
+      setAgeOcupado(false);
+    }
+  };
+
   const fecharProgramacao = async () => {
     const recarregar = progPrecisaRecarregar;
     const id = programando?.id;
@@ -144,6 +210,7 @@ export default function TreatmentJourney({
 
   const abrirProgramacao = (plan: TreatmentPlan) => {
     setProgramando(plan);
+    setAgeResposta(null);
     setProgInicio(plan.startDate ? String(plan.startDate).split('T')[0]
       : new Date().toISOString().split('T')[0]);
     const conhecida = ['Semanal', 'Quinzenal', 'Mensal'].includes(plan.periodicity || '');
@@ -831,13 +898,79 @@ export default function TreatmentJourney({
               </p>
             )}
 
-            <div className="flex justify-end space-x-3 pt-1">
+            {/* ============================ E AGORA, PARA A AGENDA (M6.3)
+                Separado por uma linha de propósito: programar a data e ocupar o
+                horário da clínica são duas decisões, e a segunda precisa de
+                hora e profissional que a primeira não sabe. */}
+            <div className="pt-3 border-t border-brand-gold/20 space-y-3">
+              <div>
+                <p className="text-xxs font-bold text-brand-brown uppercase">Levar para a agenda</p>
+                <p className="text-[10px] text-brand-brown/60 leading-relaxed mt-0.5">
+                  Cria o horário de cada sessão programada. Sessão já realizada, data que já
+                  passou e sessão que já está na agenda ficam de fora — e a tela diz quais.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Hora</label>
+                  <input
+                    type="time"
+                    value={ageHora}
+                    onChange={(e) => setAgeHora(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Duração (min)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="600"
+                    value={ageDuracao}
+                    onChange={(e) => setAgeDuracao(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xxs font-bold text-brand-brown uppercase mb-1">Profissional</label>
+                  <select
+                    value={ageProf}
+                    onChange={(e) => setAgeProf(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold"
+                  >
+                    <option value="">Escolha…</option>
+                    {profissionais.map((pr) => (
+                      <option key={pr.id} value={pr.id}>{pr.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {ageResposta && (
+                <p className={`text-xxs font-medium leading-relaxed py-2 px-3 rounded-lg border ${
+                  ageResposta.ok
+                    ? 'text-emerald-700 bg-emerald-50 border-emerald-150'
+                    : 'text-amber-800 bg-amber-50 border-amber-200'
+                }`}>
+                  {ageResposta.texto}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-3 pt-1">
               <button
                 type="button"
                 onClick={fecharProgramacao}
                 className="px-4 py-2 text-xs font-medium text-brand-brown/70"
               >
                 {progResposta && progResposta.ok ? 'Fechar' : 'Cancelar'}
+              </button>
+              <button
+                onClick={levarParaAgenda}
+                disabled={ageOcupado}
+                className="bg-white border border-brand-gold/40 text-brand-brown px-4 py-2 rounded-xl text-xs font-semibold hover:bg-brand-beige disabled:opacity-60 cursor-pointer"
+              >
+                {ageOcupado ? 'Levando...' : 'Levar para a agenda'}
               </button>
               <button
                 onClick={programar}

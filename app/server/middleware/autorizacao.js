@@ -47,6 +47,18 @@ const REGRAS_DE_PAPEL = [
   { metodo: 'PUT',    prefixo: '/api/appointments', papeis: ['admin', 'gerente', 'profissional'] },
   { metodo: 'DELETE', prefixo: '/api/appointments', papeis: ['admin', 'gerente', 'profissional'] },
 
+  /* LEVAR AS SESSOES DO PLANO PARA A AGENDA (M6.3) cria compromissos -- e criar
+   * compromisso e' das quatro linhas de `/api/appointments` acima, que o
+   * vendedor nao alcanca desde a M5.2. Sem esta linha, a rota seria a porta dos
+   * fundos daquela decisao: o mesmo vendedor que nao pode marcar UM horario
+   * marcaria DEZ de uma vez por dentro do plano.
+   *
+   * Usa `padrao` porque a rota e' filha de `/api/treatment-plans`: com prefixo
+   * sozinho, a regra pegaria tambem criar e editar plano, que e' trabalho
+   * comercial. Mesma armadilha de rota aninhada das regras de /api/clients. */
+  { metodo: 'POST', padrao: /^\/api\/treatment-plans\/[^/]+\/agendar$/,
+    prefixo: '/api/treatment-plans', papeis: ['admin', 'gerente', 'profissional'] },
+
   { metodo: '*',      prefixo: '/api/users',             papeis: ['admin'] },
 
   /* O TIMBRE DA CLINICA (M5.6, 17/09): quem EDITA e a gestao; quem LE e todo

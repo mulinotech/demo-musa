@@ -20,6 +20,7 @@ const escopo = require('../db/escopo');
 const { calcularPreco, compararComPraticado } = require('../services/precificacao');
 const est = require('../services/estoque');
 const logs = require('../services/logs');
+const custos = require('../services/custos-fixos');
 
 const novoId = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -92,9 +93,18 @@ async function lerParametros(db) {
   return PADRAO;
 }
 
+/** A soma que vira CUSTO POR HORA -- e que por isso entra em todo preço.
+ *
+ *  Só `natureza = 'FIXO'` (M6.3). O que é recorrente POR ATENDIMENTO já entra
+ *  no preço pela ficha técnica e pelos percentuais da calculadora; somá-lo aqui
+ *  o contaria duas vezes, e o preço sairia alto sem nada na tela acusar.
+ *
+ *  A regra de qual natureza soma vive em `services/custos-fixos.js`, com teste.
+ *  O filtro é escrito no SQL, e não em JavaScript depois de ler tudo, porque
+ *  esta função é chamada por três rotas e uma delas devolve só o total. */
 async function somaCustosFixos(db) {
   const [r] = await db.q('SELECT COALESCE(SUM(monthly_amount), 0) AS total FROM fixed_costs ' +
-    'WHERE clinica_id = :clinica AND active = 1');
+    "WHERE clinica_id = :clinica AND active = 1 AND natureza = 'FIXO'");
   return Number(r[0].total);
 }
 
@@ -177,6 +187,8 @@ router.get('/api/fixed-costs', async function (req, res) {
   try {
     const [linhas] = await db.q('SELECT * FROM fixed_costs WHERE clinica_id = :clinica ' +
       'ORDER BY active DESC, monthly_amount DESC');
+    const separado = custos.separar(linhas.map((l) => ({
+      monthlyAmount: Number(l.monthly_amount), active: !!l.active, natureza: l.natureza })));
     const total = await somaCustosFixos(db);
     const p = await lerParametros(db);
     const horas = Number(p.monthly_working_hours);
@@ -187,13 +199,20 @@ router.get('/api/fixed-costs', async function (req, res) {
           name: l.name,
           monthlyAmount: Number(l.monthly_amount),
           category: l.category,
+          natureza: custos.natureza(l.natureza),
           active: !!l.active,
           createdAt: l.created_at
         };
       }),
       totalMensal: total,
+      /* O OUTRO TOTAL VAI JUNTO, e não some da tela (M6.3): quem lançou aqueles
+         custos precisa continuar vendo que eles existem e quanto somam -- o que
+         muda é que eles não dividem mais pelas horas. Esconder o número faria
+         parecer que a reclassificação apagou o custo. */
+      totalRecorrente: separado.totalVariavel,
       horasProdutivas: horas,
-      custoPorHora: horas > 0 ? Math.round((total / horas) * 100) / 100 : null
+      custoPorHora: custos.custoPorHora(total, horas),
+      naturezas: custos.NATUREZAS
     });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao listar os custos fixos.' });
@@ -211,12 +230,17 @@ router.post('/api/fixed-costs', async function (req, res) {
   }
   try {
     const id = novoId('fc');
+    const nat = custos.natureza(b.natureza);
     await db.q(
-      'INSERT INTO fixed_costs (id, name, monthly_amount, category, clinica_id) VALUES (?, ?, ?, ?, :clinica)',
-      [id, nome, valor, b.category ? String(b.category).trim() : null]
+      'INSERT INTO fixed_costs (id, name, monthly_amount, category, natureza, clinica_id)' +
+      ' VALUES (?, ?, ?, ?, ?, :clinica)',
+      [id, nome, valor, b.category ? String(b.category).trim() : null, nat]
     );
-    await logs.registrar(db, 'PRECIFICACAO', 'Custo fixo cadastrado: ' + nome + '.');
-    res.status(201).json({ id: id, name: nome, monthlyAmount: valor, category: b.category || null, active: true });
+    await logs.registrar(db, 'PRECIFICACAO', 'Custo cadastrado: ' + nome +
+      (nat === 'FIXO' ? ' (fixo -- entra no custo por hora).'
+        : ' (recorrente por atendimento -- NAO entra no custo por hora).'));
+    res.status(201).json({ id: id, name: nome, monthlyAmount: valor,
+      category: b.category || null, natureza: nat, active: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao cadastrar o custo fixo.' });
   }
@@ -240,15 +264,26 @@ router.patch('/api/fixed-costs/:id', async function (req, res) {
   }
   if (b.category !== undefined) { sets.push('category = ?'); valores.push(b.category ? String(b.category).trim() : null); }
   if (b.active !== undefined) { sets.push('active = ?'); valores.push(b.active ? 1 : 0); }
+  /* RECLASSIFICAR muda o custo por hora da clínica, e portanto muda todo preço
+     calculado daqui para a frente. Por isso vai para a trilha (abaixo) com o
+     nome do custo: seis meses depois, "por que o preço subiu?" tem resposta. */
+  if (b.natureza !== undefined) { sets.push('natureza = ?'); valores.push(custos.natureza(b.natureza)); }
   if (!sets.length) return res.status(400).json({ error: 'Nada para atualizar.' });
 
   try {
     const [r] = await db.q(
-      'SELECT id FROM fixed_costs WHERE clinica_id = :clinica AND id = ?', [req.params.id]);
+      'SELECT id, name, natureza FROM fixed_costs WHERE clinica_id = :clinica AND id = ?',
+      [req.params.id]);
     if (!r.length) return res.status(404).json({ error: 'Custo fixo nao encontrado.' });
     valores.push(req.params.id);
     await db.q('UPDATE fixed_costs SET ' + sets.join(', ') +
       ' WHERE clinica_id = :clinica AND id = ?', valores);
+    if (b.natureza !== undefined && custos.natureza(b.natureza) !== custos.natureza(r[0].natureza)) {
+      await logs.registrar(db, 'PRECIFICACAO', 'Custo "' + r[0].name + '" passou a ser ' +
+        (custos.natureza(b.natureza) === 'FIXO'
+          ? 'FIXO: volta a entrar no custo por hora.'
+          : 'RECORRENTE por atendimento: sai do custo por hora.'));
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Falha ao atualizar o custo fixo.' });

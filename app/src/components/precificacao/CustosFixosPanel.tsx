@@ -7,7 +7,7 @@
  * preco - existe chute.
  */
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Power, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Power, RefreshCw, Info } from "lucide-react";
 import { reais } from "./comum";
 
 interface CustoFixo {
@@ -15,23 +15,43 @@ interface CustoFixo {
   name: string;
   monthlyAmount: number;
   category: string | null;
+  natureza: "FIXO" | "VARIAVEL";
   active: boolean;
+}
+
+interface Natureza {
+  valor: "FIXO" | "VARIAVEL";
+  rotulo: string;
+  ajuda: string;
+  entraNoCustoPorHora: boolean;
 }
 
 interface Resposta {
   itens: CustoFixo[];
   totalMensal: number;
+  totalRecorrente: number;
   horasProdutivas: number;
   custoPorHora: number | null;
+  naturezas: Natureza[];
 }
 
 const CATEGORIAS = ["Estrutura", "Pessoal", "Equipamentos", "Software", "Impostos e taxas", "Outros"];
+
+/* O texto das duas naturezas vem do SERVIDOR (`services/custos-fixos.js`), que
+   e' quem decide qual delas divide pelas horas. Escrever a explicacao aqui
+   criaria uma segunda versao da regra, livre para divergir da que calcula.
+   Esta lista e' so o que aparece antes de a resposta chegar. */
+const NATUREZAS_PADRAO: Natureza[] = [
+  { valor: "FIXO", rotulo: "Custo fixo da estrutura", ajuda: "", entraNoCustoPorHora: true },
+  { valor: "VARIAVEL", rotulo: "Custo recorrente por atendimento", ajuda: "", entraNoCustoPorHora: false },
+];
 
 export default function CustosFixosPanel({ aoMudar }: { aoMudar?: () => void }) {
   const [dados, setDados] = useState<Resposta | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
-  const [novo, setNovo] = useState({ name: "", monthlyAmount: "", category: "Estrutura" });
+  const [novo, setNovo] = useState({ name: "", monthlyAmount: "", category: "Estrutura",
+    natureza: "FIXO" as "FIXO" | "VARIAVEL" });
   const [salvando, setSalvando] = useState(false);
 
   const carregar = async () => {
@@ -70,18 +90,31 @@ export default function CustosFixosPanel({ aoMudar }: { aoMudar?: () => void }) 
       const r = await fetch("/api/fixed-costs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: novo.name.trim(), monthlyAmount: valor, category: novo.category }),
+        body: JSON.stringify({ name: novo.name.trim(), monthlyAmount: valor,
+          category: novo.category, natureza: novo.natureza }),
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
         return setErro(e.error || "Não foi possível cadastrar.");
       }
-      setNovo({ name: "", monthlyAmount: "", category: "Estrutura" });
+      setNovo({ name: "", monthlyAmount: "", category: "Estrutura", natureza: novo.natureza });
       setErro("");
       avisar();
     } finally {
       setSalvando(false);
     }
+  };
+
+  /* Reclassificar muda o custo por hora, e portanto muda TODO preco calculado
+     daqui para a frente. Por isso a acao e' um clique consciente na linha, e
+     nao um campo escondido dentro de uma edicao maior. */
+  const trocarNatureza = async (c: CustoFixo) => {
+    await fetch("/api/fixed-costs/" + c.id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ natureza: c.natureza === "FIXO" ? "VARIAVEL" : "FIXO" }),
+    });
+    avisar();
   };
 
   const alternar = async (c: CustoFixo) => {
@@ -129,6 +162,23 @@ export default function CustosFixosPanel({ aoMudar }: { aoMudar?: () => void }) 
         </div>
       </div>
 
+      {/* ============================ CUSTO FIXO NÃO É CUSTO RECORRENTE (M6.3)
+          O aviso só aparece quando existe custo recorrente lançado: ele explica
+          um número que MUDOU de lugar, e explicar isso a quem não tem nenhum
+          seria ruído numa tela que já é densa. */}
+      {dados && dados.totalRecorrente > 0 && (
+        <div className="rounded-xl border border-brand-gold/25 bg-white px-4 py-3 flex items-start gap-2.5">
+          <Info className="h-4 w-4 text-brand-gold shrink-0 mt-0.5" />
+          <p className="text-[11px] text-brand-brown/75 leading-relaxed">
+            Há <strong>{reais(dados.totalRecorrente)}</strong> por mês lançado como{" "}
+            <strong>recorrente por atendimento</strong>. Esse valor <strong>não</strong> divide
+            pelas horas: insumo já entra no preço pela ficha técnica do serviço, e comissão e
+            taxa de cartão entram pelos percentuais da calculadora. Somá-lo aqui contaria duas
+            vezes no mesmo preço — e o preço sairia alto sem nada na tela acusar.
+          </p>
+        </div>
+      )}
+
       {/* Cadastro */}
       <div className="bg-white border border-brand-gold/15 rounded-2xl p-4">
         <div className="flex flex-col md:flex-row gap-3 md:items-end">
@@ -151,6 +201,18 @@ export default function CustosFixosPanel({ aoMudar }: { aoMudar?: () => void }) 
               placeholder="0,00"
             />
           </div>
+          <div className="w-full md:w-56">
+            <label className="block text-[10px] uppercase tracking-widest text-brand-brown/60 font-bold mb-1">Natureza</label>
+            <select
+              className={campo + " w-full"}
+              value={novo.natureza}
+              onChange={(e) => setNovo({ ...novo, natureza: e.target.value as "FIXO" | "VARIAVEL" })}
+            >
+              {(dados?.naturezas || NATUREZAS_PADRAO).map((n) => (
+                <option key={n.valor} value={n.valor}>{n.rotulo}</option>
+              ))}
+            </select>
+          </div>
           <div className="w-full md:w-44">
             <label className="block text-[10px] uppercase tracking-widest text-brand-brown/60 font-bold mb-1">Categoria</label>
             <select className={campo + " w-full"} value={novo.category} onChange={(e) => setNovo({ ...novo, category: e.target.value })}>
@@ -168,6 +230,12 @@ export default function CustosFixosPanel({ aoMudar }: { aoMudar?: () => void }) 
             Adicionar
           </button>
         </div>
+        {(() => {
+          const n = (dados?.naturezas || []).find((x) => x.valor === novo.natureza);
+          return n && n.ajuda ? (
+            <p className="text-[10px] text-brand-brown/55 mt-2.5 leading-relaxed">{n.ajuda}</p>
+          ) : null;
+        })()}
       </div>
 
       {/* Lista */}
@@ -201,6 +269,18 @@ export default function CustosFixosPanel({ aoMudar }: { aoMudar?: () => void }) 
                   <td className="px-4 py-3">
                     <p className="text-xs font-semibold text-brand-brown">{c.name}</p>
                     <p className="text-[10px] text-brand-brown/50">{c.category || "sem categoria"}{c.active ? "" : " · inativo"}</p>
+                    <button
+                      onClick={() => trocarNatureza(c)}
+                      title={c.natureza === "FIXO"
+                        ? "Entra no custo por hora. Clique para marcar como recorrente por atendimento."
+                        : "Não entra no custo por hora — já é cobrado pela ficha técnica e pelos percentuais. Clique para marcar como custo fixo."}
+                      className={"mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold cursor-pointer " +
+                        (c.natureza === "FIXO"
+                          ? "border-brand-gold/40 bg-brand-gold/10 text-brand-brown"
+                          : "border-amber-300 bg-amber-50 text-amber-800")}
+                    >
+                      {c.natureza === "FIXO" ? "entra no custo por hora" : "não entra no custo por hora"}
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-right text-xs font-mono text-brand-brown whitespace-nowrap">
                     {reais(c.monthlyAmount)}

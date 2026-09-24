@@ -11,8 +11,10 @@
  * uma requisição por tecla.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Calculator, TrendingUp, AlertTriangle, Check } from "lucide-react";
+import { Calculator, TrendingUp, AlertTriangle, Check, ClipboardList, X } from "lucide-react";
 import { reais, pct, Parametros, ResultadoCalculo, Comparacao, ServicoCatalogo } from "./comum";
+import FichaTecnicaPanel from "../estoque/FichaTecnicaPanel";
+import { Produto } from "../estoque/comum";
 
 interface Props {
   parametros: Parametros | null;
@@ -116,6 +118,27 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
     }),
     [e],
   );
+
+  /* ================== EDITAR A FICHA TÉCNICA SEM SAIR DA PRECIFICAÇÃO (M6.3)
+   *
+   * Pedido do bloco de Precificação do PDF de 19/09. O botão "ficha técnica
+   * soma R$ X · usar" já trazia o valor — o que não havia era como CORRIGIR a
+   * ficha: para tirar um insumo que saiu do protocolo era preciso sair daqui,
+   * ir a Estoque, achar a aba, escolher o serviço de novo, editar, e voltar.
+   * No meio do caminho a simulação se perdia.
+   *
+   * O painel é o MESMO de Estoque, e não uma segunda cópia: duas telas que
+   * editam a mesma ficha divergem na primeira mudança de regra. */
+  const [editandoFicha, setEditandoFicha] = useState(false);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+
+  useEffect(() => {
+    if (!editandoFicha || produtos.length) return;
+    fetch("/api/products")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setProdutos(Array.isArray(d) ? d : []))
+      .catch(() => setProdutos([]));
+  }, [editandoFicha, produtos.length]);
 
   const ultimaCarga = useRef("");
 
@@ -259,6 +282,18 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
                   informado manualmente · sem ficha técnica
                 </p>
               )}
+              {/* O atalho só aparece com SERVIÇO escolhido: ficha técnica é de
+                  serviço do catálogo, e numa simulação avulsa não há o que
+                  editar. Botão que abre uma tela vazia é pior que botão nenhum. */}
+              {e.catalogId && (
+                <button
+                  onClick={() => setEditandoFicha(true)}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-brand-brown/75 hover:text-brand-brown cursor-pointer"
+                >
+                  <ClipboardList className="h-3 w-3 text-brand-gold" />
+                  {custoInfo && custoInfo.daFicha !== null ? "Editar a ficha técnica" : "Montar a ficha técnica"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -398,6 +433,43 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
           </button>
         </div>
       </div>
+
+      {editandoFicha && e.catalogId && (
+        <div className="fixed inset-0 z-50 bg-brand-brown/40 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-brand-beige border border-brand-gold/25 rounded-2xl w-full max-w-2xl my-8 shadow-2xl">
+            <div className="px-6 py-4 border-b border-brand-gold/20 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-serif font-bold text-brand-brown text-base leading-tight">
+                  Ficha técnica · {servicoEscolhido?.name || e.serviceName}
+                </h3>
+                <p className="text-[10px] text-brand-brown/60 mt-0.5 leading-relaxed">
+                  Os insumos que este procedimento consome. O custo somado aqui é o que a
+                  calculadora usa como insumo — e é dele que sai a baixa do estoque quando o
+                  atendimento é concluído.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditandoFicha(false)}
+                title="Fechar"
+                className="p-1.5 rounded-lg hover:bg-brand-gold/10 text-brand-brown/70 cursor-pointer shrink-0"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5">
+              <FichaTecnicaPanel
+                produtos={produtos}
+                servicos={servicos.map((x) => ({ id: x.id, name: x.name }))}
+                servicoFixo={e.catalogId}
+                /* Mexer na ficha muda o custo de insumo da simulação aberta.
+                   Sem este empurrão, a tela continuaria mostrando a soma de
+                   antes da edição -- e o preço calculado em cima dela. */
+                aoMudar={() => { ultimaCarga.current = ""; setE((a) => ({ ...a })); }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

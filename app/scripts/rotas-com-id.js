@@ -64,7 +64,11 @@ const FAMILIAS = [
     /* M5.12: programar as datas do plano da vizinha reescreveria o calendario
        de tratamento de pacientes de outra clinica. */
     ['POST',   '/api/treatment-plans/{ID}/programar',
-      { inicio: '2030-01-07', periodicidade: 'Semanal' }]
+      { inicio: '2030-01-07', periodicidade: 'Semanal' }],
+    /* M6.3: agendar o plano da vizinha criaria compromissos NA CLINICA DAQUI
+       para uma paciente de LA -- e o `client_id` do plano dela iria junto. */
+    ['POST',   '/api/treatment-plans/{ID}/agendar',
+      { hora: '09:00', professionalId: 'u_invasor', duracaoMin: 60 }]
   ]],
   ['atendimentos', 'treatments', [
     ['PATCH',  '/api/treatments/{ID}', { notes: 'invadido' }]
