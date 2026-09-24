@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const escopo = require('../db/escopo');
 const logs = require('../services/logs');
+const exclusao = require('../services/exclusao-de-paciente');
 
 router.get('/api/clients', async function(req, res) {
   const userRole = req.usuario ? req.usuario.papel : '';
@@ -156,10 +157,45 @@ router.delete('/api/clients/:id', async function(req, res) {
       'SELECT name FROM clients WHERE clinica_id = :clinica AND id = ?', [id]);
     if (!antes.length) return res.status(404).json({ error: 'Paciente nao encontrado.' });
 
+    /* ==================== FICHA COM HISTÓRICO NÃO SE APAGA (M6.5)
+     *
+     * Até aqui o DELETE ia direto, e o que acontecia com o resto era decidido
+     * pelas chaves da migration 027: documentos, planos, sessões e pontos
+     * CASCATEAVAM -- incluindo termos e atestados ASSINADOS --, e agenda,
+     * conversas e lançamentos financeiros ficavam órfãos, apontando para uma
+     * paciente que não existe mais.
+     *
+     * Destruía o que tem prazo legal de guarda e preservava o que um pedido de
+     * exclusão quer alcançar. E em silêncio: o front fazia `if (response.ok)`
+     * sem `else`.
+     *
+     * A regra está em `services/exclusao-de-paciente.js`, com teste. */
+    const [q] = await db.q(
+      `SELECT
+         (SELECT COUNT(*) FROM client_documents WHERE clinica_id = :clinica AND client_id = ?) AS documentos,
+         (SELECT COUNT(*) FROM treatment_plans   WHERE clinica_id = :clinica AND client_id = ?) AS planos,
+         (SELECT COUNT(*) FROM treatment_sessions s WHERE s.clinica_id = :clinica
+            AND s.plan_id IN (SELECT id FROM treatment_plans WHERE clinica_id = :clinica AND client_id = ?)) AS sessoes,
+         (SELECT COUNT(*) FROM treatments        WHERE clinica_id = :clinica AND client_id = ?) AS procedimentos,
+         (SELECT COUNT(*) FROM appointments      WHERE clinica_id = :clinica AND client_id = ?) AS compromissos,
+         (SELECT COUNT(*) FROM interactions      WHERE clinica_id = :clinica AND client_id = ?) AS conversas,
+         (SELECT COUNT(*) FROM loyalty_transactions WHERE clinica_id = :clinica AND client_id = ?) AS pontos,
+         (SELECT COUNT(*) FROM cash_entries      WHERE clinica_id = :clinica AND client_id = ?) AS financeiro`,
+      [id, id, id, id, id, id, id, id]);
+
+    const veredito = exclusao.decidir(q[0] || {});
+    if (!veredito.pode) {
+      await logs.registrar(db, 'CLIENT_DELETE',
+        'Exclusao da paciente "' + antes[0].name + '" (ID ' + id + ') RECUSADA: ela tem ' +
+        veredito.itens.map((i) => i.texto).join(', ') + '.');
+      return res.status(409).json({ error: veredito.error, itens: veredito.itens });
+    }
+
     await db.q('DELETE FROM clients WHERE clinica_id = :clinica AND id = ?', [id]);
     await logs.registrar(db, 'CLIENT_DELETE',
-      `Paciente "${antes[0].name}" (ID ${id}) foi excluida do sistema`);
-    res.json({ message: 'Cliente excluído com sucesso!' });
+      'Paciente "' + antes[0].name + '" (ID ' + id + ') excluida. A ficha estava vazia: ' +
+      'nenhum documento, plano, sessao, compromisso, conversa, ponto ou lancamento.');
+    res.json({ message: 'Ficha excluída.' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao excluir cliente', details: error.message });
   }

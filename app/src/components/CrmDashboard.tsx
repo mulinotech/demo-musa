@@ -387,16 +387,26 @@ export default function CrmDashboard({
     }
   };
 
-  const handleDeleteClient = async (id: string) => {
+  /* A RECUSA PRECISA CHEGAR NA TELA (M6.5).
+   *
+   * Este `if (response.ok)` sem `else` era o silêncio de sempre: desde a M6.5 o
+   * servidor RECUSA apagar ficha com prontuário, com uma frase que diz o que
+   * existe — e sem o `else` a recepção clicaria em excluir, nada aconteceria, e
+   * ela clicaria de novo.
+   *
+   * A função devolve o erro em vez de engoli-lo; quem chama decide como mostrar. */
+  const handleDeleteClient = async (id: string): Promise<{ ok: boolean; erro?: string }> => {
     try {
-      const response = await fetch(`/api/clients/${id}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(`/api/clients/${id}`, { method: "DELETE" });
       if (response.ok) {
         await fetchCrmData();
+        return { ok: true };
       }
+      const d = await response.json().catch(() => ({}));
+      return { ok: false, erro: d.error || "Não foi possível excluir a ficha." };
     } catch (e) {
       console.error(e);
+      return { ok: false, erro: "Erro de conexão ao excluir a ficha." };
     }
   };
 

@@ -19,7 +19,9 @@ import {
   Check,
   Save,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { comDdi, temNumero, DDI_PADRAO } from '../lib/telefone.mjs';
@@ -39,7 +41,7 @@ interface ClientDirectoryProps {
   onUpdateClientData?: () => void;
   treatmentCatalog: TreatmentCatalog[];
   onUpdateClient?: (id: string, clientData: Partial<Client>) => Promise<void>;
-  onDeleteClient?: (id: string) => Promise<void>;
+  onDeleteClient?: (id: string) => Promise<{ ok: boolean; erro?: string } | void>;
   treatmentPlans?: TreatmentPlan[];
   onAddTreatmentPlan?: (plan: Omit<TreatmentPlan, 'id' | 'createdAt'>) => Promise<void>;
   onUpdateTreatmentPlan?: (id: string, planData: Partial<TreatmentPlan>) => Promise<void>;
@@ -154,15 +156,24 @@ export default function ClientDirectory({
     }
   };
 
+  /* A recusa aparece numa faixa, e não num `alert` (M6.5): a frase do servidor
+     lista o que existe na ficha e pede leitura, não um clique em "OK". */
+  const [recusaExclusao, setRecusaExclusao] = useState('');
+
   const handleDeleteClientClick = async (id: string, name: string) => {
-    if (confirm(`Tem certeza que deseja excluir permanentemente a paciente ${name}? Todos os prontuários e históricos de sessões serão excluídos.`)) {
-      if (onDeleteClient) {
-        await onDeleteClient(id);
-        if (selectedClient && selectedClient.id === id) {
-          setSelectedClient(null);
-        }
-      }
+    /* A PERGUNTA MUDOU. Ela prometia apagar "todos os prontuários e históricos
+       de sessões" -- e era verdade: as chaves da migration 027 cascateavam
+       documento assinado junto. Desde a M6.5 isso é recusado, e prometer o que
+       não vai acontecer é a outra metade do mesmo defeito. */
+    if (!confirm(`Excluir a ficha de ${name}?\n\nSó fichas SEM histórico são apagadas. Se ela tiver documento, plano, sessão, compromisso, conversa ou lançamento, a exclusão é recusada e a tela diz o que existe.`)) return;
+    if (!onDeleteClient) return;
+    setRecusaExclusao('');
+    const r = await onDeleteClient(id);
+    if (r && r.ok === false) {
+      setRecusaExclusao(r.erro || 'Não foi possível excluir a ficha.');
+      return;
     }
+    if (selectedClient && selectedClient.id === id) setSelectedClient(null);
   };
 
   // New Client Form
@@ -403,6 +414,22 @@ export default function ClientDirectory({
   const clientTreatments = treatments.filter(t => t.clientId === selectedClient?.id);
 
   return (
+    <div className="space-y-4">
+    {recusaExclusao && (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-900 leading-relaxed">{recusaExclusao}</p>
+        </div>
+        <button
+          onClick={() => setRecusaExclusao('')}
+          title="Fechar o aviso"
+          className="cursor-pointer shrink-0 text-amber-700/70 hover:text-amber-900"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    )}
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Client List Index */}
       <div className="lg:col-span-4 bg-white rounded-2xl border border-brand-gold/15 p-5 shadow-xs flex flex-col h-[calc(100vh-180px)]">
@@ -1051,6 +1078,7 @@ export default function ClientDirectory({
           </motion.div>
         </div>
       )}
+    </div>
     </div>
   );
 }
