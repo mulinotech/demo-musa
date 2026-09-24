@@ -228,20 +228,52 @@ function inline(t) {
     .replace(/(^|\s)_([^_]+)_(?=\s|$|[.,;:!?])/g, '$1<em>$2</em>');
 }
 
+/* ================================== A MARCA NO PAPEL (M6.2b, 24/09)
+ *
+ * O documento impresso e' uma pagina HTML INTEIRA, montada aqui -- ele nao
+ * passa pelo `index.css` nem pelo Tailwind. Por isso a M6.1 trocou a identidade
+ * das 65 telas do CRM e este arquivo ficou com a paleta antiga: a receita saiu
+ * com o cabecalho novo da clinica e as cores marrom/dourado de antes. Foi assim
+ * que a Silvia viu, e e' o papel que a paciente leva embora.
+ *
+ * ======================================= A PALETA, TRADUZIDA PARA IMPRESSAO
+ *
+ *   texto              Navy #141E33        (era #2b1c12)
+ *   texto secundario   Slate #5A6478       (era #6b5443)
+ *   titulo do tipo     Teal Musa #0E7FA6   (era #8a7361)
+ *   fundo de bloco     Nevoa #F6F8FB       (era #faf7f2)
+ *   linhas e bordas    #DCE6F0 / #EDF2F8   (eram #ddd / #eee)
+ *
+ * O ROXO E O GRADIENTE NAO ENTRAM, e isso e' decisao e nao esquecimento:
+ * receita e atestado sao impressos em preto e branco e em modo economico na
+ * maioria das clinicas, e area colorida vira borrao cinza. O teal aparece em
+ * UM lugar -- o nome do tipo do documento --, onde ele some com elegancia no
+ * cinza quando a impressao e monocromatica.
+ *
+ * O AVISO DE ATENCAO (`tr.atencao`, `.tag`) FICA VERMELHO. Ele nao e marca: e
+ * sinal clinico, e repinta-lo de teal o faria desaparecer no meio do resto.
+ *
+ * ============================================ E A TIPOGRAFIA DO MANUAL
+ *
+ * Poppins titula, Inter le -- os mesmos papeis do CRM. As fontes vem do Google
+ * Fonts, e a cadeia de reserva termina em Georgia: se a folha de fonte nao
+ * carregar (impressao sem rede), o documento sai exatamente como saia antes,
+ * em vez de cair numa fonte de sistema qualquer. */
 const CSS = [
-  'body{font-family:Georgia,serif;color:#2b1c12;max-width:46rem;margin:0 auto;padding:2.5rem 1.5rem;line-height:1.6}',
-  'h2{font-size:1.4rem;margin:0 0 1rem;border-bottom:1px solid #ddd;padding-bottom:.5rem}',
-  'h3{font-size:1.05rem;margin:1.6rem 0 .5rem}',
+  "@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@400;600&display=swap');",
+  'body{font-family:Inter,Georgia,serif;color:#141E33;max-width:46rem;margin:0 auto;padding:2.5rem 1.5rem;line-height:1.6}',
+  'h2{font-family:Poppins,Georgia,serif;font-size:1.4rem;margin:0 0 1rem;border-bottom:1px solid #DCE6F0;padding-bottom:.5rem}',
+  'h3{font-family:Poppins,Georgia,serif;font-size:1.05rem;margin:1.6rem 0 .5rem}',
   'table{width:100%;border-collapse:collapse;margin:.5rem 0 1rem;font-size:.86rem}',
-  'th{text-align:left;font-weight:600;width:58%;padding:.4rem .6rem;border-bottom:1px solid #eee;vertical-align:top}',
-  'td{padding:.4rem .6rem;border-bottom:1px solid #eee;vertical-align:top}',
+  'th{text-align:left;font-weight:600;width:58%;padding:.4rem .6rem;border-bottom:1px solid #EDF2F8;vertical-align:top}',
+  'td{padding:.4rem .6rem;border-bottom:1px solid #EDF2F8;vertical-align:top}',
   'tr.atencao th,tr.atencao td{background:#fdf1ee}',
-  '.tag{font-family:system-ui,sans-serif;font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:#9e3b28;border:1px solid #e3b7ad;border-radius:2px;padding:.05rem .3rem;margin-left:.3rem}',
-  '.livre{white-space:pre-line;background:#faf7f2;padding:.8rem;border-left:3px solid #ddd}',
-  '.rodape{margin-top:2.5rem;padding-top:1rem;border-top:1px solid #ddd;font-family:ui-monospace,monospace;font-size:.66rem;color:#6b5443;line-height:1.7}',
-  '.assinatura{margin-top:2rem;padding-top:1rem;border-top:1px solid #ddd}',
+  '.tag{font-family:Inter,system-ui,sans-serif;font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:#9e3b28;border:1px solid #e3b7ad;border-radius:2px;padding:.05rem .3rem;margin-left:.3rem}',
+  '.livre{white-space:pre-line;background:#F6F8FB;padding:.8rem;border-left:3px solid #C7DAE6}',
+  '.rodape{margin-top:2.5rem;padding-top:1rem;border-top:1px solid #DCE6F0;font-family:ui-monospace,monospace;font-size:.66rem;color:#5A6478;line-height:1.7}',
+  '.assinatura{margin-top:2rem;padding-top:1rem;border-top:1px solid #DCE6F0}',
   '.assinatura img{max-width:16rem;display:block;margin:.5rem 0}',
-  '.aviso{font-family:system-ui,sans-serif;font-size:.72rem;color:#6b5443;background:#faf7f2;border:1px solid #e6dbc9;padding:.6rem .8rem;margin-top:1rem}',
+  '.aviso{font-family:Inter,system-ui,sans-serif;font-size:.72rem;color:#5A6478;background:#F6F8FB;border:1px solid #DCE6F0;padding:.6rem .8rem;margin-top:1rem}',
   /* ================================== O LOGO DA CLINICA (M6.2, 24/09)
    *
    * `max-height` e nao `height`: o logo de cada clinica tem uma proporcao, e
@@ -253,16 +285,20 @@ const CSS = [
    * prumo com o nome logo abaixo -- e isso so aparece depois de impresso. */
   '.timbre-logo{display:block;margin:0 0 .9rem;max-height:18mm;max-width:60%}',
   '.timbre{margin-bottom:.2rem}',
-  '.timbre-nome{font-size:1.6rem;font-weight:700;line-height:1.15}',
-  '.timbre-funcao{font-family:system-ui,sans-serif;font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:#6b5443;margin-top:.3rem}',
-  '.timbre-registro{font-family:system-ui,sans-serif;font-size:.72rem;color:#6b5443;margin-top:.35rem}',
-  '.timbre-tipo{font-size:1.5rem;color:#8a7361;text-align:center;margin:1.8rem 0 2rem}',
-  '.faixa{margin-top:3rem;padding-top:.9rem;border-top:1px solid #ccc;text-align:center;font-size:.78rem;color:#6b5443;line-height:1.8;letter-spacing:.02em}',
-  '.rodape-timbre{margin-top:1.6rem;padding-top:.7rem;border-top:1px solid #ddd;font-size:.72rem;letter-spacing:.04em;color:#6b5443;line-height:1.7}',
-  '.barra{font-family:system-ui,sans-serif;display:flex;gap:.6rem;align-items:center;justify-content:flex-end;margin:-1rem 0 1.6rem;padding-bottom:1rem;border-bottom:1px solid #eee}',
-  '.barra button{font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;background:#4a3728;color:#f5ede1;border:none;border-radius:6px;padding:.5rem .9rem}',
-  '.barra button:hover{background:#3a2b1f}',
-  '.barra span{font-size:.72rem;color:#6b5443}',
+  '.timbre-nome{font-family:Poppins,Georgia,serif;font-size:1.6rem;font-weight:700;line-height:1.15}',
+  '.timbre-funcao{font-family:Inter,system-ui,sans-serif;font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:#5A6478;margin-top:.3rem}',
+  '.timbre-registro{font-family:Inter,system-ui,sans-serif;font-size:.72rem;color:#5A6478;margin-top:.35rem}',
+  /* O UNICO teal da folha. Monocromatico ele vira um cinza medio, que continua
+     lendo como subtitulo -- que e' o papel dele. */
+  '.timbre-tipo{font-family:Poppins,Georgia,serif;font-size:1.5rem;color:#0E7FA6;text-align:center;margin:1.8rem 0 2rem}',
+  '.faixa{margin-top:3rem;padding-top:.9rem;border-top:1px solid #DCE6F0;text-align:center;font-size:.78rem;color:#5A6478;line-height:1.8;letter-spacing:.02em}',
+  '.rodape-timbre{margin-top:1.6rem;padding-top:.7rem;border-top:1px solid #DCE6F0;font-size:.72rem;letter-spacing:.04em;color:#5A6478;line-height:1.7}',
+  '.barra{font-family:Inter,system-ui,sans-serif;display:flex;gap:.6rem;align-items:center;justify-content:flex-end;margin:-1rem 0 1.6rem;padding-bottom:1rem;border-bottom:1px solid #EDF2F8}',
+  /* A barra NAO IMPRIME (`.naoImprimir`), entao ela pode ser da cor da marca
+     sem custo de tinta nenhum: ela existe so na tela de quem vai imprimir. */
+  '.barra button{font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;background:#141E33;color:#FFFFFF;border:none;border-radius:6px;padding:.5rem .9rem}',
+  '.barra button:hover{background:#0A2540}',
+  '.barra span{font-size:.72rem;color:#5A6478}',
   /* ============ O CABECALHO QUE O NAVEGADOR IMPRIME POR CONTA PROPRIA
    *
    * O Chrome carimba data, hora, titulo da pagina, URL e numero de pagina nas
