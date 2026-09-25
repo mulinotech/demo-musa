@@ -252,11 +252,17 @@ export default function AppointmentModal(p: Props) {
   const rotulo = "block text-[10px] uppercase tracking-widest text-brand-brown/60 font-bold mb-1";
 
   return (
-    <div className="fixed inset-0 z-[70] bg-brand-brown/40 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+    /* ================== A JANELA CABE NA TELA (M6.6)
+       `sm:items-center` centraliza vertical -- e centralizar uma caixa MAIOR
+       que a tela poe as duas pontas para fora dela: o topo, com o nome da
+       paciente, fica acima do inicio da pagina e nao ha como rolar ate ele,
+       porque quem rola e o fundo. Com `items-start` e altura maxima na caixa,
+       a janela rola por dentro e o topo sempre aparece. */
+    <div className="fixed inset-0 z-[70] bg-brand-brown/40 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-2xl bg-brand-beige rounded-2xl shadow-2xl border border-brand-gold/20 my-4"
+        className="w-full max-w-2xl bg-brand-beige rounded-2xl shadow-2xl border border-brand-gold/20 my-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-brand-gold/20">
           <div>

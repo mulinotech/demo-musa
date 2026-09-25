@@ -66,7 +66,7 @@ interface Painel {
 interface Dinheiro {
   faturamento: Par & { sessoes: number; sessoesAnterior: number };
   ticketMedio: Par & { pacientes: number };
-  custoPorLead: Par & { investimento: number | null; leads: number; categoriasMarcadas: number };
+  custoPorLead: Par & { investimento: number | null; leads: number; categoriasMarcadas: number; lancamentos: number };
 }
 
 type Faixa = '7days' | '30days' | 'month' | 'custom';
@@ -277,12 +277,25 @@ export default function DashboardOverview() {
       value: caixa.custoPorLead.valor === null ? '—' : dinheiro(caixa.custoPorLead.valor),
       icon: TrendingUp,
       subirEBom: false,
+      /* ============ O CARTAO PRECISA DIZER O QUE FALTA (M6.6)
+         "R$ 0,00" tem tres causas diferentes e a tela mostrava a mesma coisa
+         nas tres. Numa apresentacao, a clinica marcou as categorias e o cartao
+         continuou zerado -- sem nada apontando para o filtro de periodo, que
+         era a causa. */
       rodape: caixa.custoPorLead.categoriasMarcadas === 0
         ? { texto: 'nenhuma categoria marcada', direcao: 'neutro' }
-        : comparacao(caixa.custoPorLead, dinheiro),
+        : caixa.custoPorLead.lancamentos === 0
+          ? { texto: 'nenhuma despesa no período', direcao: 'neutro' }
+          : caixa.custoPorLead.leads === 0
+            ? { texto: 'nenhum lead no período', direcao: 'neutro' }
+            : comparacao(caixa.custoPorLead, dinheiro),
       nota: caixa.custoPorLead.categoriasMarcadas === 0
         ? 'Marque em Financeiro > Categorias quais são investimento em captação (anúncios, agência). O CPL soma as despesas dessas categorias no período.'
-        : `${dinheiro(caixa.custoPorLead.investimento)} investidos ÷ ${caixa.custoPorLead.leads} lead(s).`
+        : caixa.custoPorLead.lancamentos === 0
+          ? `As ${caixa.custoPorLead.categoriasMarcadas} categoria(s) marcada(s) não têm nenhuma despesa lançada entre ${dataCurta(painel!.periodo.de)} e ${dataCurta(painel!.periodo.ate)} (base ${painel!.periodo.base}). Amplie o período acima ou lance a despesa em Financeiro.`
+          : caixa.custoPorLead.leads === 0
+            ? `${dinheiro(caixa.custoPorLead.investimento)} investidos, mas nenhum lead entrou no período — sem divisor não há CPL.`
+            : `${dinheiro(caixa.custoPorLead.investimento)} investidos em ${caixa.custoPorLead.lancamentos} lançamento(s) ÷ ${caixa.custoPorLead.leads} lead(s).`
     });
     return lista;
   }, [painel, caixa]);

@@ -182,16 +182,33 @@ export default function TreatmentJourney({
       /* A resposta conta TUDO: quantas entraram, quais bateram com horario
          ocupado, e quais foram puladas e por que. "7 de 10 agendadas" sem dizer
          quais e' a mesma coisa que nao dizer nada. */
-      const partes = [d.criados + (d.criados === 1 ? ' sessao entrou na agenda' : ' sessoes entraram na agenda')];
-      if (d.conflitos && d.conflitos.length) {
-        partes.push(d.conflitos.length + (d.conflitos.length === 1 ? ' nao entrou' : ' nao entraram') +
-          ' porque o horario ja estava ocupado: ' +
-          d.conflitos.map((c: { n: number; dia: string }) => 'sessao ' + c.n + ' em ' + c.dia).join(', '));
+      /* A FRASE MUDOU (M6.6). Ela abria com "0 sessoes entraram na agenda", que
+         lê como falha do sistema -- quando o que houve foi CONFLITO DE AGENDA,
+         que é informação e pede uma ação: escolher outro horário. Agora o
+         conflito vem primeiro, com o nome do que ele é, e a data em
+         dia/mês/ano. Só depois vem o que entrou. */
+      const dataBR = (iso: string) => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+        return m ? m[3] + '/' + m[2] + '/' + m[1] : String(iso || '');
+      };
+      const partes: string[] = [];
+      const conflitos = d.conflitos || [];
+      if (conflitos.length) {
+        partes.push('Conflito de agenda: ' + (conflitos.length === 1 ? 'a sessão' : 'as sessões') + ' ' +
+          conflitos.map((c: { n: number; dia: string }) => c.n + ' (' + dataBR(c.dia) + ')').join(', ') +
+          (conflitos.length === 1 ? ' cairia' : ' cairiam') +
+          ' em horário que ' + (ageProf ? 'essa profissional' : 'o profissional') +
+          ' já tem ocupado. Escolha outra hora, outra profissional, ou mude as datas acima');
+      }
+      if (d.criados) {
+        partes.push(d.criados + (d.criados === 1 ? ' sessão entrou na agenda' : ' sessões entraram na agenda'));
+      } else if (!conflitos.length) {
+        partes.push('Nenhuma sessão entrou na agenda');
       }
       if (d.pulados && d.pulados.length) {
-        partes.push(d.pulados.map((x: { n: number; porque: string }) => 'sessao ' + x.n + ' ' + x.porque).join('; '));
+        partes.push(d.pulados.map((x: { n: number; porque: string }) => 'sessão ' + x.n + ' ' + x.porque).join('; '));
       }
-      setAgeResposta({ ok: d.criados > 0, texto: partes.join('. ') + '.' });
+      setAgeResposta({ ok: d.criados > 0 && !conflitos.length, texto: partes.join('. ') + '.' });
       setProgPrecisaRecarregar(true);
     } catch {
       setAgeResposta({ ok: false, texto: 'Falha de rede ao levar as sessoes para a agenda.' });
@@ -242,7 +259,7 @@ export default function TreatmentJourney({
         partes.push(d.preservadas + (d.preservadas === 1 ? ' ja realizada nao foi tocada'
           : ' ja realizadas nao foram tocadas'));
       }
-      if (d.avisos && d.avisos.length) partes.push(d.avisos.join(' '));
+      if (d.avisos && d.avisos.length) partes.push(d.avisos.join(' ').replace(/\.\s*$/, ''));
       setProgResposta({ ok: true, texto: partes.join('. ') + '.' });
       /* NAO recarrega aqui, e isso e' correcao de 21/09: a recarga remontava a
          arvore, o modal sumia junto, e a pessoa nunca lia quantas sessoes

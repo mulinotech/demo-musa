@@ -126,4 +126,60 @@ function interpretarDuracao(valor) {
   return null;
 }
 
-module.exports = { calcularPreco, compararComPraticado, interpretarDuracao, centavos };
+
+/** O PREÇO DO PACOTE ACOMPANHA O DA SESSÃO (M6.6).
+ *
+ *  ===================================================== O QUE ACONTECIA
+ *
+ *  Aplicar um preço novo no catálogo gravava `price` e deixava `package_price`
+ *  como estava. A tela de Cadastros passava a mostrar a sessão a R$ 450 e o
+ *  pacote ainda a R$ 3.600 — o preço de um pacote de dez sessões a R$ 400. A
+ *  clínica vende o pacote pelo número velho sem perceber, e a margem que a
+ *  calculadora acabou de garantir não existe naquela venda.
+ *
+ *  ====================================== POR QUE PROPORÇÃO, E NÃO N × SESSÃO
+ *
+ *  O sistema **não sabe quantas sessões tem o pacote** nem qual desconto a
+ *  clínica pratica: `package_price` é um número solto. O que ele sabe é a
+ *  RAZÃO entre os dois preços de antes — e essa razão carrega as duas
+ *  informações juntas (o tamanho do pacote e o desconto).
+ *
+ *  Um pacote que valia 8 sessões com 10% de desconto continua valendo 8 sessões
+ *  com 10% de desconto depois do reajuste. É o que a clínica faria à mão, e é
+ *  reversível: o valor anterior volta na resposta.
+ *
+ *  ========================================= QUANDO ELE NÃO MEXE, E POR QUÊ
+ *
+ *  Sem pacote cadastrado, sem preço anterior, ou com preço anterior zero, não
+ *  há razão para preservar — e inventar uma (multiplicar por dez, por exemplo)
+ *  poria um valor de venda no catálogo por palpite. Nesses casos o pacote fica
+ *  como está e a resposta DIZ que ficou, para a tela poder avisar.
+ *
+ *  @returns {object} { novo, anterior, mexeu, porque }
+ */
+function precoDoPacote(pacoteAtual, precoAntes, precoNovo) {
+  const atual = Number(pacoteAtual);
+  const antes = Number(precoAntes);
+  const novo = Number(precoNovo);
+
+  if (!isFinite(atual) || atual <= 0) {
+    return { novo: null, anterior: null, mexeu: false, porque: 'este serviço não tem preço de pacote' };
+  }
+  if (!isFinite(antes) || antes <= 0) {
+    return { novo: atual, anterior: atual, mexeu: false,
+             porque: 'o serviço não tinha preço de sessão anterior, e sem ele não dá para manter a proporção do pacote' };
+  }
+  if (!isFinite(novo) || novo <= 0) {
+    return { novo: atual, anterior: atual, mexeu: false, porque: 'preço novo inválido' };
+  }
+
+  const proporcional = Math.round((atual * (novo / antes)) * 100) / 100;
+  return {
+    novo: proporcional, anterior: atual, mexeu: proporcional !== atual,
+    porque: 'o pacote valia ' + (Math.round((atual / antes) * 100) / 100) +
+            ' sessões e continua valendo o mesmo'
+  };
+}
+
+module.exports = {
+  precoDoPacote, calcularPreco, compararComPraticado, interpretarDuracao, centavos };

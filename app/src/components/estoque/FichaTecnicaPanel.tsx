@@ -15,7 +15,7 @@
  * isso ambíguo.
  */
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Check, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Check, AlertTriangle, Pencil } from "lucide-react";
 import { Produto, reais, qtd } from "./comum";
 
 interface Servico {
@@ -49,21 +49,30 @@ export default function FichaTecnicaPanel(p: {
   const [custo, setCusto] = useState(0);
   const [novo, setNovo] = useState({ productId: "", quantity: "" });
   const [recado, setRecado] = useState("");
+  const [editando, setEditando] = useState("");
+  const [edQtd, setEdQtd] = useState("");
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false);
 
+  /* A leitura e' uma funcao propria porque tres lugares precisam dela: a troca
+     de servico, a edicao de um item e o envio da ficha. */
+  const recarregar = async () => {
+    if (!servicoId) { setItens([]); return; }
+    const r = await fetch("/api/services/" + servicoId + "/supplies");
+    const d = await r.json();
+    if (!r.ok) { setErro(d.error || "Não foi possível ler a ficha."); return; }
+    setItens(d.itens || []);
+    setCusto(d.custoVariavel || 0);
+    setOrigem(d.origem);
+    setErro("");
+  };
+
   useEffect(() => {
     if (!servicoId) return setItens([]);
-    (async () => {
-      const r = await fetch("/api/services/" + servicoId + "/supplies");
-      const d = await r.json();
-      if (!r.ok) return setErro(d.error || "Não foi possível ler a ficha.");
-      setItens(d.itens || []);
-      setCusto(d.custoVariavel || 0);
-      setOrigem(d.origem);
-      setErro("");
-      setRecado("");
-    })();
+    setRecado("");
+    setEditando("");
+    recarregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servicoId]);
 
   const total = itens.reduce((s, i) => s + i.parcial, 0);
@@ -89,6 +98,25 @@ export default function FichaTecnicaPanel(p: {
             reais(d.valor) + "."
           : "Ficha esvaziada. A precificação volta a usar o custo digitado no serviço.",
       );
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  /* Grava a QUANTIDADE, que é o dado desta ficha.
+     O custo unitário não se digita aqui -- ver a nota na linha de edição. */
+  const gravarItem = async (i: ItemFicha) => {
+    const q = Number(String(edQtd).replace(",", "."));
+    if (!isFinite(q) || q <= 0) return setErro("Informe uma quantidade maior que zero.");
+    setOcupado(true);
+    try {
+      setEditando("");
+      await salvar(itens.map((x) => x.productId === i.productId
+        ? Object.assign({}, x, { quantidade: q }) : x));
+      /* A ficha e' relida do servidor em vez de remendada aqui: o parcial e o
+         custo variavel sao calculados la, e recalcula-los na tela criaria uma
+         segunda versao da conta. */
+      await recarregar();
     } finally {
       setOcupado(false);
     }
@@ -162,23 +190,95 @@ export default function FichaTecnicaPanel(p: {
 
           <div className="divide-y divide-brand-gold/10">
             {itens.map((i) => (
-              <div key={i.productId} className="px-4 py-2.5 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs text-brand-brown truncate">{i.produto}</p>
-                  <p className="text-[10px] text-brand-brown/55">
-                    {qtd(i.quantidade)} {i.unidade} × {reais(i.custoUnitario)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-xs font-mono text-brand-brown/80">{reais(i.parcial)}</span>
-                  <button
-                    onClick={() => salvar(itens.filter((x) => x.productId !== i.productId))}
-                    disabled={ocupado}
-                    className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+              <div key={i.productId} className="px-4 py-2.5">
+                {editando === i.productId ? (
+                  /* ================= EDITAR SEM SAIR DA FICHA (M6.6)
+                     A linha só tinha lixeira: para corrigir uma quantidade era
+                     preciso excluir o insumo e cadastrá-lo de novo, e para
+                     corrigir o custo era preciso ir a Produtos, achar o item e
+                     voltar. Os dois campos ficam aqui, lado a lado, porque é
+                     olhando o parcial que se percebe que um dos dois está
+                     errado. */
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-brand-brown">{i.produto}</p>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="w-28">
+                        <label className="block text-[9px] uppercase tracking-wider text-brand-brown/55 mb-0.5">
+                          Quantidade ({i.unidade})
+                        </label>
+                        <input
+                          className={campo}
+                          inputMode="decimal"
+                          value={edQtd}
+                          onChange={(e) => setEdQtd(e.target.value)}
+                        />
+                      </div>
+                      <div className="w-32">
+                        <label className="block text-[9px] uppercase tracking-wider text-brand-brown/55 mb-0.5">
+                          Custo unitário (R$)
+                        </label>
+                        <input className={campo + " bg-brand-beige/50"} value={reais(i.custoUnitario)} disabled />
+                      </div>
+                      <button
+                        onClick={() => gravarItem(i)}
+                        disabled={ocupado}
+                        className="flex items-center gap-1 bg-brand-brown text-brand-beige px-3 py-2 rounded-lg text-[11px] font-bold cursor-pointer disabled:opacity-60"
+                      >
+                        <Check className="h-3.5 w-3.5 text-brand-gold" /> Salvar
+                      </button>
+                      <button
+                        onClick={() => setEditando('')}
+                        className="px-3 py-2 text-[11px] text-brand-brown/70 cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    {/* O CUSTO NÃO SE DIGITA, e a tela precisa dizer por quê.
+                        Ele é o custo MÉDIO das entradas de estoque daquele
+                        produto. Digitá-lo à mão criaria um custo que não
+                        corresponde a nenhuma compra — e a precificação, que usa
+                        este número, passaria a mentir com cara de calculada. */}
+                    <p className="text-[10px] text-brand-brown/55 leading-relaxed">
+                      A <strong>quantidade</strong> é desta ficha e se edita aqui. O{" "}
+                      <strong>custo unitário</strong> não: ele é o custo médio das entradas de
+                      estoque deste produto. Para corrigi-lo, lance a compra em{" "}
+                      <strong>Estoque → Entrada</strong> com o preço pago — o custo médio se
+                      ajusta sozinho e a precificação acompanha.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-brand-brown truncate">{i.produto}</p>
+                      <p className="text-[10px] text-brand-brown/55">
+                        {qtd(i.quantidade)} {i.unidade} × {reais(i.custoUnitario)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-mono text-brand-brown/80">{reais(i.parcial)}</span>
+                      <button
+                        onClick={() => {
+                          setEditando(i.productId);
+                          setEdQtd(String(i.quantidade));
+                          setErro('');
+                        }}
+                        disabled={ocupado}
+                        title="Editar a quantidade usada por atendimento"
+                        className="p-1.5 rounded-lg text-brand-brown hover:bg-brand-gold/15 cursor-pointer"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => salvar(itens.filter((x) => x.productId !== i.productId))}
+                        disabled={ocupado}
+                        title="Tirar este insumo da ficha"
+                        className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             {itens.length === 0 && (

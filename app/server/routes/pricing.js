@@ -17,7 +17,7 @@
 const express = require('express');
 const router = express.Router();
 const escopo = require('../db/escopo');
-const { calcularPreco, compararComPraticado } = require('../services/precificacao');
+const { calcularPreco, compararComPraticado, precoDoPacote } = require('../services/precificacao');
 const est = require('../services/estoque');
 const logs = require('../services/logs');
 const custos = require('../services/custos-fixos');
@@ -399,6 +399,8 @@ router.post('/api/pricing/apply', async function (req, res) {
     const nome = String(b.serviceName || (servico && servico.name) || '').trim() || 'Simulacao avulsa';
     const precoAntes = servico ? Number(servico.price) : num(b.currentPrice);
 
+    const pacote = precoDoPacote(servico && servico.package_price, precoAntes, r.precoSugerido);
+
     const id = novoId('sim');
     await db.transacao(async function (tx) {
       await tx.q(
@@ -425,6 +427,14 @@ router.post('/api/pricing/apply', async function (req, res) {
           [r.precoSugerido, r.precoSugerido, entrada.variableCost, entrada.commissionPct,
            entrada.durationMin, b.catalogId]
         );
+        /* O PACOTE VAI JUNTO (M6.6). Sem isto, a sessao subia e o pacote ficava
+           com o valor calculado sobre o preco velho -- e a clinica vendia o
+           pacote pela margem de antes sem nada avisar. */
+        if (pacote.mexeu) {
+          await tx.q(
+            'UPDATE treatment_catalog SET package_price = ?' +
+            ' WHERE clinica_id = :clinica AND id = ?', [pacote.novo, b.catalogId]);
+        }
       }
     });
 
@@ -432,10 +442,17 @@ router.post('/api/pricing/apply', async function (req, res) {
       await logs.registrar(db, 
         'PRECIFICACAO',
         'Preco de "' + nome + '" alterado de R$ ' + Number(precoAntes || 0).toFixed(2) +
-          ' para R$ ' + r.precoSugerido.toFixed(2) + '.');
+          ' para R$ ' + r.precoSugerido.toFixed(2) + '.' +
+        (pacote.mexeu
+          ? ' O pacote acompanhou, de R$ ' + Number(pacote.anterior).toFixed(2) +
+            ' para R$ ' + Number(pacote.novo).toFixed(2) + ' (' + pacote.porque + ').'
+          : (pacote.novo === null ? '' : ' O pacote nao mudou: ' + pacote.porque + '.')));
     }
 
-    res.status(201).json({ id: id, aplicado: aplicarNoCatalogo, resultado: r, precoAnterior: precoAntes });
+    res.status(201).json({
+      id: id, aplicado: aplicarNoCatalogo, resultado: r, precoAnterior: precoAntes,
+      pacote: aplicarNoCatalogo ? pacote : null
+    });
   } catch (e) {
     console.error('[precificacao]', e && e.message);
     res.status(500).json({ error: 'Falha ao aplicar o preco.' });

@@ -21,6 +21,7 @@ import {
   Trash2,
   AlertCircle,
   AlertTriangle,
+  Search,
   X
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -81,7 +82,21 @@ export default function ClientDirectory({
     } catch { /* sem URL utilizável, segue o padrão */ }
     return clients[0] || null;
   });
+  /* BUSCA NA LISTA (M6.6). Com dezenas de fichas, achar a paciente pelo rolo da
+     lista e o que a clinica relatou como pior parte da tela. */
+  const [buscaPaciente, setBuscaPaciente] = useState('');
   const [showAddClient, setShowAddClient] = useState(false);
+
+  /* Compara SO DIGITO no telefone: a ficha guarda "(11) 91111-2222" e quem
+     busca digita "11911112222" -- e o contrario tambem. */
+  const clientesVisiveis = (() => {
+    const t = buscaPaciente.trim().toLowerCase();
+    if (!t) return clients;
+    const digitos = t.replace(/\D/g, '');
+    return clients.filter((c) =>
+      (c.name || '').toLowerCase().includes(t) ||
+      (digitos && (c.phone || '').replace(/\D/g, '').includes(digitos)));
+  })();
   const [showAddTreatment, setShowAddTreatment] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditingLaudo, setIsEditingLaudo] = useState(false);
@@ -447,9 +462,37 @@ export default function ClientDirectory({
           </button>
         </div>
 
+        {/* A BUSCA (M6.6): por nome ou por telefone, porque a recepcao tem os dois
+            na frente -- a paciente falando ao telefone ou o numero na tela. */}
+        <div className="relative mb-3">
+          <Search className="h-3.5 w-3.5 text-brand-brown/40 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            value={buscaPaciente}
+            onChange={(e) => setBuscaPaciente(e.target.value)}
+            placeholder="Buscar por nome ou telefone..."
+            className="w-full pl-9 pr-8 py-2 rounded-xl border border-brand-gold/25 bg-white text-xs text-brand-brown focus:outline-none focus:ring-1 focus:ring-brand-gold"
+          />
+          {buscaPaciente && (
+            <button
+              onClick={() => setBuscaPaciente('')}
+              title="Limpar a busca"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-brown/40 hover:text-brand-brown cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
         {/* List Directory */}
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-          {clients.map((c) => {
+          {clientesVisiveis.length === 0 && (
+            <p className="text-xs text-brand-brown/55 py-6 text-center">
+              {buscaPaciente
+                ? `Nenhuma paciente com "${buscaPaciente}".`
+                : 'Nenhuma paciente cadastrada ainda.'}
+            </p>
+          )}
+          {clientesVisiveis.map((c) => {
             const isSelected = selectedClient?.id === c.id;
             const lastSession = treatments.filter(t => t.clientId === c.id).sort((a,b) => new Date(b.sessionDate).getTime() - new Date(a.sessionDate).getTime())[0];
             

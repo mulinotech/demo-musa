@@ -267,3 +267,45 @@ test('a base caixa muda o faturamento e o investimento, e nao so o rotulo', func
   assert.strictEqual(comp.custoPorLead.investimento, 300);
   assert.strictEqual(caixa.custoPorLead.investimento, 0);
 });
+
+/* ------------------------------------------------------- CPL zerado (M6.6) */
+
+test('investimento ZERO nao vira CPL de R$ 0,00', () => {
+  /* Numa apresentacao a clinica marcou as categorias de captacao e o cartao
+     continuou em "R$ 0,00" -- que se le como "gastamos nada para captar", um
+     resultado excelente. O que houve foi nenhuma despesa daquelas categorias
+     ter caido no periodo do filtro. `null` obriga a tela a dizer o que falta. */
+  assert.strictEqual(vg.custoPorLead(0, 10), null);
+});
+
+test('mas investimento de verdade continua dividindo', () => {
+  assert.strictEqual(vg.custoPorLead(1000, 10), 100);
+});
+
+test('o detalhe diz QUANTOS lancamentos entraram na conta', () => {
+  /* E o numero que separa "marquei e nao caiu nada no periodo" de "cairam
+     despesas e elas somam zero". A tela escreve frases diferentes para os
+     dois, e sem a contagem nao teria como. */
+  const razao = [
+    { type: 'DESPESA', amount: 300, entry_date: '2026-09-10', category_id: 'cat_ads' },
+    { type: 'DESPESA', amount: 200, entry_date: '2026-09-11', category_id: 'cat_ads' },
+    { type: 'DESPESA', amount: 999, entry_date: '2026-08-10', category_id: 'cat_ads' },
+    { type: 'DESPESA', amount: 500, entry_date: '2026-09-12', category_id: 'cat_outra' }
+  ];
+  const d = vg.investimentoDetalhado(razao, '2026-09-01', '2026-09-30', ['cat_ads'], 'competencia');
+  assert.strictEqual(d.valor, 500);
+  assert.strictEqual(d.lancamentos, 2, 'agosto e a outra categoria ficam de fora');
+});
+
+test('sem categoria marcada o detalhe volta nulo, e nao zero', () => {
+  const d = vg.investimentoDetalhado([], '2026-09-01', '2026-09-30', [], 'competencia');
+  assert.strictEqual(d.valor, null);
+  assert.strictEqual(d.marcadas, 0);
+});
+
+test('categoria marcada sem despesa no periodo: zero lancamentos', () => {
+  const razao = [{ type: 'DESPESA', amount: 999, entry_date: '2026-08-10', category_id: 'cat_ads' }];
+  const d = vg.investimentoDetalhado(razao, '2026-09-01', '2026-09-30', ['cat_ads'], 'competencia');
+  assert.strictEqual(d.lancamentos, 0);
+  assert.strictEqual(vg.custoPorLead(d.valor, 20), null, 'e o CPL nao vira zero');
+});

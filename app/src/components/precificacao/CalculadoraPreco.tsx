@@ -197,9 +197,18 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
         setErro(d.error || "Não foi possível aplicar.");
         return;
       }
+      /* O PACOTE PRECISA APARECER (M6.6). Ele mudou junto no catalogo, e uma
+         alteracao de preco de venda que acontece sem ser dita e a mesma
+         familia de defeito que esta tarefa veio corrigir -- so que na direcao
+         contraria. */
+      const p = d.pacote;
       setAplicado(
         d.aplicado
-          ? alvo + " agora custa " + reais(resultado.precoSugerido) + "."
+          ? alvo + " agora custa " + reais(resultado.precoSugerido) + "." +
+            (p && p.mexeu
+              ? " O pacote acompanhou: de " + reais(p.anterior) + " para " + reais(p.novo) +
+                " — " + p.porque + "."
+              : (p && p.novo !== null ? " O pacote não mudou: " + p.porque + "." : ""))
           : "Simulação guardada no histórico.",
       );
       if (d.aplicado) setE((a) => ({ ...a, currentPrice: String(resultado.precoSugerido) }));

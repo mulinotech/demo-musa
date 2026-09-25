@@ -165,17 +165,41 @@ function receita(razao, de, ate, base) {
  *  "ninguém disse ao sistema o que é investimento", e a tela precisa dizer
  *  coisas diferentes nos dois casos. */
 function investimentoEmCaptacao(razao, de, ate, categoriasMarcadas, base) {
+  const r = investimentoDetalhado(razao, de, ate, categoriasMarcadas, base);
+  return r.valor;
+}
+
+/** O mesmo cálculo, dizendo TAMBÉM quantos lançamentos entraram (M6.6).
+ *
+ *  ================================ POR QUE A CONTAGEM PASSOU A IMPORTAR
+ *
+ *  Numa apresentação, a clínica marcou as categorias de captação e o cartão
+ *  continuou em **R$ 0,00** — sem dizer por quê. Zero ali tem três causas
+ *  completamente diferentes, e a tela mostrava a mesma coisa nas três:
+ *
+ *    a) ninguém marcou categoria      -> `null`, e a tela já dizia isso
+ *    b) marcou, mas NENHUMA despesa daquelas categorias caiu no período
+ *    c) marcou, houve despesa, e ela soma zero de verdade
+ *
+ *  O caso (b) é o que acontece de verdade: a clínica marca a categoria hoje e
+ *  o filtro da tela está em "últimos 7 dias", enquanto o anúncio foi lançado no
+ *  mês passado. "R$ 0,00" lê-se como "não investimos nada", que é falso — e não
+ *  há nada na tela apontando para o filtro.
+ *
+ *  Por isso a contagem volta junto, e o CPL de (b) é `null`: dividir zero pelos
+ *  leads devolve um CPL de R$ 0,00 que parece um resultado excelente. */
+function investimentoDetalhado(razao, de, ate, categoriasMarcadas, base) {
   const marcadas = categoriasMarcadas || [];
-  if (!marcadas.length) return null;
+  if (!marcadas.length) return { valor: null, lancamentos: 0, marcadas: 0 };
   const alvo = new Set(marcadas);
-  let total = 0;
+  let total = 0, n = 0;
   for (const l of (razao || [])) {
     if (l.type !== 'DESPESA') continue;
     const quando = (base === 'caixa') ? dia(l.paid_at) : dia(l.entry_date);
     if (!dentro(quando, de, ate)) continue;
-    if (alvo.has(l.category_id)) total += Number(l.amount);
+    if (alvo.has(l.category_id)) { total += Number(l.amount); n += 1; }
   }
-  return centavos(total);
+  return { valor: centavos(total), lancamentos: n, marcadas: marcadas.length };
 }
 
 /** CPL = investimento em captação ÷ leads gerados no MESMO período.
@@ -186,6 +210,11 @@ function investimentoEmCaptacao(razao, de, ate, categoriasMarcadas, base) {
 function custoPorLead(investimento, leads) {
   if (investimento === null) return null;          // ninguém marcou categoria
   if (!leads) return null;                          // zero lead: divisão sem sentido
+  /* ZERO INVESTIDO NÃO É CPL ZERO (M6.6). Dividir zero pelos leads devolve
+     R$ 0,00 -- que na tela parece um resultado excelente, quando o que
+     aconteceu foi nenhuma despesa das categorias marcadas ter caído no
+     período. `null` obriga a tela a dizer o que falta. */
+  if (!investimento) return null;
   return centavos(investimento / leads);
 }
 
@@ -219,7 +248,8 @@ function painel(d) {
   const receitaAtual = receita(razao, de, ate, base);
   const receitaAnt = receita(razao, ant.de, ant.ate, base);
 
-  const invest = investimentoEmCaptacao(razao, de, ate, marcadas, base);
+  const detalhe = investimentoDetalhado(razao, de, ate, marcadas, base);
+  const invest = detalhe.valor;
   const investAnt = investimentoEmCaptacao(razao, ant.de, ant.ate, marcadas, base);
 
   const nLeads = contarLeads(leads, de, ate);
@@ -248,8 +278,10 @@ function painel(d) {
     custoPorLead: Object.assign(par(cpl, cplAnt), {
       investimento: invest,
       leads: nLeads,
-      // A tela precisa distinguir "nao investiu" de "ninguem configurou".
-      categoriasMarcadas: marcadas.length
+      // A tela precisa distinguir "nao investiu" de "ninguem configurou" -- e,
+      // desde a M6.6, de "marcou, mas nada caiu neste periodo".
+      categoriasMarcadas: marcadas.length,
+      lancamentos: detalhe.lancamentos
     }),
 
     serieDeLeads: serieDeLeads(leads, de, ate)
@@ -259,6 +291,6 @@ function painel(d) {
 module.exports = {
   diasDaJanela, janelaAnterior, par,
   contarLeads, conversao, funil, serieDeLeads,
-  receita, investimentoEmCaptacao, custoPorLead, ticketMedio,
+  receita, investimentoEmCaptacao, investimentoDetalhado, custoPorLead, ticketMedio,
   painel
 };

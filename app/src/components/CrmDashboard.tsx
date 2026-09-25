@@ -121,6 +121,18 @@ export default function CrmDashboard({
     };
   };
 
+  /* ================= A RECARGA SILENCIOSA (M6.6)
+   *
+   * `fetchCrmData()` liga `loadingData`, e `loadingData` troca a tela inteira
+   * por um spinner -- o que DESMONTA a arvore de telas. Toda a memoria da tela
+   * vai junto: a paciente selecionada em Pacientes volta para a primeira da
+   * lista, e quem acabou de criar um plano perde de vista a paciente em que
+   * estava trabalhando.
+   *
+   * Depois de uma acao do usuario a lista ja esta na tela; o que se quer e
+   * atualiza-la, nao reconstruir a pagina. Por isso as acoes recarregam em
+   * modo silencioso. O spinner continua na carga INICIAL, onde nao ha o que
+   * desmontar. */
   const fetchCrmData = async (silent = false) => {
     if (!silent) setLoadingData(true);
     try {
@@ -305,7 +317,7 @@ export default function CrmDashboard({
         body: JSON.stringify(clientData),
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
@@ -320,7 +332,7 @@ export default function CrmDashboard({
         body: JSON.stringify(treatmentData),
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
@@ -335,7 +347,7 @@ export default function CrmDashboard({
         body: JSON.stringify(treatmentData),
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
@@ -380,7 +392,7 @@ export default function CrmDashboard({
         body: JSON.stringify(clientData),
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
@@ -432,7 +444,7 @@ export default function CrmDashboard({
         body: JSON.stringify(planData),
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
@@ -447,7 +459,7 @@ export default function CrmDashboard({
         body: JSON.stringify(planData),
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
@@ -460,7 +472,7 @@ export default function CrmDashboard({
         method: "DELETE",
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
@@ -475,7 +487,7 @@ export default function CrmDashboard({
         body: JSON.stringify(sessionData),
       });
       if (response.ok) {
-        await fetchCrmData();
+        await fetchCrmData(true);
       }
     } catch (e) {
       console.error(e);
