@@ -154,13 +154,29 @@ export default function LembretesPainel(p: { aoFechar: () => void; aoMudar: () =
     "w-full bg-white border border-brand-gold/30 rounded px-3 py-2 text-xs text-brand-brown focus:outline-none focus:border-brand-brown transition-colors";
 
   return (
-    <div className="fixed inset-0 z-[70] bg-brand-brown/40 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+    /* ================== O CARTÃO CABE NA TELA, E O RODAPÉ FICA ALCANÇÁVEL
+     *
+     * A régua trouxe dois campos de texto a mais, e o cartão passou da altura
+     * da janela: o rodapé — onde estão "Fechar" e "Enviar agora" — ficava
+     * abaixo da dobra, e não havia como sair do modal a não ser recarregando a
+     * página. É o mesmo defeito que o modal de programação teve na M6.3b, pela
+     * mesma causa: conteúdo que cresceu dentro de uma caixa sem altura máxima.
+     *
+     * O conserto é o de lá: a caixa vira uma coluna com altura limitada à
+     * janela; cabeçalho e rodapé não encolhem (`shrink-0`) e o MIOLO rola.
+     * Rolar a página inteira em vez do miolo levaria o rodapé junto, que é
+     * exatamente o que se quer evitar.
+     *
+     * `min-h-0` no miolo não é enfeite: sem ele, um filho flex se recusa a
+     * encolher abaixo do próprio conteúdo e o `overflow-y-auto` nunca entra em
+     * ação -- a caixa volta a estourar, e em silêncio. */
+    <div className="fixed inset-0 z-[70] bg-brand-brown/40 backdrop-blur-sm flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-2xl bg-brand-beige rounded-2xl shadow-2xl border border-brand-gold/20 my-4"
+        className="w-full max-w-2xl bg-brand-beige rounded-2xl shadow-2xl border border-brand-gold/20 flex flex-col max-h-[calc(100vh-2rem)]"
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-brand-gold/20">
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-brand-gold/20">
           <div>
             <h3 className="text-sm font-serif font-bold text-brand-brown uppercase tracking-wider">
               Lembrete automático
@@ -174,7 +190,7 @@ export default function LembretesPainel(p: { aoFechar: () => void; aoMudar: () =
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
           {recado && (
             <div className="rounded-xl px-4 py-3 text-xs border bg-emerald-50 border-emerald-200 text-emerald-800 flex items-start gap-2">
               <Check className="h-4 w-4 shrink-0 mt-0.5" />
@@ -397,7 +413,7 @@ export default function LembretesPainel(p: { aoFechar: () => void; aoMudar: () =
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-t border-brand-gold/20">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-t border-brand-gold/20">
           <p className="text-[10px] text-brand-brown/50 max-w-xs leading-relaxed">
             Responder <strong>1</strong> confirma o horário; <strong>2</strong> sinaliza pedido de
             remarcação — o sistema não remarca sozinho.
