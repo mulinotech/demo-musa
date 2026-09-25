@@ -23,10 +23,18 @@
  *  paciente real não tem desfazer.**
  */
 
-const TEMPLATE_PADRAO = require('./lembretes').TEMPLATE_PADRAO;
-const ANTECEDENCIA_H = require('./lembretes').ANTECEDENCIA_H;
+const lembretes = require('./lembretes');
+const TEMPLATE_PADRAO = lembretes.TEMPLATE_PADRAO;
+const ANTECEDENCIA_H = lembretes.ANTECEDENCIA_H;
 
-const CHAVES_LEMBRETE = ['lembretes_ativos', 'lembrete_antecedencia_h', 'lembrete_template'];
+/* As duas chaves novas (M6.7) guardam o texto da 2ª e da 3ª mensagem da régua.
+ * Chaves separadas, e não um JSON numa chave só: assim a clínica pode reescrever
+ * a cobrança sem risco de estragar o cancelamento, e um valor corrompido
+ * derruba uma mensagem em vez das três. */
+const CHAVES_LEMBRETE = [
+  'lembretes_ativos', 'lembrete_antecedencia_h', 'lembrete_template',
+  'lembrete_template_2', 'lembrete_template_3'
+];
 
 /** A configuração de lembrete desta clínica.
  *
@@ -54,6 +62,8 @@ async function lerLembrete(db) {
     ativo: m.lembretes_ativos === '1' && !!instancia,
     ligadoNaConfiguracao: m.lembretes_ativos === '1',
     template: m.lembrete_template || TEMPLATE_PADRAO,
+    templateCobranca: m.lembrete_template_2 || lembretes.TEMPLATE_COBRANCA,
+    templateCancelamento: m.lembrete_template_3 || lembretes.TEMPLATE_CANCELAMENTO,
     antecedenciaH: Number(m.lembrete_antecedencia_h) || ANTECEDENCIA_H
   };
 }

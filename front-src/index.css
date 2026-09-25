@@ -1,0 +1,235 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* ============================= IDENTIDADE MUSA CRM (M6.1, 24/09)
+   *
+   * Brandbook v1.0: Poppins assina display e títulos; Inter sustenta texto e
+   * corpo. Os NOMES das variáveis continuam `--font-serif` e `--font-sans`
+   * porque são usados como `font-serif` / `font-sans` em 65 arquivos de tela:
+   * trocar o nome mexeria no layout, e a troca é só de tipografia. O papel de
+   * cada uma é o mesmo de antes — a de cima titula, a de baixo lê. */
+  --font-serif: "Poppins", sans-serif;   /* display e títulos */
+  --font-sans: "Inter", sans-serif;      /* texto e corpo */
+
+  /* ===================================== A ESCALA DE LEITURA (M5.1, 15/09)
+   *
+   * O texto do sistema foi construído entre 9 e 11 pixels: são 523 tamanhos
+   * abaixo de 12px espalhados por 65 arquivos de tela. Leitura confortável de
+   * interface começa em 13-14px, e quem tem hipermetropia sente isso antes de
+   * todo mundo -- que é boa parte do público de dona de clínica de estética.
+   *
+   * A CURVA COMPRIME PARA CIMA, e não multiplica tudo: os tamanhos pequenos
+   * crescem 55-75%, os médios ~20%, e de 30px para cima nada muda, porque ali
+   * já se lia bem. Multiplicar tudo pelo mesmo fator quebraria layout sem
+   * resolver nada além do que estes números resolvem.
+   *
+   * =============== TRÊS VERSÕES ATÉ ACERTAR, E O QUE CADA UMA ENSINOU (15/09)
+   *
+   * A: só os tamanhos escritos em pixel subiram. Ficou legível embaixo e
+   *    manteve o resto -- mas a Silvia, olhando as fotos, quis 15% a mais.
+   *
+   * B: o botão `--musa-escala` alcança APENAS os literais, então 15% neles
+   *    deixou `text-[10px]` (15,5px) MAIOR que `text-xs` (14,5px), que é 12px
+   *    no original. Rótulo miúdo na frente de texto de corpo é hierarquia ao
+   *    contrário. Corrigi subindo a faixa média junto -- e aí subi TAMBÉM
+   *    `base`, `lg`, `xl` e `2xl`. Em produção o veredito foi "ficou grosseiro".
+   *
+   * C (esta): **o de baixo sobe, o de cima volta.** Quem precisava crescer era
+   *    o texto miúdo -- 10px vira 14px, +40%. Título não: `lg`, `xl` e `2xl`
+   *    voltaram ao tamanho original, e é daí que vinha o ar pesado. Aumentar
+   *    tudo junto não é "aumentar a fonte", é aproximar a tela do rosto.
+   *
+   * A ORDEM É ESTRITA, e é o que se confere ao mexer aqui:
+   *   12,5 < 13 < 14 < 14,5 < 15(xs) < 16(sm) < 16,5(base) < 18(lg)
+   *        < 20(xl) < 24(2xl) < 30(3xl)
+   */
+  --text-xs: 0.9375rem;               /* 12px -> 15px   */
+  --text-xs--line-height: 1.35;
+  --text-sm: 1rem;                    /* 14px -> 16px   */
+  --text-sm--line-height: 1.4;
+  --text-base: 1.03125rem;            /* 16px -> 16,5px */
+  --text-base--line-height: 1.5;
+  --text-lg: 1.125rem;                /* 18px -> 18px   */
+  --text-lg--line-height: 1.45;
+  --text-xl: 1.25rem;                 /* 20px -> 20px   */
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.5rem;                 /* 24px -> 24px   */
+  --text-2xl--line-height: 1.3;
+  /* de `text-3xl` (30px) para cima nada muda. */
+
+  /* ===================================== A PALETA OFICIAL (M6.1, 24/09)
+   *
+   * Brandbook v1.0. Os NOMES das variáveis não mudam — `brand-gold`,
+   * `gold-500`, `luxury-dark` estão escritos em centenas de classes pelas
+   * telas, e renomear seria mexer no layout. O que muda é o VALOR: cada nome
+   * passa a apontar para a cor da marca que cumpre o mesmo papel.
+   *
+   * PRIMÁRIAS   Teal Profundo #014C68 · Teal Musa #0E7FA6
+   *             Roxo Musa #7A62F2 · Navy #141E33
+   * APOIO       Teal Claro #2B8BB6 · Índigo #6472D6
+   *             Slate #5A6478 · Névoa #F6F8FB
+   *
+   * Proporção do manual: 60% navy/neutros · 25% teal · 15% roxo como acento.
+   * Por isso o roxo entra só em `gold-accent` e no gradiente de assinatura —
+   * espalhá-lo pelos tokens de superfície inverteria essa proporção. */
+  --color-primary: #014C68;          /* Teal Profundo */
+  --color-primary-light: #0E7FA6;    /* Teal Musa */
+  --color-secondary: #2B8BB6;        /* Teal Claro */
+  --color-tertiary: #F6F8FB;         /* Névoa */
+  --color-neutral: #141E33;          /* Navy */
+  --color-neutral-muted: #5A6478;    /* Slate */
+  --color-bg-luxe: #FFFFFF;
+  --color-surface-dim: #DCE6F0;
+  --color-surface-low: #F6F8FB;
+  --color-surface-container: #EDF2F8;
+  --color-surface-high: #E3EBF4;
+  --color-linen: #EDF2F8;
+  --color-gold-accent: #7A62F2;      /* Roxo Musa -- o acento dos 15% */
+
+  --color-gold-50: #F6F8FB;
+  --color-gold-100: #EDF2F8;
+  --color-gold-200: #E3EBF4;
+  --color-gold-300: #C7DAE6;
+  --color-gold-400: #2B8BB6;
+  --color-gold-500: #0E7FA6;
+  --color-gold-600: #056C91;
+  --color-gold-700: #014C68;
+  --color-gold-800: #0A2540;
+  --color-gold-900: #141E33;
+
+  --color-luxury-black: #FFFFFF;
+  --color-luxury-dark: #F6F8FB;
+  --color-luxury-gray: #EDF2F8;
+  --color-luxury-light: #E3EBF4;
+
+  /* Mapeamento de Cores para o CRM.
+   *
+   * `brand-beige` é FUNDO em `bg-brand-beige` e TEXTO em `text-brand-beige`,
+   * este último sempre sobre `brand-brown`. A Névoa serve aos dois papéis;
+   * qualquer cor mais saturada quebraria um dos lados. */
+  --color-brand-gold: #0E7FA6;       /* acento, bordas e ícones -> Teal Musa */
+  --color-brand-beige: #F6F8FB;      /* fundo claro / texto sobre navy -> Névoa */
+  --color-brand-brown: #141E33;      /* texto e estrutura -> Navy */
+  --color-brand-cream: #FFFFFF;
+}
+
+/* ============================ OS TAMANHOS ESCRITOS EM PIXEL (M5.1, 15/09)
+ *
+ * São 523 ocorrências de `text-[8px]` a `text-[11px]` em 65 arquivos. Estas
+ * seis regras levantam todas de uma vez, e desfazer é apagar as seis -- o
+ * alternativo era editar os 65 arquivos, com 523 chances de errar um.
+ *
+ * POR QUE AQUI E NÃO NO `@theme`: tamanho arbitrário não passa pela escala do
+ * Tailwind. `text-[10px]` vira literalmente `font-size: 10px`, então mexer nas
+ * variáveis do tema não o alcança -- e mexer no `html { font-size }` também
+ * não, porque pixel não escala com `rem`. Isso moveria os títulos e deixaria
+ * os 523 rótulos onde estão, PIORANDO a proporção.
+ *
+ * E POR QUE SEM `!important`: estas regras estão fora das camadas do Tailwind,
+ * e CSS sem camada vence CSS em camada -- a cascata já resolve. `!important`
+ * aqui só criaria um problema para quem precisasse de uma exceção depois.
+ *
+ * A `--musa-escala` é o botão: se ainda estiver pequeno, muda-se um número e
+ * reconstrói. Não é preciso refazer a análise.
+ */
+:root {
+  --musa-escala: 1;
+}
+
+.text-\[8px\]  { font-size: calc(12.5px * var(--musa-escala)); line-height: 1.35; }
+.text-\[9px\]  { font-size: calc(13px   * var(--musa-escala)); line-height: 1.35; }
+.text-\[10px\] { font-size: calc(14px   * var(--musa-escala)); line-height: 1.35; }
+.text-\[11px\] { font-size: calc(14.5px * var(--musa-escala)); line-height: 1.4;  }
+.text-\[12px\] { font-size: calc(15px   * var(--musa-escala)); line-height: 1.4;  }
+
+/* ==================== O CONSOLE UM PASSO ABAIXO DO SITE (M5.1, 15/09)
+ *
+ * Veredito da Silvia depois de usar em produção: o site e a tela de login
+ * ficaram no ponto, o CRM pedia "um pouquinho menos, para ter ar de delicado".
+ * São coisas diferentes e dividem o mesmo CSS -- encolher a escala global
+ * resolveria o CRM e estragaria o site.
+ *
+ * Isto funciona porque as classes do Tailwind 4 leem `var(--text-xs)` NO
+ * ELEMENTO, e variável de CSS herda: redefinir as variáveis na raiz do console
+ * (`.escala-crm`, em `CrmDashboard.tsx`) faz cada descendente pegar o valor
+ * menor. Nenhuma tela precisou ser tocada.
+ *
+ * São ~7% -- o suficiente para mudar a sensação, longe de desfazer o ganho de
+ * leitura: o rótulo miúdo que era 10px continua a 13px, e não a 10.
+ *
+ * O `/plataforma` e o `/login` ficam FORA disto de propósito: não estão dentro
+ * do console, e é lá que a escala maior foi aprovada.
+ */
+.escala-crm {
+  --musa-escala: 0.93;
+  --text-xs: 0.875rem;                /* 15px -> 14px   */
+  --text-sm: 0.9375rem;               /* 16px -> 15px   */
+  --text-base: 1rem;                  /* 16,5px -> 16px */
+  --text-lg: 1.09375rem;              /* 18px -> 17,5px */
+  --text-xl: 1.21875rem;              /* 20px -> 19,5px */
+  --text-2xl: 1.4375rem;              /* 24px -> 23px   */
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-luxe);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-secondary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* Luxury transitions and styles */
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg-luxe);
+  color: var(--color-neutral);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+h1, h2, h3, h4, .font-serif-lux {
+  font-family: var(--font-serif);
+}
+
+/* Gradiente de assinatura do manual: 120°, do teal profundo ao roxo. */
+.text-gold-gradient {
+  background: linear-gradient(120deg, #014C68 0%, #0E7FA6 45%, #7A62F2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gold-gradient {
+  background: linear-gradient(120deg, #014C68 0%, #0E7FA6 45%, #7A62F2 100%);
+}
+
+.border-gold-gradient {
+  border-image: linear-gradient(120deg, #014C68, #0E7FA6, #7A62F2) 1;
+}
+
+/* Custom pulse and glow */
+@keyframes gold-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(14, 127, 166, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(14, 127, 166, 0.5);
+  }
+}
+
+.animate-gold-glow {
+  animation: gold-glow 3s infinite ease-in-out;
+}

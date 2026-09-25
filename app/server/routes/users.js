@@ -41,7 +41,32 @@ const escopo = require('../db/escopo');
 const logs = require('../services/logs');
 const { verificarAlteracao } = require('../services/usuarios');
 
-const PAPEIS_VALIDOS = ['admin', 'gerente', 'profissional', 'vendedor'];
+/* OS PAPÉIS QUE A CLÍNICA PODE ESCOLHER (M6.7).
+ *
+ * A ordem é a da tela, do mais amplo ao mais estreito. `gerente` continua na
+ * lista porque ele continua existindo no banco: a migration 043 não converteu
+ * ninguém, de propósito — ela não sabe qual gerente é comercial e qual é
+ * administrativo. Tirá-lo daqui faria o PATCH recusar o papel que a pessoa já
+ * tem, e a tela mostraria "Nada para atualizar" ao salvar qualquer outro campo.
+ *
+ * Esta lista, o ENUM da migration 043 e `src/lib/papeis.mjs` (a tela) têm de
+ * dizer a mesma coisa. Há teste conferindo as três — é o tipo de divergência
+ * que só aparece quando alguém não consegue salvar. */
+const PAPEIS_VALIDOS = [
+  'admin', 'gerente_admin', 'gerente_comercial', 'gerente',
+  'profissional', 'secretaria', 'financeiro', 'contador', 'vendedor'
+];
+
+/* QUEM PODE SER "PROFISSIONAL RESPONSÁVEL" por um atendimento.
+ *
+ * Era uma lista por EXCLUSÃO — "todo papel menos vendedor" —, que funcionava enquanto
+ * havia quatro papéis e o único que não atendia era o vendedor. Com os papéis
+ * novos ela passaria a oferecer o contador e o financeiro como responsáveis
+ * clínicos no seletor da agenda, e alguém escolheria, porque o nome está lá.
+ *
+ * Agora é lista por INCLUSÃO, que erra para o lado certo: papel novo fica fora
+ * até alguém decidir que ele atende. */
+const PAPEIS_QUE_ATENDEM = ['admin', 'gerente', 'gerente_admin', 'profissional'];
 
 /* ================== O REGISTRO PROFISSIONAL (M5.5) MORA NO CADASTRO DA PESSOA
  *
@@ -239,16 +264,18 @@ router.patch('/api/users/:id', express.json({ limit: '1mb' }), async function (r
  *  herdaria a regra de `admin` e a rota nasceria inalcançável para quem ela foi
  *  feita. É a mesma armadilha de rota aninhada já anotada em `autorizacao.js`.
  *
- *  `vendedor` fica de fora da LISTA (não da rota): vendedor não aplica
- *  procedimento, e um nome que não pode ser o responsável só atrapalha na hora
- *  de escolher. */
+ *  Quem entra na lista está em `PAPEIS_QUE_ATENDEM`, no topo deste arquivo —
+ *  vendedor, secretária, financeiro e contador ficam de fora da LISTA (não da
+ *  rota): nenhum deles aplica procedimento, e um nome que não pode ser o
+ *  responsável só atrapalha na hora de escolher. */
 router.get('/api/profissionais', async function (req, res) {
   const db = escopo(req);
   try {
     const [r] = await db.q(
       "SELECT id, name, funcao FROM users" +
-      " WHERE clinica_id = :clinica AND status = 'active' AND role <> 'vendedor'" +
-      ' ORDER BY name');
+      " WHERE clinica_id = :clinica AND status = 'active'" +
+      ' AND role IN (' + PAPEIS_QUE_ATENDEM.map(() => '?').join(',') + ')' +
+      ' ORDER BY name', PAPEIS_QUE_ATENDEM);
     res.json(r);
   } catch (e) {
     console.error('[usuarios]', e && e.message);

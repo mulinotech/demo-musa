@@ -29,12 +29,61 @@
  * manhã — e uma clínica que faz isso perde a paciente, não ganha a
  * confirmação. */
 const JANELA = { de: 8, ate: 20 };
-const ANTECEDENCIA_H = 24;
+const ANTECEDENCIA_H = 26;
+
+/* ============================================ A RÉGUA DE TRÊS DISPAROS (M6.7)
+ *
+ * A clínica pediu, nestas palavras: 26 h antes pedir confirmação; **2 h** depois
+ * do 1º, se não houve resposta, lembrar que há uma profissional reservada
+ * exclusivamente para aquele horário; **4 h** depois do 2º, se ainda não houve
+ * resposta, avisar que o horário está cancelado e se colocar à disposição.
+ *
+ * As esperas são CONTADAS DO ENVIO ANTERIOR, não do horário do atendimento.
+ * Contar do atendimento parece equivalente e não é: um envio empurrado para
+ * dentro da janela civilizada (ver `JANELA`) sai mais cedo ou mais tarde do que
+ * a conta previa, e a partir daí as três mensagens se amontoariam na mesma hora
+ * — ou a terceira sairia ANTES da segunda. O que a paciente recebe tem de ter
+ * intervalo de verdade entre uma mensagem e outra.
+ */
+const ESPERA_H = { 2: 2, 3: 4 };
+const ULTIMA_ETAPA = 3;
 
 const TEMPLATE_PADRAO =
   'Ola {paciente}! Passando para lembrar do seu horario na Dra. Musa: ' +
   '{procedimento}, {data} as {hora}, com {profissional}.\n\n' +
   'Responda 1 para confirmar ou 2 se precisar remarcar.';
+
+/* A SEGUNDA MENSAGEM diz por que a confirmação importa, em vez de repetir o
+ * pedido. Repetir a primeira soa a sistema quebrado; dizer que existe uma
+ * profissional com aquela hora bloqueada é a informação que faz a pessoa
+ * responder — e é verdade, que é o que separa isto de pressão inventada. */
+const TEMPLATE_COBRANCA =
+  'Oi {paciente}, tudo bem? Ate agora nao recebemos sua confirmacao nem um ' +
+  'pedido de remarcacao para {procedimento}, {data} as {hora}.\n\n' +
+  'Temos uma profissional reservada exclusivamente para te atender nesse ' +
+  'horario.\n\nResponda 1 para confirmar ou 2 se precisar remarcar.';
+
+/* A TERCEIRA INFORMA UM FATO CONSUMADO, e por isso o worker só a envia depois
+ * de cancelar de verdade no banco. Mandar "esta cancelado" e deixar o horario
+ * ocupado seria a clinica mentindo por escrito -- e a paciente aparecendo. */
+const TEMPLATE_CANCELAMENTO =
+  '{paciente}, como nao recebemos confirmacao nem pedido de remarcacao, o ' +
+  'horario de {data} as {hora} foi cancelado.\n\n' +
+  'Seguimos a disposicao para agendar em outra data que fique melhor para ' +
+  'voce -- e so responder por aqui. 🌸';
+
+const TEMPLATES = { 1: TEMPLATE_PADRAO, 2: TEMPLATE_COBRANCA, 3: TEMPLATE_CANCELAMENTO };
+
+/** O texto desta etapa: o que a clínica escreveu, ou o padrão.
+ *  A etapa 1 continua lendo `cfg.template`, que é o campo que a tela sempre
+ *  ofereceu — renomeá-lo apagaria o texto que as clínicas já escreveram. */
+function templateDaEtapa(cfg, etapa) {
+  cfg = cfg || {};
+  if (etapa === 1) return cfg.template || TEMPLATE_PADRAO;
+  if (etapa === 2) return cfg.templateCobranca || TEMPLATE_COBRANCA;
+  if (etapa === 3) return cfg.templateCancelamento || TEMPLATE_CANCELAMENTO;
+  return TEMPLATE_PADRAO;
+}
 
 /* ------------------------------------------------------------ tempo */
 
@@ -78,38 +127,122 @@ function momentoDeEnvio(startsAt, op) {
   return texto(d);
 }
 
+/** Quando sai a COBRANÇA da etapa seguinte: N horas depois do último envio,
+ *  empurrada para dentro da janela civilizada — mas para FRENTE.
+ *
+ *  Esta é a diferença que justifica a função existir em vez de reusar
+ *  `momentoDeEnvio` com outro argumento. Lá, um horário fora da janela recua:
+ *  um lembrete que sai antes da hora continua servindo. Aqui, recuar colocaria
+ *  a cobrança ANTES da mensagem que ela cobra — a paciente receberia "ainda não
+ *  recebemos sua confirmação" antes do pedido de confirmação.
+ *
+ *  Então a cobrança que cairia às 22 h espera as 8 h do dia seguinte. Chega
+ *  atrasada, e atrasada é a única forma de chegar certa. */
+function momentoDaCobranca(ultimoEnvio, horas, op) {
+  op = op || {};
+  const janela = op.janela || JANELA;
+  const base = instante(ultimoEnvio);
+  if (isNaN(base)) return null;
+
+  const d = new Date(base.getTime() + Number(horas) * 3600000);
+
+  if (d.getHours() < janela.de) {
+    d.setHours(janela.de, 0, 0, 0);
+  } else if (d.getHours() > janela.ate ||
+             (d.getHours() === janela.ate && (d.getMinutes() || d.getSeconds()))) {
+    d.setDate(d.getDate() + 1);
+    d.setHours(janela.de, 0, 0, 0);
+  }
+  return texto(d);
+}
+
 /* -------------------------------------------------------- a decisão */
 
 const STATUS_QUE_RECEBEM = ['AGENDADO', 'CONFIRMADO'];
 
-/** Decide se ESTE compromisso recebe lembrete AGORA, e diz por quê quando não.
- *  O motivo não é enfeite: é o que a tela de prévia mostra, e é o que evita a
- *  pergunta "por que a fulana não recebeu?" virar investigação no banco. */
+/** Em que etapa este compromisso está.
+ *
+ *  `reminder_sent_at` preenchido com etapa 0 significa UM compromisso que
+ *  recebeu o lembrete antigo e que a migration 044 não alcançou — uma linha
+ *  criada entre o ALTER e o UPDATE, ou um banco onde a 044 ainda não rodou.
+ *  Ele conta como etapa 1. Contar como 0 faria a régua mandar o primeiro
+ *  lembrete de novo para quem já o recebeu, e é a repetição que a paciente
+ *  lê como "esse consultório está com problema". */
+function etapaAtual(c) {
+  const n = Number(c && c.reminder_stage);
+  const jaSaiuUm = !!(c && c.reminder_sent_at);
+  if (!isFinite(n) || n < 0) return jaSaiuUm ? 1 : 0;
+  if (n === 0 && jaSaiuUm) return 1;
+  return Math.min(n, ULTIMA_ETAPA);
+}
+
+/** Decide se ESTE compromisso recebe mensagem AGORA, em que etapa, e diz por
+ *  quê quando não. O motivo não é enfeite: é o que a tela de prévia mostra, e é
+ *  o que evita a pergunta "por que a fulana não recebeu?" virar investigação no
+ *  banco.
+ *
+ *  ============================================ O QUE PARA A RÉGUA, E POR QUÊ
+ *
+ *  - **`reminder_reply_at` preenchido.** A paciente escreveu alguma coisa. Não
+ *    interessa o quê: qualquer texto dela é assunto de gente, e cobrar quem
+ *    acabou de responder é o jeito mais rápido de perder a paciente. O webhook
+ *    carimba essa coluna em toda mensagem recebida de quem tem lembrete aberto,
+ *    e não só no "1" e no "2" — era esse o buraco que cancelaria o horário de
+ *    quem respondeu "posso chegar 10 minutos depois?".
+ *  - **status CONFIRMADO.** Confirmou, por WhatsApp ou pelo balcão. A etapa 1
+ *    ainda sai para ela (é lembrete, e lembrete serve para quem vem); as etapas
+ *    2 e 3 não, porque são cobrança de uma resposta que já veio.
+ *  - **o horário já passou.** Depois da hora marcada não existe lembrete,
+ *    existe cobrança. */
 function deveEnviar(c, agora, op) {
   if (!c) return { enviar: false, motivo: 'compromisso inexistente' };
   if (c.kind === 'BLOQUEIO') return { enviar: false, motivo: 'bloqueio de horario' };
   if (STATUS_QUE_RECEBEM.indexOf(c.status) === -1) {
     return { enviar: false, motivo: 'status ' + String(c.status).toLowerCase() };
   }
-  if (c.reminder_sent_at) return { enviar: false, motivo: 'lembrete ja enviado' };
   if (!String(c.phone || '').replace(/\D/g, '')) {
     return { enviar: false, motivo: 'paciente sem telefone' };
   }
 
-  const momento = momentoDeEnvio(c.starts_at, op);
-  if (!momento) return { enviar: false, motivo: 'data invalida' };
+  const feita = etapaAtual(c);
+  const proxima = feita + 1;
+
+  if (feita >= ULTIMA_ETAPA) {
+    return { enviar: false, etapa: feita, motivo: 'regua concluida' };
+  }
+  if (feita >= 1 && c.reminder_reply_at) {
+    return { enviar: false, etapa: feita, motivo: 'paciente ja respondeu' };
+  }
+  if (feita >= 1 && c.status === 'CONFIRMADO') {
+    return { enviar: false, etapa: feita, motivo: 'ja confirmado' };
+  }
+
+  let momento;
+  if (proxima === 1) {
+    momento = momentoDeEnvio(c.starts_at, op);
+  } else {
+    /* Sem `reminder_last_at` não há de onde contar a espera. Acontece com linha
+     * antiga que a migration 044 não alcançou; a régua para, em vez de inventar
+     * uma base e cobrar na hora errada. */
+    const base = c.reminder_last_at || c.reminder_sent_at;
+    if (!base) return { enviar: false, etapa: feita, motivo: 'sem registro do envio anterior' };
+    const espera = (op && op.esperaH && op.esperaH[proxima]) || ESPERA_H[proxima];
+    momento = momentoDaCobranca(base, espera, op);
+  }
+  if (!momento) return { enviar: false, etapa: feita, motivo: 'data invalida' };
 
   const ag = instante(agora);
   const inicio = instante(c.starts_at);
+  if (isNaN(inicio)) return { enviar: false, etapa: feita, motivo: 'data invalida' };
 
-  // Depois da hora marcada não existe lembrete, existe cobrança.
-  if (ag >= inicio) return { enviar: false, motivo: 'horario ja passou', momento: momento };
-  if (ag < instante(momento)) return { enviar: false, motivo: 'ainda cedo', momento: momento };
+  if (ag >= inicio) return { enviar: false, etapa: feita, motivo: 'horario ja passou', momento: momento };
+  if (ag < instante(momento)) return { enviar: false, etapa: feita, motivo: 'ainda cedo', momento: momento };
 
   // Atrasado quer dizer que o processo esteve dormindo. Vai assim mesmo, mas
   // fica registrado — é o sintoma de que o disparo externo parou de rodar.
   const atraso = Math.round((ag - instante(momento)) / 60000);
-  return { enviar: true, momento: momento, atrasadoMin: atraso > 30 ? atraso : 0 };
+  return { enviar: true, etapa: proxima, cancela: proxima === ULTIMA_ETAPA,
+           momento: momento, atrasadoMin: atraso > 30 ? atraso : 0 };
 }
 
 /* ----------------------------------------------------------- texto */
@@ -179,7 +312,15 @@ function interpretarResposta(txt) {
 module.exports = {
   JANELA: JANELA,
   ANTECEDENCIA_H: ANTECEDENCIA_H,
+  ESPERA_H: ESPERA_H,
+  ULTIMA_ETAPA: ULTIMA_ETAPA,
   TEMPLATE_PADRAO: TEMPLATE_PADRAO,
+  TEMPLATE_COBRANCA: TEMPLATE_COBRANCA,
+  TEMPLATE_CANCELAMENTO: TEMPLATE_CANCELAMENTO,
+  TEMPLATES: TEMPLATES,
+  templateDaEtapa: templateDaEtapa,
+  momentoDaCobranca: momentoDaCobranca,
+  etapaAtual: etapaAtual,
   instante: instante,
   momentoDeEnvio: momentoDeEnvio,
   deveEnviar: deveEnviar,

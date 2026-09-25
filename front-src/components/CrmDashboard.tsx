@@ -1,0 +1,1244 @@
+import { limparToken } from "../lib/api";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { X, Sparkles, ShieldCheck, FileText, Pencil } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import Navbar from "./Navbar";
+import Sidebar from "./Sidebar";
+import { ContextoCrm } from "../paginas/crm/contexto";
+import { comDdi, DDI_PADRAO } from "../lib/telefone.mjs";
+import { Client, Lead, Interaction, Treatment, TreatmentCatalog, TreatmentPlan, TreatmentSession, ConversaoDeLead } from "../types";
+
+/**
+ * Da T0.5 em diante este arquivo e o *layout* do console: barra de navegacao,
+ * carga dos dados, gaveta do lead e o botao de relatorio. As telas vivem em
+ * src/paginas/crm/ e chegam aqui pelo <Outlet />. Tela nova de modulo entra la,
+ * nunca mais aqui dentro.
+ */
+
+/** Rota -> nome de aba que a rota /api/reports/generate ja conhece. */
+const ABA_DO_RELATORIO: Record<string, { aba: string; titulo: string }> = {
+  "/crm": { aba: "dashboard", titulo: "Painel de Visao Geral" },
+  "/crm/funil": { aba: "pipeline", titulo: "Funil & Gestao de Leads" },
+  "/crm/pacientes": { aba: "clients", titulo: "Diretorio de Pacientes" },
+  "/crm/atendimento": { aba: "chat", titulo: "Central de Atendimento" },
+};
+
+/**
+ * Desde a T0.5 este componente e montado pela rota /crm, sem pai que passe
+ * dados. As props sobreviventes sao opcionais: `onClose` para voltar ao site e
+ * `onUpdateLeadStatus` para o caso de alguem ainda querer espelhar o estado.
+ * `leads` e `onDeleteLead` eram props mortas - nunca foram lidas aqui dentro.
+ */
+interface CrmDashboardProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+  onUpdateLeadStatus?: (leadId: string, newStatus: Lead["status"], phone?: string, email?: string) => void;
+}
+
+export default function CrmDashboard({
+  isOpen = true,
+  onClose,
+  onUpdateLeadStatus: parentUpdateStatus,
+}: CrmDashboardProps) {
+  const navigate = useNavigate();
+  const local = useLocation();
+  const relatorioDaRota = ABA_DO_RELATORIO[local.pathname.replace(/\/$/, "") || "/crm"];
+
+  // CRM State variables
+  const [clients, setClients] = useState<Client[]>([]);
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [treatmentPlans, setTreatmentPlans] = useState<TreatmentPlan[]>([]);
+  const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [localLeads, setLocalLeads] = useState<Lead[]>([]);
+  const [treatmentCatalog, setTreatmentCatalog] = useState<TreatmentCatalog[]>([]);
+  const [isAiConfigured, setIsAiConfigured] = useState<boolean>(false);
+  const [isEvolutionConfigured, setIsEvolutionConfigured] = useState<boolean>(false);
+  const [loadingData, setLoadingData] = useState<boolean>(false);
+
+  /* Estado da navegação lateral.
+   *  - `menuAberto` só vale no celular, onde a lateral é gaveta.
+   *  - `menuRecolhido` só vale no desktop, e é preferência guardada. A leitura
+   *    entra dentro de try/catch porque `localStorage` lança em aba anônima e
+   *    em alguns dispositivos gerenciados — e uma preferência de menu não pode
+   *    derrubar o console. */
+  const [menuAberto, setMenuAberto] = useState(false);
+  const [menuRecolhido, setMenuRecolhido] = useState(() => {
+    try { return localStorage.getItem("musa_menu_recolhido") === "1"; } catch { return false; }
+  });
+
+  // Active Lead Details Drawer inside CRM
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [chatView, setChatView] = useState<'crm' | 'evolution'>('crm');
+
+  // Aviso não bloqueante (substitui os window.alert que travavam o envio)
+  const [toast, setToast] = useState<{ type: 'ok' | 'err' | 'warn'; text: string } | null>(null);
+  const showToast = (type: 'ok' | 'err' | 'warn', text: string) => {
+    setToast({ type, text });
+    window.setTimeout(() => setToast(null), 7000);
+  };
+
+  // Lead Drawer Edit States
+  const [editPhone, setEditPhone] = useState(DDI_PADRAO);
+  const [editEmail, setEditEmail] = useState("");
+  const [editSalesNotes, setEditSalesNotes] = useState("");
+  const [editQualified, setEditQualified] = useState(false);
+  const [editInterest, setEditInterest] = useState("");
+  const [isEditingPhone, setIsEditingPhone] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [isSavingLead, setIsSavingLead] = useState(false);
+
+  useEffect(() => {
+    if (selectedLead) {
+      /* Passa pelo `comDdi` tambem na ABERTURA: lead antigo gravado sem DDI
+         aparece com o +55 na frente, que e o que se espera de um campo que
+         diz vir com DDI. */
+      setEditPhone(comDdi(selectedLead.phone || ""));
+      setEditEmail(selectedLead.email || "");
+      setEditSalesNotes(selectedLead.salesNotes || "");
+      setEditQualified(!!selectedLead.qualified);
+      setEditInterest(selectedLead.interest || "");
+      setIsEditingPhone(false);
+      setIsEditingEmail(false);
+    } else {
+      setEditPhone(DDI_PADRAO);
+      setEditEmail("");
+      setEditSalesNotes("");
+      setEditQualified(false);
+      setEditInterest("");
+      setIsEditingPhone(false);
+      setIsEditingEmail(false);
+    }
+  }, [selectedLead]);
+
+  // Helper para enviar cabeçalhos de autenticação nas requisições do CRM
+  const getAuthHeaders = () => {
+    return {
+      'Content-Type': 'application/json',
+      'x-user-role': localStorage.getItem('userRole') || '',
+      'x-salesperson-id': localStorage.getItem('salespersonId') || '',
+      'x-salesperson-name': localStorage.getItem('salespersonName') || (localStorage.getItem('userRole') === 'admin' ? 'Proprietária (Master)' : '')
+    };
+  };
+
+  /* ================= A RECARGA SILENCIOSA (M6.6)
+   *
+   * `fetchCrmData()` liga `loadingData`, e `loadingData` troca a tela inteira
+   * por um spinner -- o que DESMONTA a arvore de telas. Toda a memoria da tela
+   * vai junto: a paciente selecionada em Pacientes volta para a primeira da
+   * lista, e quem acabou de criar um plano perde de vista a paciente em que
+   * estava trabalhando.
+   *
+   * Depois de uma acao do usuario a lista ja esta na tela; o que se quer e
+   * atualiza-la, nao reconstruir a pagina. Por isso as acoes recarregam em
+   * modo silencioso. O spinner continua na carga INICIAL, onde nao ha o que
+   * desmontar. */
+  const fetchCrmData = async (silent = false) => {
+    if (!silent) setLoadingData(true);
+    try {
+      const t = Date.now();
+      const headers = {
+        'x-user-role': localStorage.getItem('userRole') || '',
+        'x-salesperson-id': localStorage.getItem('salespersonId') || '',
+        'x-salesperson-name': localStorage.getItem('salespersonName') || (localStorage.getItem('userRole') === 'admin' ? 'Proprietária (Master)' : '')
+      };
+      const [resClients, resTreatments, resInteractions, resConfig, resLeads, resCatalog, resPlans] = await Promise.all([
+        fetch(`/api/clients?_t=${t}`, { headers }),
+        fetch(`/api/treatments?_t=${t}`, { headers }),
+        fetch(`/api/interactions?_t=${t}`, { headers }),
+        fetch(`/api/config?_t=${t}`, { headers }),
+        fetch(`/api/leads?_t=${t}`, { headers }),
+        fetch(`/api/treatment-catalog?_t=${t}`, { headers }),
+        fetch(`/api/treatment-plans?_t=${t}`, { headers }),
+      ]);
+
+      if (resClients.ok && resTreatments.ok && resInteractions.ok && resConfig.ok && resLeads.ok && resCatalog.ok && resPlans.ok) {
+        setClients(await resClients.json());
+        setTreatments(await resTreatments.json());
+        setInteractions(await resInteractions.json());
+        const rawCatalog = await resCatalog.json();
+        setTreatmentCatalog(rawCatalog.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          price: Number(item.price),
+          packagePrice: item.package_price ? Number(item.package_price) : undefined,
+          duration: item.duration ? Number(item.duration) : undefined,
+          description: item.description || "",
+          indicatedRegions: item.target_regions || "",
+          restrictions: item.restrictions || ""
+        })));
+        setTreatmentPlans(await resPlans.json());
+        const rawLeads = await resLeads.json();
+        const mappedLeads = rawLeads.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          phone: item.whatsapp,
+          email: item.email || "",
+          interest: item.treatment,
+          status: item.status || "new",
+          source: item.source || "site",
+          salespersonId: item.salesperson_id,
+          lastEditedBy: item.last_edited_by,
+          salesNotes: item.sales_notes || "",
+          qualified: !!item.qualified,
+          scoreResult: item.score_result,
+          /* M5.10: o vinculo com a ficha da paciente. Vazio em lead nao fechado
+             -- e tambem nos leads fechados ANTES da M5.10, cuja conversao rodou
+             no navegador e nao deixou rastro. */
+          clientId: item.client_id || null,
+          convertedAt: item.converted_at || null,
+          createdAt: item.date || new Date().toISOString()
+        }));
+        setLocalLeads(mappedLeads);
+        const config = await resConfig.json();
+        setIsAiConfigured(config.hasGemini);
+        setIsEvolutionConfigured(config.hasEvolution);
+      }
+    } catch (e) {
+      console.error("Error loading CRM unifed data:", e);
+    } finally {
+      if (!silent) setLoadingData(false);
+    }
+  };
+
+  const handleUpdateLeadStatus = async (id: string, status: Lead['status'], phone?: string, email?: string, salesNotes?: string, qualified?: boolean, interest?: string): Promise<boolean> => {
+    try {
+      const statusMapping: Record<string, string> = {
+        "new": "novo",
+        "contacted": "contatado",
+        "proposal_sent": "agendado",
+        "converted": "arquivado",
+        "lost": "perdido"
+      };
+      const mappedStatus = statusMapping[status] || status || "novo";
+
+      const response = await fetch(`/api/leads/${id}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          status: mappedStatus,
+          whatsapp: phone !== undefined ? phone : undefined,
+          email: email !== undefined ? email : undefined,
+          salesNotes: salesNotes !== undefined ? salesNotes : undefined,
+          qualified: qualified !== undefined ? qualified : undefined,
+          treatment: interest !== undefined ? interest : undefined
+        })
+      });
+      if (response.ok) {
+        /* A CONVERSAO SAIU DAQUI (M5.10, 21/09).
+         *
+         * Ate 21/09 a ficha da paciente nascia NESTAS LINHAS, e elas eram a
+         * causa da duplicidade que o time comercial relatou:
+         *
+         *     const clientExists = clients.some(c => c.phone === finalPhone);
+         *
+         * Comparacao de texto cru. O lead chega do WhatsApp como
+         * "5511998765432" e a ficha foi digitada como "(11) 99876-5432": mesma
+         * mulher, textos diferentes, ficha nova. E se a aba fechasse entre o
+         * PUT e o handleAddClient, o lead ficava fechado sem ficha nenhuma --
+         * sem erro, sem log, sem sintoma.
+         *
+         * Agora quem converte e o servidor, dentro da mesma transacao que fecha
+         * o lead, comparando telefone por regra testada. Aqui so se conta o que
+         * aconteceu. */
+        const corpo = await response.json().catch(() => ({} as any));
+        const c: ConversaoDeLead | null = corpo?.conversao || null;
+        if (c?.acao === 'criar') {
+          showToast('ok', `Venda fechada. Ficha de paciente criada para ${c.cliente?.nome}.`);
+        } else if (c?.acao === 'vincular') {
+          showToast('ok',
+            `Venda fechada. Vinculada à ficha que já existia de ${c.cliente?.nome} — nenhuma ficha nova foi criada.`);
+        } else if (c?.acao === 'ambiguo') {
+          /* Aviso, e nao erro: o lead FECHOU. O que ficou pendente e' saber qual
+             das fichas e' a pessoa -- e so quem conhece as duas responde. */
+          showToast('warn',
+            `Venda fechada, mas a ficha não foi vinculada: ${c.porque} Abra o lead para escolher.`);
+        }
+        await fetchCrmData();
+        if (parentUpdateStatus) parentUpdateStatus(id, status, phone, email);
+        return true;
+      } else {
+        const errBody = await response.json().catch(() => ({}));
+        showToast('err', `Não foi possível salvar o lead: ${errBody.details || errBody.error || `erro ${response.status}`}`);
+        return false;
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('err', 'Erro de conexão ao salvar o lead. Verifique sua internet e tente novamente.');
+      return false;
+    }
+  };
+
+  // O layout so monta atras de RotaProtegida, entao aqui ja existe token.
+  useEffect(() => {
+    if (isOpen) fetchCrmData();
+  }, [isOpen]);
+
+  const sair = () => {
+    limparToken();
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("salespersonId");
+    localStorage.removeItem("salespersonName");
+    if (onClose) onClose();
+    else navigate("/", { replace: true });
+  };
+
+  const handleAddLead = async (data: any) => {
+    const mapaStatus: Record<string, string> = {
+      new: "novo",
+      contacted: "contatado",
+      proposal_sent: "agendado",
+      converted: "arquivado",
+    };
+    /* Rota AUTENTICADA (11/09) -- ver o comentario em ChatConsole.tsx: a porta
+     * publica `/api/leads` e do formulario do site, e desde a segunda clinica
+     * ela recusa quem nao manda chave de captacao. Aqui ha sessao. */
+    await fetch("/api/leads/manual", {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        name: data.name,
+        whatsapp: data.phone,
+        email: data.email,
+        treatment: data.interest,
+        status: mapaStatus[data.status] || data.status || "novo",
+        source: data.source || "site",
+        message: "Paciente inserido manualmente pelo Kanban comercial.",
+      }),
+    });
+    await fetchCrmData();
+  };
+
+  const handleAddClient = async (clientData: Omit<Client, "id" | "createdAt" | "updatedAt">) => {
+    try {
+      const response = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clientData),
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddTreatment = async (treatmentData: Omit<Treatment, "id">) => {
+    try {
+      const response = await fetch("/api/treatments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(treatmentData),
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdateTreatment = async (id: string, treatmentData: Partial<Treatment>) => {
+    try {
+      const response = await fetch(`/api/treatments/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(treatmentData),
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSendMessage = async (clientId: string, content: string) => {
+    try {
+      const response = await fetch("/api/interactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          type: "whatsapp",
+          content,
+          direction: "out",
+        }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        if (data.whatsappSent === false) {
+          showToast(
+            'warn',
+            `Mensagem salva no CRM, mas não foi entregue pelo WhatsApp: ${data.whatsappError || 'verifique se a instância está conectada no Gerenciador.'}`
+          );
+        }
+        await fetchCrmData(true);
+      } else {
+        showToast('err', data.error || "Erro ao registrar mensagem.");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('err', "Erro de conexão ao enviar mensagem.");
+    }
+  };
+
+  const handleUpdateClient = async (id: string, clientData: Partial<Client>) => {
+    try {
+      const response = await fetch(`/api/clients/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clientData),
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  /* A RECUSA PRECISA CHEGAR NA TELA (M6.5).
+   *
+   * Este `if (response.ok)` sem `else` era o silêncio de sempre: desde a M6.5 o
+   * servidor RECUSA apagar ficha com prontuário, com uma frase que diz o que
+   * existe — e sem o `else` a recepção clicaria em excluir, nada aconteceria, e
+   * ela clicaria de novo.
+   *
+   * A função devolve o erro em vez de engoli-lo; quem chama decide como mostrar. */
+  const handleDeleteClient = async (id: string): Promise<{ ok: boolean; erro?: string }> => {
+    try {
+      const response = await fetch(`/api/clients/${id}`, { method: "DELETE" });
+      if (response.ok) {
+        await fetchCrmData();
+        return { ok: true };
+      }
+      const d = await response.json().catch(() => ({}));
+      return { ok: false, erro: d.error || "Não foi possível excluir a ficha." };
+    } catch (e) {
+      console.error(e);
+      return { ok: false, erro: "Erro de conexão ao excluir a ficha." };
+    }
+  };
+
+  const handleDeleteLead = async (id: string) => {
+    try {
+      const response = await fetch(`/api/leads/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (response.ok) {
+        await fetchCrmData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddTreatmentPlan = async (planData: Omit<TreatmentPlan, "id" | "createdAt">) => {
+    try {
+      const response = await fetch("/api/treatment-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(planData),
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdateTreatmentPlan = async (id: string, planData: Partial<TreatmentPlan>) => {
+    try {
+      const response = await fetch(`/api/treatment-plans/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(planData),
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteTreatmentPlan = async (id: string) => {
+    try {
+      const response = await fetch(`/api/treatment-plans/${id}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdateTreatmentSession = async (id: string, sessionData: Partial<TreatmentSession>) => {
+    try {
+      const response = await fetch(`/api/treatment-sessions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sessionData),
+      });
+      if (response.ok) {
+        await fetchCrmData(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  /* =============== O NUMERO QUE NAO FOI MEDIDO NAO VIRA NUMERO (M6.4)
+   *
+   * Seis valores deste PDF eram constantes escritas no codigo -- 3,5 dias de
+   * conversao, 12 minutos de resposta, 4,9 de satisfacao, 24% de retorno, um
+   * horario de pico de reserva e uma lista de ANIVERSARIOS de pacientes reais
+   * calculada pela posicao delas na lista, numa tabela sem data de nascimento.
+   *
+   * Tres viraram medicao de verdade; tres sairam da folha. E onde o servidor
+   * responde `null`, o papel escreve a frase, em cinza, no lugar do numero.
+   * Uma linha feia custa menos que um 4,9 inventado numa reuniao. */
+  const semDado = (frase: string) =>
+    `<span style="font-size:.7em;font-weight:400;color:#5A6478;">${frase}</span>`;
+  const ouEntao = (v: number | null | undefined, formatar: (n: number) => string, frase: string) =>
+    (v === null || v === undefined) ? semDado(frase) : formatar(v);
+
+  const handleGenerateReport = async (aba: string) => {
+    try {
+      /* O PDF passa a seguir o filtro de periodo da tela (M6.4). Ate aqui ele
+         consolidava sempre o mes, e a propria faixa da tela avisava disso --
+         duas respostas para a mesma pergunta, e a impressa era a que ia para a
+         reuniao. O filtro vive na Visao Geral e chega aqui pela URL. */
+      const busca = new URLSearchParams(window.location.search);
+      const de = busca.get('de');
+      const ate = busca.get('ate');
+      const response = await fetch('/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          aba,
+          periodo: de && ate ? { inicio: de, fim: ate + 'T23:59:59' } : undefined,
+        }),
+      });
+      if (!response.ok) {
+        alert('Erro ao obter dados do relatório.');
+        return;
+      }
+      const report = await response.json();
+      const { data, periodo } = report;
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Por favor, permita popups para visualizar o relatório.');
+        return;
+      }
+
+      const inicioStr = new Date(periodo.inicio).toLocaleDateString('pt-BR');
+      const fimStr = new Date(periodo.fim).toLocaleDateString('pt-BR');
+
+      let contentHtml = '';
+
+      if (report.aba === 'VISÃO GERAL') {
+        contentHtml = `
+          <div class="report-header">
+            <h2>Relatório de Gestão Comercial & Financeira</h2>
+            <p class="subtitle">${report.clinica}</p>
+            <p class="period">Período: ${inicioStr} a ${fimStr}</p>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="label">Faturamento Total <em style="font-weight:400;color:#5A6478;">(${data.faturamentoFonte})</em></span>
+              <span class="value font-serif">R$ ${data.faturamentoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div class="metric-card">
+              <span class="label">Ticket Médio por Paciente</span>
+              <span class="value font-serif">${ouEntao(data.ticketMedio, (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), 'nenhuma paciente atendida no período')}</span>
+            </div>
+            <div class="metric-card">
+              <span class="label">Conversão Geral <em style="font-weight:400;color:#5A6478;">(venda fechada ÷ leads do período)</em></span>
+              <span class="value font-serif">${ouEntao(data.taxaConversao, (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%', 'nenhum lead no período')}</span>
+            </div>
+            <div class="metric-card">
+              <span class="label">Pacientes Ativos</span>
+              <span class="value font-serif">${data.totalPacientesAtivos}</span>
+            </div>
+          </div>
+          <div class="section-title">Top 3 Procedimentos por Faturamento</div>
+          <p class="nota">Este quadro sai das <strong>sessões lançadas</strong>, e não do razão — o
+          Financeiro não sabe qual procedimento gerou cada receita. Por isso a soma das três linhas
+          não fecha com o Faturamento Total acima.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Procedimento / Tipo de Sessão</th>
+                <th style="text-align: right;">Sessões</th>
+                <th style="text-align: right;">Total das Sessões</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.top3ProcedimentosPorFaturamento.length ? data.top3ProcedimentosPorFaturamento.map((p: any) => `
+                <tr>
+                  <td style="font-weight: bold;">${p.nome}</td>
+                  <td style="text-align: right;">${p.sessoes}</td>
+                  <td style="text-align: right; color: #10B981; font-weight: bold;">R$ ${p.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="3" style="color:#5A6478;">Nenhuma sessão realizada no período.</td></tr>'}
+            </tbody>
+          </table>
+        `;
+      } else if (report.aba === 'FUNIL') {
+        contentHtml = `
+          <div class="report-header">
+            <h2>Relatório de Leads & Funil de Atração</h2>
+            <p class="subtitle">${report.clinica}</p>
+            <p class="period">Período: ${inicioStr} a ${fimStr}</p>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="label">Tempo Mediano até a Venda Fechada</span>
+              <span class="value font-serif">${ouEntao(data.tempoMedioConversaoEmDias, (n: number) => n.toLocaleString('pt-BR') + ' dias', 'ainda não há venda fechada medida no período')}</span>
+              ${data.tempoConversaoAmostra ? `<span class="nota">medido sobre ${data.tempoConversaoAmostra} lead(s) fechado(s)</span>` : ''}
+            </div>
+          </div>
+          <div class="section-title">Distribuição de Leads por Estágio</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Estágio do Funil</th>
+                <th style="text-align: right;">Quantidade de Leads</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.distribuicaoPorEstagio.map((s: any) => `
+                <tr>
+                  <td style="font-weight: bold; text-transform: uppercase;">${s.estagio}</td>
+                  <td style="text-align: right;">${s.quantidade} leads</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="section-title">Performance por Canal de Aquisição</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Canal / Origem</th>
+                <th style="text-align: right;">Total Leads</th>
+                <th style="text-align: right;">Vendas fechadas</th>
+                <th style="text-align: right;">Taxa Conversão</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.performancePorCanal.map((c: any) => {
+                const tx = c.leads > 0 ? (c.convertidos / c.leads) * 100 : 0;
+                return `
+                  <tr>
+                    <td style="font-weight: bold;">${c.nome}</td>
+                    <td style="text-align: right;">${c.leads}</td>
+                    <td style="text-align: right;">${c.convertidos}</td>
+                    <td style="text-align: right; color: #b45309; font-weight: bold;">${tx.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+      } else if (report.aba === 'PACIENTES') {
+        contentHtml = `
+          <div class="report-header">
+            <h2>Relatório de Análise de Fichas & Retorno</h2>
+            <p class="subtitle">${report.clinica}</p>
+            <p class="period">Período: ${inicioStr} a ${fimStr}</p>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="label">Taxa Geral de Retorno <em style="font-weight:400;color:#5A6478;">(pacientes com mais de um plano)</em></span>
+              <span class="value font-serif">${ouEntao(data.taxaRetorno, (n: number) => n.toLocaleString('pt-BR') + '%', 'nenhuma paciente com plano de tratamento')}</span>
+              ${data.retornoDetalhe && data.retornoDetalhe.total ? `<span class="nota">${data.retornoDetalhe.comMaisDeUm} de ${data.retornoDetalhe.total} pacientes</span>` : ''}
+            </div>
+          </div>
+          <div class="section-title">Top 10 Pacientes com Maior Investimento no Período</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nome da Paciente</th>
+                <th style="text-align: right;">Total Investido</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.top10MaioresInvestidores.map((inv: any) => `
+                <tr>
+                  <td style="font-weight: bold;">${inv.nome}</td>
+                  <td style="text-align: right; color: #10B981; font-weight: bold;">R$ ${inv.totalInvestido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="section-title">Pacientes Inativos (Sem sessões nos últimos 60 dias)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nome da Paciente</th>
+                <th>WhatsApp</th>
+                <th style="text-align: right;">Última Sessão</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.listaInativos.map((i: any) => `
+                <tr>
+                  <td>${i.nome}</td>
+                  <td style="font-family: monospace;">${i.telefone}</td>
+                  <td style="text-align: right; font-weight: bold; color: #dc2626;">${i.ultimoAtendimento}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else if (report.aba === 'ATENDIMENTO') {
+        contentHtml = `
+          <div class="report-header">
+            <h2>Relatório de Conversas WhatsApp & SAC</h2>
+            <p class="subtitle">${report.clinica}</p>
+            <p class="period">Período: ${inicioStr} a ${fimStr}</p>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="label">Tempo Mediano de Resposta</span>
+              <span class="value font-serif">${ouEntao(data.tempoMedioResposta, (n: number) => n.toLocaleString('pt-BR') + ' min', 'nenhuma mensagem respondida no período')}</span>
+              ${data.respostaAmostra ? `<span class="nota">medido sobre ${data.respostaAmostra} resposta(s)</span>` : ''}
+            </div>
+            <div class="metric-card">
+              <span class="label">Mensagens Trocadas</span>
+              <span class="value font-serif">${data.totalMensagens}</span>
+              <span class="nota">${data.recebidas} recebida(s) · ${data.enviadas} enviada(s)</span>
+            </div>
+            <div class="metric-card">
+              <span class="label">Horário de Pico</span>
+              <span class="value font-serif">${data.horarioPico || semDado('nenhuma mensagem no período')}</span>
+              ${data.horarioPicoMensagens ? `<span class="nota">${data.horarioPicoMensagens} mensagem(ns) nessa faixa</span>` : ''}
+            </div>
+            <div class="metric-card">
+              <span class="label">Conversas sem Resposta</span>
+              <span class="value font-serif" style="${data.conversasSemResposta ? 'color:#b45309;' : ''}">${data.conversasSemResposta}</span>
+              <span class="nota">pacientes que escreveram e não foram respondidas</span>
+            </div>
+          </div>
+        `;
+      }
+
+      const fullHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Relatório ${report.clinica} - ${report.aba}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@400;600&display=swap');
+            body {
+              font-family: Inter, Georgia, serif;
+              color: #141E33;
+              background-color: #ffffff;
+              margin: 40px;
+              padding: 0;
+            }
+            .font-serif {
+              font-family: Poppins, Georgia, serif;
+            }
+            .report-header {
+              text-align: center;
+              border-bottom: 2px solid #0E7FA6;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            .report-header h2 {
+              font-family: Poppins, Georgia, serif;
+              font-size: 24px;
+              color: #141E33;
+              margin: 0 0 5px 0;
+            }
+            .report-header .subtitle {
+              font-size: 11px;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+              color: #0E7FA6;
+              margin: 0 0 10px 0;
+              font-weight: 600;
+            }
+            .report-header .period {
+              font-size: 11px;
+              color: #5A6478;
+              margin: 0;
+            }
+            .metrics-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+              gap: 20px;
+              margin-bottom: 40px;
+            }
+            .metric-card {
+              background: #F6F8FB;
+              border: 1px solid #DCE6F0;
+              border-radius: 12px;
+              padding: 18px;
+              text-align: center;
+            }
+            .metric-card .label {
+              font-size: 10px;
+              text-transform: uppercase;
+              color: #5A6478;
+              letter-spacing: 1px;
+              display: block;
+              margin-bottom: 6px;
+            }
+            .metric-card .value {
+              font-size: 20px;
+              color: #141E33;
+              font-weight: bold;
+            }
+            /* A linha pequena que diz sobre quantos casos o numero foi medido,
+               ou de onde ele vem. Ela e' o que impede um numero de ser lido
+               como mais firme do que e'. */
+            .nota {
+              display: block;
+              font-size: 10px;
+              color: #5A6478;
+              margin-top: 6px;
+              line-height: 1.5;
+            }
+            p.nota { margin: -8px 0 12px; }
+            .section-title {
+              font-family: Poppins, Georgia, serif;
+              font-size: 16px;
+              border-bottom: 1px solid #DCE6F0;
+              padding-bottom: 8px;
+              margin: 30px 0 15px 0;
+              font-weight: bold;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 30px;
+            }
+            th, td {
+              padding: 10px 12px;
+              text-align: left;
+              font-size: 12px;
+              border-bottom: 1px solid #EDF2F8;
+            }
+            th {
+              background-color: #F6F8FB;
+              color: #5A6478;
+              text-transform: uppercase;
+              font-size: 10px;
+              letter-spacing: 1px;
+            }
+            tr:nth-child(even) {
+              background-color: #F6F8FB;
+            }
+            .footer {
+              text-align: center;
+              font-size: 9px;
+              color: #5A6478;
+              margin-top: 50px;
+              border-top: 1px dashed #DCE6F0;
+              padding-top: 20px;
+              opacity: 0.7;
+            }
+            @media print {
+              body { margin: 20px; }
+              .metric-card { background: #F6F8FB !important; -webkit-print-color-adjust: exact; }
+              th { background: #F6F8FB !important; -webkit-print-color-adjust: exact; }
+            }
+          </style>
+        </head>
+        <body>
+          ${contentHtml}
+          <div class="footer">
+            <p>Relatório gerado pelo Musa CRM — ${report.clinica} — em ${new Date().toLocaleString('pt-BR')}. Documento confidencial.</p>
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 500);
+            };
+          </script>
+        </body>
+        </html>
+      `;
+
+      printWindow.document.open();
+      printWindow.document.write(fullHtml);
+      printWindow.document.close();
+
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao gerar PDF do relatório.');
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const contexto: ContextoCrm = {
+    clients,
+    treatments,
+    treatmentPlans,
+    interactions,
+    leads: localLeads,
+    treatmentCatalog,
+    isAiConfigured,
+    atualizar: fetchCrmData,
+    onAddClient: handleAddClient,
+    onUpdateClient: handleUpdateClient,
+    onDeleteClient: handleDeleteClient,
+    onAddTreatment: handleAddTreatment,
+    onUpdateTreatment: handleUpdateTreatment,
+    onAddTreatmentPlan: handleAddTreatmentPlan,
+    onUpdateTreatmentPlan: handleUpdateTreatmentPlan,
+    onDeleteTreatmentPlan: handleDeleteTreatmentPlan,
+    onUpdateTreatmentSession: handleUpdateTreatmentSession,
+    onAddLead: handleAddLead,
+    onUpdateLeadStatus: handleUpdateLeadStatus,
+    onDeleteLead: handleDeleteLead,
+    onSelectLead: setSelectedLead,
+    onSendMessage: handleSendMessage,
+  };
+
+  return (
+    /* `escala-crm` deixa o CONSOLE um passo abaixo do site (M5.1, 15/09).
+     *
+     * O site ficou no ponto e o CRM pedia um respiro a menos -- e os dois dividem
+     * o mesmo CSS. Encolher a escala global resolveria o CRM e estragaria o site.
+     *
+     * A saida: as classes do Tailwind leem `var(--text-xs)` NO ELEMENTO, e
+     * variavel de CSS herda. Redefinir as variaveis na raiz do console faz cada
+     * descendente pegar o valor menor, sem tocar em mais nada. A regra vive no
+     * `index.css`, junto da escala, para nao haver dois lugares dizendo tamanho
+     * de letra. */
+    <div className="escala-crm fixed inset-0 z-50 flex bg-brand-beige animate-fade-in">
+      <Sidebar
+        aberta={menuAberto}
+        recolhida={menuRecolhido}
+        aoFechar={() => setMenuAberto(false)}
+        aoRecolher={() => {
+          const novo = !menuRecolhido;
+          setMenuRecolhido(novo);
+          // Quem trabalha em notebook de 13" recolhe uma vez e não quer refazer
+          // isso a cada login. Se o navegador recusar o armazenamento (aba
+          // anônima, política do dispositivo), a preferência simplesmente não
+          // persiste — não é motivo para quebrar a tela.
+          try { localStorage.setItem("musa_menu_recolhido", novo ? "1" : "0"); } catch { /* segue sem lembrar */ }
+        }}
+        onSair={sair}
+      />
+
+      <div className="relative flex-1 min-w-0 h-full overflow-hidden flex flex-col justify-between bg-brand-beige">
+
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Navbar isAiConfigured={isAiConfigured} onAbrirMenu={() => setMenuAberto(true)} onSair={sair} />
+
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-brand-beige/50">
+            {/* Faixa de relatorio - so nas telas que o servidor sabe consolidar */}
+            {relatorioDaRota && (
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 bg-white border border-brand-gold/15 p-4 rounded-2xl shadow-xs">
+                <div className="space-y-0.5">
+                  <h3 className="text-xs font-serif font-bold text-brand-brown uppercase tracking-wider">
+                    {relatorioDaRota.titulo}
+                  </h3>
+                  {/* A frase continua dizendo o periodo do PDF (M5.8), mas agora
+                      ela diz OUTRA coisa: desde a M6.4 o relatorio segue o filtro
+                      da tela e le o faturamento do mesmo razao que o Financeiro.
+                      Nas telas sem filtro proprio (Funil, Pacientes, Atendimento)
+                      ele continua consolidando o mes -- e e isso que a segunda
+                      metade da frase diz. */}
+                  <p className="text-[10px] text-brand-brown/65">
+                    {relatorioDaRota.aba === 'dashboard'
+                      ? <>O PDF segue o <strong>filtro de período</strong> desta tela e usa o mesmo faturamento do Financeiro.</>
+                      : <>Esta tela não tem filtro de período; o PDF consolida o <strong>mês atual</strong>.</>}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleGenerateReport(relatorioDaRota.aba)}
+                  className="flex items-center space-x-1.5 bg-brand-brown hover:bg-brand-brown/95 text-brand-beige px-4 py-2 rounded-xl text-xxs font-bold transition-all shadow-sm font-serif border border-brand-gold/20"
+                >
+                  <FileText className="h-3.5 w-3.5 text-brand-gold" />
+                  <span>Gerar Relatorio PDF</span>
+                </button>
+              </div>
+            )}
+
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center h-full py-16">
+                <Sparkles className="h-8 w-8 text-brand-gold animate-spin mb-2" />
+                <p className="text-[11px] font-mono text-brand-brown tracking-widest uppercase">Atualizando base CRM...</p>
+              </div>
+            ) : (
+              <div className="h-full">
+                <Suspense
+                  fallback={
+                    <div className="flex flex-col items-center justify-center h-full py-16">
+                      <Sparkles className="h-8 w-8 text-brand-gold animate-spin mb-2" />
+                      <p className="text-[11px] font-mono text-brand-brown tracking-widest uppercase">Carregando a tela...</p>
+                    </div>
+                  }
+                >
+                  <Outlet context={contexto} />
+                </Suspense>
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      {/* Selected Lead Details Drawer */}
+      <AnimatePresence>
+        {selectedLead && (
+          <div className="fixed inset-0 z-50 overflow-hidden">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.4 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedLead(null)}
+              className="absolute inset-0 bg-brand-brown/40 backdrop-blur-xs"
+            />
+            <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+              <motion.div 
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="w-screen max-w-md bg-white border-l border-brand-gold/25 shadow-2xl flex flex-col h-full"
+              >
+                <div className="p-6 border-b border-brand-beige flex justify-between items-center bg-brand-cream/15">
+                  <div>
+                    <span className="text-[10px] tracking-widest uppercase font-semibold text-brand-gold font-mono">Ficha do Lead</span>
+                    <h3 className="font-serif font-bold text-brand-brown text-base">{selectedLead.name}</h3>
+                  </div>
+                  <button onClick={() => setSelectedLead(null)} className="p-2 text-brand-brown/60 hover:text-brand-brown rounded-full">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+                  {/* Status de Qualificação */}
+                  <button
+                    type="button"
+                    onClick={() => setEditQualified(prev => !prev)}
+                    className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-all cursor-pointer ${
+                      editQualified
+                        ? 'bg-emerald-50 border-emerald-300 hover:border-emerald-400'
+                        : 'bg-brand-beige/50 border-brand-gold/20 hover:border-brand-gold/40'
+                    }`}
+                  >
+                    <span className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${editQualified ? 'text-emerald-700' : 'text-brand-brown/60'}`}>
+                      <ShieldCheck className={`h-4 w-4 ${editQualified ? 'text-emerald-600' : 'text-brand-brown/40'}`} />
+                      {editQualified ? 'Lead Qualificado' : 'Lead Não Qualificado'}
+                    </span>
+                    <span
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${
+                        editQualified ? 'bg-emerald-500' : 'bg-brand-brown/20'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${
+                          editQualified ? 'translate-x-[18px]' : 'translate-x-1'
+                        }`}
+                      />
+                    </span>
+                  </button>
+
+                  <div className="bg-brand-beige border border-brand-gold/15 p-4 rounded-xl space-y-4">
+                    <h4 className="text-[9px] font-mono font-bold text-brand-gold uppercase tracking-wider">Contato</h4>
+
+                    {/* Phone field */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-semibold text-brand-brown/70 uppercase">Telefone</label>
+                        <button 
+                          type="button" 
+                          onClick={() => setIsEditingPhone(!isEditingPhone)} 
+                          className="p-1 text-brand-brown/60 hover:text-brand-brown hover:bg-brand-beige/50 rounded-md transition-colors cursor-pointer"
+                          title="Editar Telefone"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-brand-gold" />
+                        </button>
+                      </div>
+                      {isEditingPhone ? (
+                        <input 
+                          type="tel" 
+                          value={editPhone} 
+                          onChange={(e) => setEditPhone(comDdi(e.target.value))}
+                          className="w-full px-3 py-2 border border-brand-gold/30 rounded-xl text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold bg-white font-mono"
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-xs text-brand-brown font-mono">{editPhone || 'Sem telefone'}</p>
+                      )}
+                    </div>
+
+                    {/* Email field */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-semibold text-brand-brown/70 uppercase">E-mail</label>
+                        <button 
+                          type="button" 
+                          onClick={() => setIsEditingEmail(!isEditingEmail)} 
+                          className="p-1 text-brand-brown/60 hover:text-brand-brown hover:bg-brand-beige/50 rounded-md transition-colors cursor-pointer"
+                          title="Editar E-mail"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-brand-gold" />
+                        </button>
+                      </div>
+                      {isEditingEmail ? (
+                        <input 
+                          type="email" 
+                          value={editEmail} 
+                          onChange={(e) => setEditEmail(e.target.value)}
+                          className="w-full px-3 py-2 border border-brand-gold/30 rounded-xl text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold bg-white"
+                          placeholder="Ex: paciente@email.com"
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-xs text-brand-brown">{editEmail || 'Sem e-mail cadastrado'}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-[9px] font-mono font-bold text-brand-gold uppercase tracking-wider">Procedimento Desejado</h4>
+                    <select
+                      value={editInterest}
+                      onChange={(e) => setEditInterest(e.target.value)}
+                      className="w-full p-3.5 rounded-xl bg-brand-beige border border-brand-gold/20 text-xs text-brand-brown font-serif font-semibold focus:outline-none focus:ring-2 focus:ring-brand-gold cursor-pointer"
+                    >
+                      {/* Garante que o procedimento atual do lead sempre apareça, mesmo se o catálogo mudou depois */}
+                      {editInterest && !treatmentCatalog.some(t => t.name === editInterest) && (
+                        <option value={editInterest}>✨ {editInterest}</option>
+                      )}
+                      {treatmentCatalog.length === 0 && !editInterest && (
+                        <option value="">Nenhum tratamento cadastrado</option>
+                      )}
+                      {treatmentCatalog.map((t) => (
+                        <option key={t.id} value={t.name}>✨ {t.name}</option>
+                      ))}
+                    </select>
+                    <p className="text-xxs text-brand-brown/50 px-1">
+                      Lista sincronizada com Cadastros → Catálogo e Valores
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-[9px] font-mono font-bold text-brand-gold uppercase tracking-wider">Última Edição</h4>
+                    <div className="p-3 rounded-xl bg-brand-beige/50 border border-brand-gold/20 text-xs text-brand-brown font-medium flex items-center gap-2">
+                      <span className="text-brand-gold">👤</span>
+                      <span>
+                        {selectedLead.lastEditedBy 
+                          ? `Última edição por: ${selectedLead.lastEditedBy}` 
+                          : 'Lead Cadastrado pelo site'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-[9px] font-mono font-bold text-brand-gold uppercase tracking-wider">Mudar Estágio</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: 'novo', label: 'Lead Novo' },
+                        { id: 'contatado', label: 'Pré-Agendado' },
+                        { id: 'agendado', label: 'Proposta Enviada' },
+                        { id: 'arquivado', label: 'Venda Fechada' },
+                        { id: 'perdido', label: 'Perdido' },
+                      ].map((stage) => {
+                        const isCurrent = selectedLead.status === stage.id;
+                        return (
+                          <button
+                            key={stage.id}
+                            onClick={() => {
+                              setSelectedLead(prev => prev ? { ...prev, status: stage.id as any } : null);
+                            }}
+                            className={`px-3 py-2 rounded-lg text-xxs font-medium transition-all text-center border ${
+                              isCurrent 
+                                ? 'bg-brand-brown border-brand-brown text-brand-beige font-semibold shadow-xs' 
+                                : 'bg-white border-brand-gold/10 hover:border-brand-gold text-brand-brown/80'
+                            }`}
+                          >
+                            {stage.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Campo Comentários vendas */}
+                  <div className="space-y-2 pt-2">
+                    <h4 className="text-[9px] font-mono font-bold text-brand-gold uppercase tracking-wider">Comentários vendas</h4>
+                    <textarea
+                      rows={3}
+                      value={editSalesNotes}
+                      onChange={(e) => setEditSalesNotes(e.target.value)}
+                      placeholder="Escreva observações importantes da negociação, preferências da cliente, etc..."
+                      className="w-full p-3 border border-brand-gold/30 rounded-xl text-xs text-brand-brown focus:outline-none focus:ring-2 focus:ring-brand-gold bg-white resize-y"
+                    />
+                  </div>
+
+                  <div className="pt-6 border-t border-brand-gold/15 flex justify-end">
+                    <button
+                      disabled={isSavingLead}
+                      onClick={async () => {
+                        if (!selectedLead) return;
+                        setIsSavingLead(true);
+                        const ok = await handleUpdateLeadStatus(selectedLead.id, selectedLead.status as any, editPhone, editEmail, editSalesNotes, editQualified, editInterest);
+                        setIsSavingLead(false);
+                        if (ok) {
+                          showToast('ok', 'Lead atualizado com sucesso.');
+                          setSelectedLead(null);
+                        }
+                        // Em caso de erro o drawer permanece aberto com os dados preenchidos,
+                        // para o vendedor não perder a edição e poder tentar salvar novamente.
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider shadow-md transition-all flex items-center space-x-2 cursor-pointer"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      <span>{isSavingLead ? 'Salvando...' : 'Salvar e Fechar'}</span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Aviso flutuante não bloqueante */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 14 }}
+            className={`fixed bottom-6 right-6 z-[80] max-w-sm px-4 py-3 rounded-xl shadow-2xl border text-xs leading-relaxed ${
+              toast.type === 'ok'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : toast.type === 'warn'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              <span className="flex-1">{toast.text}</span>
+              <button
+                onClick={() => setToast(null)}
+                className="opacity-60 hover:opacity-100 cursor-pointer shrink-0"
+                aria-label="Fechar aviso"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

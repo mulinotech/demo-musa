@@ -1,0 +1,72 @@
+/**
+ * Barra de topo do console.
+ *
+ * Era ela que carregava as abas. Com a navegação na lateral, sobrou o que uma
+ * barra de topo faz bem: dizer **onde a pessoa está**, mostrar o estado da IA e
+ * abrir a gaveta no celular.
+ *
+ * O nome da tela sai do mesmo mapa que desenha a lateral (`navegacao.ts`) — não
+ * de uma segunda lista que um dia divergiria.
+ */
+import { useLocation } from "react-router-dom";
+import { Menu, LogOut } from "lucide-react";
+import { telaDaRota } from "./navegacao";
+
+interface NavbarProps {
+  isAiConfigured: boolean;
+  onAbrirMenu: () => void;
+  onSair?: () => void;
+}
+
+export default function Navbar({ isAiConfigured, onAbrirMenu, onSair }: NavbarProps) {
+  const local = useLocation();
+  const tela = telaDaRota(local.pathname);
+  const Icone = tela ? tela.icon : null;
+
+  return (
+    <header className="bg-white border-b border-brand-gold/20 shadow-xs sticky top-0 z-50 shrink-0">
+      <div className="h-16 md:h-20 px-3 sm:px-5 lg:px-8 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            onClick={onAbrirMenu}
+            aria-label="Abrir menu"
+            className="lg:hidden p-2 -ml-1 rounded-xl text-brand-brown/70 hover:bg-brand-beige cursor-pointer shrink-0"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <div className="min-w-0">
+            <h2 className="text-base md:text-xl font-serif font-semibold tracking-wide text-brand-brown truncate flex items-center gap-2">
+              {Icone && <Icone className="h-4 w-4 md:h-5 md:w-5 text-brand-gold shrink-0" />}
+              {tela ? tela.label : "Console"}
+            </h2>
+            {/* No celular a marca não cabe na lateral escondida — fica aqui. */}
+            <p className="text-[9px] font-sans tracking-widest uppercase text-brand-gold font-medium truncate lg:hidden">
+              Dra. Musa Estética de Elite
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <div className="hidden sm:flex items-center space-x-2 bg-brand-beige/50 border border-brand-gold/20 px-3 py-1.5 rounded-full">
+            <span className={`h-2.5 w-2.5 rounded-full ${isAiConfigured ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+            <span className="text-xs font-medium text-brand-brown font-mono whitespace-nowrap">
+              IA SMART: {isAiConfigured ? "ONLINE" : "DEMO MODE"}
+            </span>
+          </div>
+
+          {/* Sair também no topo, no celular: lá a lateral está fechada. */}
+          {onSair && (
+            <button
+              onClick={onSair}
+              title="Sair do console"
+              className="lg:hidden p-2 rounded-full text-brand-brown/60 hover:text-brand-brown hover:bg-brand-beige cursor-pointer"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

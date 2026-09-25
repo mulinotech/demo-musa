@@ -167,6 +167,163 @@ const REGRAS_DE_PAPEL = [
    * arquivo dela em 14/09: criar clinica virou operacao de plataforma de verdade. */
 ];
 
+/* ============================================================================
+ *  OS PAPÉIS ESTREITOS (M6.7) E POR QUE A TABELA ACIMA NÃO BASTAVA
+ *
+ *  A tabela `REGRAS_DE_PAPEL` funciona por NEGAÇÃO: uma rota sem linha ali é
+ *  alcançável por qualquer papel autenticado. Isso é razoável para quatro
+ *  papéis largos — admin, gerente, profissional, vendedor — porque os quatro
+ *  trabalham dentro da clínica e o acesso amplo é o esperado.
+ *
+ *  Para `secretaria`, `financeiro` e `contador` a regra se inverte: o que eles
+ *  alcançam é um pedaço PEQUENO do sistema, e enumerar tudo o que eles NÃO
+ *  alcançam daria uma tabela que apodrece na primeira rota nova — a rota nasce
+ *  sem linha, e o contador passa a ler o prontuário sem que nada apareça.
+ *
+ *  Por isso existe uma segunda tabela, conferida ANTES daquela:
+ *
+ *  - `modo: 'somente'` — o papel só alcança o que está listado. Rota nova nasce
+ *    FECHADA para ele. O sintoma de esquecer de listar é alguém dizendo "não
+ *    consigo abrir", que se resolve em uma linha; o sintoma do contrário é um
+ *    vazamento que ninguém percebe.
+ *  - `modo: 'exceto'` — o papel alcança tudo menos o listado. É para quem é
+ *    gerente de verdade e tem um recorte a menos.
+ *
+ *  Papel que NÃO está nesta tabela passa direto: `admin`, `gerente`,
+ *  `gerente_admin`, `profissional` e `vendedor` continuam exatamente como
+ *  estavam antes desta tarefa.
+ * ========================================================================== */
+
+/** Com que papel ANTIGO cada papel novo é julgado na tabela de cima.
+ *
+ *  Reescrever as 44 linhas de `REGRAS_DE_PAPEL` para citar os papéis novos
+ *  seria a outra forma de fazer isto — e a forma que erra: bastaria esquecer um
+ *  `papeis: [...]` para o papel novo perder (ou ganhar) uma área em silêncio.
+ *  Aqui a equivalência é declarada UMA vez, e o alcance de verdade é recortado
+ *  pela tabela logo abaixo.
+ *
+ *  `gerente_admin` responde como `gerente` E não aparece em ALCANCE_DO_PAPEL:
+ *  ele é o gerente de hoje, com outro nome. Era isso que a clínica queria dizer
+ *  ao pedir a divisão — o administrativo é quem ficou com tudo. */
+const RESPONDE_COMO = {
+  gerente_admin: 'gerente',
+  gerente_comercial: 'gerente',
+  financeiro: 'gerente',
+  contador: 'gerente',
+  // A secretária marca, remarca e conclui horário: é `profissional` na agenda.
+  // O que ela NÃO alcança está recortado em ALCANCE_DO_PAPEL, inclusive o
+  // prontuário — que `profissional` alcança e ela não.
+  secretaria: 'profissional'
+};
+
+function papelEfetivo(papel) {
+  return RESPONDE_COMO[papel] || papel;
+}
+
+const ALCANCE_DO_PAPEL = {
+  /* SECRETÁRIA(O) — a recepção. Agenda, paciente, funil e conversa.
+   *
+   * FORA de propósito: dinheiro (finance, pricing, custos, relatórios),
+   * usuários, e o PRONTUÁRIO. As duas linhas de `/api/clients` abaixo usam
+   * `padrao` justamente para isso: `/api/clients` e `/api/clients/:id` passam,
+   * `/api/clients/:id/documents` não — um prefixo solto levaria o filho junto,
+   * que é a armadilha já anotada no topo deste arquivo.
+   *
+   * Se a clínica decidir que a recepção imprime receita, o conserto é uma linha
+   * aqui, e não mexer na tabela de cima. */
+  secretaria: { modo: 'somente', rotas: [
+    { metodo: '*', prefixo: '/api/auth' },
+    { metodo: '*', prefixo: '/api/config' },
+    { metodo: '*', prefixo: '/api/meu-timbre' },
+    { metodo: 'GET', prefixo: '/api/clinica' },
+    { metodo: '*', prefixo: '/api/profissionais' },
+    { metodo: '*', prefixo: '/api/appointments' },
+    { metodo: '*', prefixo: '/api/availability' },
+    { metodo: '*', padrao: /^\/api\/clients(\/[^/]+)?$/ },
+    { metodo: '*', prefixo: '/api/interactions' },
+    { metodo: '*', prefixo: '/api/leads' },
+    { metodo: '*', prefixo: '/api/evolution' },
+    { metodo: 'GET', prefixo: '/api/loyalty' },
+    { metodo: 'GET', prefixo: '/api/treatment-catalog' },
+    { metodo: '*', prefixo: '/api/treatments' },
+    { metodo: '*', prefixo: '/api/treatment-plans' },
+    { metodo: '*', prefixo: '/api/treatment-sessions' }
+  ] },
+
+  /* FINANCEIRO — caixa, contas, custo e preço. Não abre prontuário, não mexe
+   * na agenda (lê, para conferir o que gerou receita) e não cadastra ninguém.
+   *
+   * `/api/clients` entra em GET e recortado pelo mesmo `padrao` da secretária:
+   * conciliar um pagamento exige o NOME da paciente, não a ficha clínica. */
+  financeiro: { modo: 'somente', rotas: [
+    { metodo: '*', prefixo: '/api/auth' },
+    { metodo: '*', prefixo: '/api/config' },
+    { metodo: '*', prefixo: '/api/meu-timbre' },
+    { metodo: 'GET', prefixo: '/api/clinica' },
+    { metodo: '*', prefixo: '/api/finance' },
+    { metodo: '*', prefixo: '/api/fixed-costs' },
+    { metodo: '*', prefixo: '/api/recurring-expenses' },
+    { metodo: '*', prefixo: '/api/pricing' },
+    { metodo: '*', prefixo: '/api/reports' },
+    { metodo: '*', prefixo: '/api/dashboard' },
+    { metodo: 'GET', prefixo: '/api/products' },
+    { metodo: 'GET', prefixo: '/api/stock' },
+    { metodo: 'GET', prefixo: '/api/services' },
+    { metodo: 'GET', prefixo: '/api/treatment-catalog' },
+    { metodo: 'GET', prefixo: '/api/appointments' },
+    { metodo: 'GET', padrao: /^\/api\/clients(\/[^/]+)?$/ }
+  ] },
+
+  /* CONTADOR — de fora da clínica, e por isso SÓ LEITURA.
+   *
+   * Todas as linhas são `GET`, menos `/api/auth` (ele precisa entrar) e
+   * `/api/config`. Não há paciente nenhum nesta lista: o contador trabalha com
+   * lançamento, categoria e total — nome de paciente não entra em livro
+   * contábil, e dar acesso "porque é mais fácil" é o caminho mais curto para
+   * dado de saúde sair da clínica dentro de uma planilha. */
+  contador: { modo: 'somente', rotas: [
+    { metodo: '*', prefixo: '/api/auth' },
+    { metodo: '*', prefixo: '/api/config' },
+    { metodo: 'GET', prefixo: '/api/meu-timbre' },
+    { metodo: 'GET', prefixo: '/api/clinica' },
+    { metodo: 'GET', prefixo: '/api/finance' },
+    { metodo: 'GET', prefixo: '/api/fixed-costs' },
+    { metodo: 'GET', prefixo: '/api/recurring-expenses' },
+    { metodo: 'GET', prefixo: '/api/reports' },
+    { metodo: 'GET', prefixo: '/api/dashboard' }
+  ] },
+
+  /* GERENTE COMERCIAL — gerente em tudo, menos na estrutura de custo.
+   *
+   * Aqui o modo é `exceto` de propósito, e a diferença importa: ele é gerente,
+   * então rota nova tem de nascer ABERTA para ele, como nasce para o gerente de
+   * hoje. Uma lista `somente` o deixaria de fora de cada módulo novo até alguém
+   * lembrar de acrescentar a linha.
+   *
+   * `/api/reports` NÃO está na lista, e é escolha: o relatório é onde ele vê
+   * conversão, origem de lead e ticket — o resultado do trabalho dele. O que
+   * fica fora é a estrutura de custo da clínica (o que cada hora custa, a
+   * margem praticada, o caixa), que é do administrativo. */
+  gerente_comercial: { modo: 'exceto', rotas: [
+    { metodo: '*', prefixo: '/api/finance' },
+    { metodo: '*', prefixo: '/api/pricing' },
+    { metodo: '*', prefixo: '/api/fixed-costs' },
+    { metodo: '*', prefixo: '/api/recurring-expenses' },
+    { metodo: '*', prefixo: '/api/dashboard/dinheiro' }
+  ] }
+};
+
+/** O papel alcança este caminho? Papel sem recorte alcança tudo (e continua
+ *  sujeito à tabela REGRAS_DE_PAPEL, que é a outra metade da decisão). */
+function alcanca(papel, metodo, caminho) {
+  const r = ALCANCE_DO_PAPEL[papel];
+  if (!r) return true;
+  const bate = r.rotas.some(function (linha) {
+    return (linha.metodo === '*' || linha.metodo === metodo) && casaPadrao(linha, caminho);
+  });
+  return r.modo === 'exceto' ? !bate : bate;
+}
+
 /** O prefixo casa com o caminho exato ou com um filho dele.
  *  Comparar por indexOf === 0 faria '/api/logs-publicos' herdar a regra de
  *  '/api/logs', o que e a classe de erro que passa despercebida em revisao. */
@@ -223,12 +380,24 @@ function exigirPapel(req, res, next) {
   if (req.usuario && req.usuario.suporte === true) return next();
 
   const caminho = req.originalUrl.split('?')[0];
+  const papel = req.usuario && req.usuario.papel;
+
+  // O RECORTE VEM PRIMEIRO. Ele é o que fecha a rota que ninguém regrou: sem
+  // esta conferência, um papel estreito cairia na regra "sem regra, pode" e
+  // herdaria cada módulo novo em silêncio.
+  if (!alcanca(papel, req.method, caminho)) {
+    return res.status(403).json({ error: 'Sem permissao para esta area.' });
+  }
+
   const regra = regraPara(req.method, caminho);
   if (!regra) return next();
-  if (!req.usuario || regra.papeis.indexOf(req.usuario.papel) === -1) {
+  if (!papel || regra.papeis.indexOf(papelEfetivo(papel)) === -1) {
     return res.status(403).json({ error: 'Sem permissao para esta area.' });
   }
   next();
 }
 
-module.exports = { REGRAS_DE_PAPEL, regraPara, exigirPapel };
+module.exports = {
+  REGRAS_DE_PAPEL, regraPara, exigirPapel,
+  ALCANCE_DO_PAPEL, RESPONDE_COMO, alcanca, papelEfetivo
+};

@@ -45,6 +45,7 @@
 const servico = require('../services/lembretes');
 const escopo = require('../db/escopo');
 const cfgSvc = require('../services/clinica-config');
+const logs = require('../services/logs');
 
 const INTERVALO_MS = 15 * 60 * 1000;
 
@@ -53,11 +54,27 @@ const MOTIVO_VARREDURA =
   'e o cron que a chama, sem sessao, e cada clinica e tratada no escopo dela';
 
 /** Só compromissos que ainda podem receber. O recorte grosso é do SQL; a
- *  decisão fina é da função pura, para poder ser testada. */
+ *  decisão fina é da função pura, para poder ser testada.
+ *
+ *  ================================= O RECORTE GROSSO MUDOU COM A RÉGUA (M6.7)
+ *
+ *  Era `reminder_sent_at IS NULL` — "ainda não mandei nada". Com três etapas,
+ *  essa condição excluiria justamente quem precisa da 2ª e da 3ª mensagem: o
+ *  worker rodaria, não veria ninguém, e a régua nunca passaria da primeira.
+ *  Agora o corte é `reminder_stage < 3`: quem já terminou a régua sai da
+ *  varredura, e quem está no meio dela continua sendo avaliado.
+ *
+ *  `CONFIRMADO` continua entrando na consulta, e é de propósito: é a função
+ *  pura que decide que um confirmado não recebe cobrança. Filtrar aqui
+ *  esconderia a linha da prévia, e a prévia é onde a clínica confere por que
+ *  fulana não recebeu. */
 const SELECT_CANDIDATOS = `
   SELECT a.id, a.title, a.status, a.kind, a.client_id, a.professional_id,
+         a.reminder_stage,
          DATE_FORMAT(a.starts_at, '%Y-%m-%d %H:%i:%s') AS starts_at,
          DATE_FORMAT(a.reminder_sent_at, '%Y-%m-%d %H:%i:%s') AS reminder_sent_at,
+         DATE_FORMAT(a.reminder_last_at, '%Y-%m-%d %H:%i:%s') AS reminder_last_at,
+         DATE_FORMAT(a.reminder_reply_at, '%Y-%m-%d %H:%i:%s') AS reminder_reply_at,
          c.name AS client_name, c.phone AS phone, u.name AS professional_name
     FROM appointments a
     LEFT JOIN clients c ON c.id = a.client_id AND c.clinica_id = :clinica
@@ -65,7 +82,7 @@ const SELECT_CANDIDATOS = `
    WHERE a.clinica_id = :clinica
      AND a.kind = 'ATENDIMENTO'
      AND a.status IN ('AGENDADO','CONFIRMADO')
-     AND a.reminder_sent_at IS NULL
+     AND a.reminder_stage < 3   /* -- ver nota RECORTE GROSSO acima */
      AND a.starts_at > NOW()
      AND a.starts_at < DATE_ADD(NOW(), INTERVAL 3 DAY)
    ORDER BY a.starts_at
@@ -98,29 +115,74 @@ async function umaClinica(db, cfg, op) {
   const itens = [];
   let enviados = 0, falhas = 0;
 
+  let cancelados = 0;
+
   for (const c of candidatos) {
     const d = servico.deveEnviar(c, agora, { antecedenciaH: cfg.antecedenciaH });
     const linha = {
       id: c.id, titulo: c.title, paciente: c.client_name, telefone: c.phone,
       quando: c.starts_at, momentoDeEnvio: d.momento || null,
+      etapaFeita: servico.etapaAtual(c), etapa: d.etapa || null,
+      cancela: !!d.cancela,
       enviar: !!d.enviar, motivo: d.motivo || null, atrasadoMin: d.atrasadoMin || 0
     };
 
     if (!d.enviar) { itens.push(linha); continue; }
 
-    linha.mensagem = servico.montarMensagem(cfg.template, c);
+    linha.mensagem = servico.montarMensagem(servico.templateDaEtapa(cfg, d.etapa), c);
 
     if (simular) { linha.simulado = true; itens.push(linha); continue; }
 
     try {
+      /* ============================= CANCELAR PRIMEIRO, AVISAR DEPOIS (M6.7)
+       *
+       * A ordem é o contrário da regra que vale para as etapas 1 e 2 ("enviar
+       * primeiro, marcar depois"), e a inversão é deliberada.
+       *
+       * A 3ª mensagem AFIRMA um fato: "o horário foi cancelado". Se ela saísse
+       * antes do UPDATE e o UPDATE falhasse, a paciente teria por escrito um
+       * cancelamento que não aconteceu — ela não vem, e a agenda continua
+       * mostrando o horário ocupado para uma profissional que ficou esperando.
+       * Cancelando antes, a falha possível é o oposto: o horário liberado e a
+       * paciente sem o aviso. Ela liga, a recepção explica, e remarca. Dos dois
+       * estragos, este é o que tem conserto. */
+      if (d.cancela) {
+        const [r] = await db.q(
+          "UPDATE appointments SET status = 'CANCELADO'," +
+          " cancelled_reason = 'Sem confirmacao apos 3 mensagens (regua automatica)'," +
+          " notes = CONCAT(COALESCE(notes,''), ?)" +
+          ' WHERE clinica_id = :clinica AND id = ?' +
+          "   AND status = 'AGENDADO' AND reminder_reply_at IS NULL",
+          ['\n[' + String(agora.toISOString ? agora.toISOString() : new Date().toISOString()).slice(0, 10) +
+           '] Cancelado pela regua de confirmacao: 3 mensagens sem resposta.', c.id]);
+
+        /* ZERO LINHA AFETADA = ALGUÉM RESPONDEU ENTRE A CONSULTA E AGORA.
+         * A mensagem de cancelamento NÃO sai: ela diria a uma paciente que
+         * acabou de confirmar que o horário dela foi desmarcado. */
+        if (!r.affectedRows) {
+          linha.enviar = false;
+          linha.motivo = 'paciente respondeu durante a passada';
+          itens.push(linha);
+          continue;
+        }
+        cancelados += 1;
+        await logs.registrar(db, 'AGENDA',
+          (c.client_name || 'Paciente') + ' nao confirmou "' + c.title +
+          '" apos 3 mensagens; horario cancelado automaticamente.');
+      }
+
       // A INSTANCIA VAI JUNTO. Sem ela, `sendWhatsappText` resolve uma
       // globalmente -- e a mensagem sai do numero do consultorio errado.
       await op.enviar(c.phone, linha.mensagem, cfg.instancia);
-      // Só agora o compromisso é marcado — e só se ainda estiver sem marca.
+
+      /* A ETAPA SÓ AVANÇA DEPOIS DO ENVIO, e o UPDATE é condicionado à etapa
+       * que a decisão viu. Duas passadas simultâneas não se atropelam: a
+       * segunda encontra a etapa já avançada e não afeta linha nenhuma. */
       await db.q(
-        'UPDATE appointments SET reminder_sent_at = NOW()' +
-        ' WHERE clinica_id = :clinica AND id = ? AND reminder_sent_at IS NULL',
-        [c.id]
+        'UPDATE appointments SET reminder_stage = ?, reminder_last_at = NOW(),' +
+        ' reminder_sent_at = COALESCE(reminder_sent_at, NOW())' +
+        ' WHERE clinica_id = :clinica AND id = ? AND reminder_stage = ?',
+        [d.etapa, c.id, d.etapa - 1]
       );
       linha.enviado = true;
       enviados += 1;
@@ -133,7 +195,7 @@ async function umaClinica(db, cfg, op) {
   }
 
   return { ativo: cfg.ativo, simulado: simular, avaliados: candidatos.length,
-           enviados: enviados, falhas: falhas, itens: itens };
+           enviados: enviados, falhas: falhas, cancelados: cancelados, itens: itens };
 }
 
 /** Uma passada em TODAS as clínicas ativas que tenham instância.
@@ -154,7 +216,7 @@ async function rodarUmaVez(op) {
     " WHERE status = 'ativa' AND evolution_instance IS NOT NULL ORDER BY id");
 
   const porClinica = [];
-  let enviados = 0, falhas = 0, avaliados = 0, comErro = 0;
+  let enviados = 0, falhas = 0, avaliados = 0, comErro = 0, cancelados = 0;
 
   for (const c of clinicas) {
     try {
@@ -164,6 +226,7 @@ async function rodarUmaVez(op) {
       enviados += r.enviados;
       falhas += r.falhas;
       avaliados += r.avaliados;
+      cancelados += r.cancelados || 0;
       porClinica.push(Object.assign({ clinica: c.id, nome: c.nome }, r));
     } catch (e) {
       comErro += 1;
@@ -176,6 +239,7 @@ async function rodarUmaVez(op) {
   return {
     clinicas: clinicas.length, comErro: comErro,
     avaliados: avaliados, enviados: enviados, falhas: falhas,
+    cancelados: cancelados,
     porClinica: porClinica
   };
 }
@@ -187,8 +251,9 @@ function iniciar(enviar) {
   const passada = async function () {
     try {
       const r = await rodarUmaVez({ enviar: enviar });
-      if (r.enviados || r.falhas || r.comErro) {
+      if (r.enviados || r.falhas || r.comErro || r.cancelados) {
         console.log('[lembretes] ' + r.clinicas + ' clinica(s); enviados: ' + r.enviados +
+                    ', cancelados: ' + r.cancelados +
                     ', falhas: ' + r.falhas + ', clinicas com erro: ' + r.comErro);
       }
     } catch (e) {

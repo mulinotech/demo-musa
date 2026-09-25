@@ -17,8 +17,12 @@ const worker = require('../server/workers/lembretes');
 
 /* ------------------------------------------------ quando o lembrete sai */
 
-test('lembrete sai 24 h antes quando a hora e civilizada', function () {
-  assert.strictEqual(l.momentoDeEnvio('2026-09-02 14:00:00'), '2026-09-01 14:00:00');
+test('lembrete sai 26 h antes quando a hora e civilizada', function () {
+  /* Eram 24 h ate a M6.7. Viraram 26 para o 1o disparo caber na regua de tres:
+     26 - 2 - 4 = 20 h de folga entre o ultimo aviso e o horario marcado. Com
+     24 h a terceira mensagem sairia a 18 h do atendimento, e o cancelamento
+     automatico pegaria a paciente ja organizada para vir. */
+  assert.strictEqual(l.momentoDeEnvio('2026-09-02 14:00:00'), '2026-09-01 12:00:00');
 });
 
 test('compromisso da manha cedo nao acorda ninguem de madrugada', function () {
@@ -31,11 +35,17 @@ test('compromisso do fim da noite tambem recua, nao avanca', function () {
   // 21:30 menos 24 h = 21:30, depois da janela. Recua para as 20:00 do mesmo
   // dia. Avancar para as 08:00 seguintes deixaria o aviso a 13 h do horario,
   // competindo com a paciente que ja se organizou.
-  assert.strictEqual(l.momentoDeEnvio('2026-09-02 21:30:00'), '2026-09-01 20:00:00');
+  //
+  // A antecedencia vai EXPLICITA desde a M6.7: o padrao passou a 26 h, e com
+  // ele este horario cai dentro da janela e a regra de recuo nao seria
+  // exercitada. O que este teste guarda e a JANELA, nao o numero de horas.
+  assert.strictEqual(l.momentoDeEnvio('2026-09-02 21:30:00', { antecedenciaH: 24 }),
+                     '2026-09-01 20:00:00');
 });
 
 test('as 20:00 em ponto ainda esta dentro da janela', function () {
-  assert.strictEqual(l.momentoDeEnvio('2026-09-02 20:00:00'), '2026-09-01 20:00:00');
+  assert.strictEqual(l.momentoDeEnvio('2026-09-02 20:00:00', { antecedenciaH: 24 }),
+                     '2026-09-01 20:00:00');
 });
 
 test('antecedencia configuravel muda o momento', function () {
@@ -76,10 +86,22 @@ test('depois do horario marcado nao existe lembrete', function () {
   assert.strictEqual(d.motivo, 'horario ja passou');
 });
 
-test('lembrete ja enviado nao sai de novo', function () {
-  const d = l.deveEnviar(compromisso({ reminder_sent_at: '2026-09-01 14:00:00' }), '2026-09-01 18:00:00');
-  assert.strictEqual(d.enviar, false);
-  assert.strictEqual(d.motivo, 'lembrete ja enviado');
+test('o lembrete nao sai duas vezes -- o que vem depois e a 2a etapa', function () {
+  /* A frase deste teste mudou com a M6.7, e a mudanca e o ponto: ate aqui
+     `reminder_sent_at` preenchido queria dizer "acabou". Agora quer dizer
+     "a etapa 1 ja saiu", e o que vem a seguir e a COBRANCA, duas horas depois.
+     O que continua garantido e o que importa: a etapa 1 nao se repete. */
+  const c = compromisso({ reminder_sent_at: '2026-09-01 14:00:00' });
+  const d = l.deveEnviar(c, '2026-09-01 18:00:00');
+  assert.strictEqual(d.etapa, 2, 'nunca 1 de novo');
+  assert.strictEqual(d.enviar, true);
+
+  // E com a regua inteira concluida, nada mais sai.
+  const fim = l.deveEnviar(compromisso({ reminder_stage: 3,
+    reminder_sent_at: '2026-09-01 14:00:00', reminder_last_at: '2026-09-01 20:00:00' }),
+    '2026-09-01 23:00:00');
+  assert.strictEqual(fim.enviar, false);
+  assert.strictEqual(fim.motivo, 'regua concluida');
 });
 
 test('cancelado, faltou e bloqueio nao recebem, e o motivo aparece', function () {
@@ -172,13 +194,39 @@ function fakeEscopo(linhas, estado) {
       }
       if (/^SELECT a.id, a.title/.test(t)) {
         assert.match(t, /a\.clinica_id = :clinica/, 'a busca de candidatos tem de filtrar clinica');
-        return [linhas.filter((c) => !c.reminder_sent_at)];
+        // O recorte grosso mudou com a regua (M6.7): era `reminder_sent_at IS
+        // NULL`, virou `reminder_stage < 3`. O fake acompanha, senao o teste
+        // mede um SQL que o worker nao usa mais.
+        return [linhas.filter((c) => Number(c.reminder_stage || 0) < 3)];
       }
-      if (/UPDATE appointments SET reminder_sent_at/.test(t)) {
+      if (/UPDATE appointments SET reminder_stage/.test(t)) {
         assert.match(t, /clinica_id = :clinica/, 'a marca do lembrete tem de filtrar clinica');
-        const c = linhas.find((x) => x.id === params[0]);
-        if (c) c.reminder_sent_at = '2026-09-01 14:05:00';
+        /* A CONDICAO TEM DE ESTAR NO SQL, e nao so nos parametros.
+         * Sem `AND reminder_stage = ?` duas passadas simultaneas se atropelam:
+         * a segunda regrava a etapa por cima e uma das tres mensagens nao sai.
+         * O fake nao consegue simular a corrida, entao confere a clausula --
+         * pela mesma razao que confere o filtro de clinica na linha acima. */
+        assert.match(t, /AND reminder_stage = \?/,
+          'o avanco de etapa tem de conferir de qual etapa veio');
+        const [etapa, id, etapaEsperada] = params;
+        const c = linhas.find((x) => x.id === id);
+        if (!c || Number(c.reminder_stage || 0) !== etapaEsperada) return [{ affectedRows: 0 }];
+        c.reminder_stage = etapa;
+        c.reminder_last_at = estado.agora || '2026-09-01 14:05:00';
+        c.reminder_sent_at = c.reminder_sent_at || c.reminder_last_at;
         estado.marcados = (estado.marcados || 0) + 1;
+        return [{ affectedRows: 1 }];
+      }
+      if (/UPDATE appointments SET status = 'CANCELADO'/.test(t)) {
+        assert.match(t, /clinica_id = :clinica/, 'o cancelamento tem de filtrar clinica');
+        /* Mesma razao: sem `reminder_reply_at IS NULL` no SQL, o cancelamento
+         * pega a paciente que respondeu entre a consulta e o UPDATE. */
+        assert.match(t, /reminder_reply_at IS NULL/,
+          'o cancelamento nao pode pegar quem respondeu no meio da passada');
+        const c = linhas.find((x) => x.id === params[1]);
+        if (!c || c.status !== 'AGENDADO' || c.reminder_reply_at) return [{ affectedRows: 0 }];
+        c.status = 'CANCELADO';
+        estado.cancelados = (estado.cancelados || 0) + 1;
         return [{ affectedRows: 1 }];
       }
       return [[]];
@@ -280,4 +328,111 @@ test('a instancia da clinica vai junto em cada envio', async function () {
   assert.strictEqual(enviadas.length, 1);
   assert.strictEqual(enviadas[0][2], 'instancia-desta-clinica',
     'a instancia tem de chegar ao envio; `undefined` aqui e a queda global de volta');
+});
+
+/* ==================================================================
+ *  A RÉGUA DE TRÊS DISPAROS VISTA PELO WORKER (M6.7)
+ *
+ *  As regras puras têm arquivo próprio (`regua-de-confirmacao.test.js`). O que
+ *  se mede aqui é o que só o worker faz: gravar a etapa, CANCELAR o horário
+ *  antes de anunciar o cancelamento, e não anunciar nada quando o cancelamento
+ *  não pegou.
+ * ================================================================== */
+
+test('as tres mensagens saem em ordem, e a terceira cancela o horario', async function () {
+  const estado = { ativo: true };
+  const linhas = [compromisso()];              // 02/09 14:00, antecedencia 24 h
+  const db = fakeEscopo(linhas, estado);
+  const saiu = [];
+  const envio = async (t, m) => { saiu.push(m); };
+
+  /* Os relogios sao EXATOS de proposito. Cada etapa conta do envio anterior, e
+     a cobranca que cairia depois das 20:00 espera as 08:00 do dia seguinte --
+     entao adiantar a 2a passada em dez minutos joga a 3a para fora da janela e
+     este teste "falharia" por um comportamento correto. Ver `momentoDaCobranca`. */
+  estado.agora = '2026-09-01 14:00:00';
+  const a = await worker.umaClinica(db, cfg(estado), { agora: estado.agora, enviar: envio });
+  estado.agora = '2026-09-01 16:00:00';
+  const b = await worker.umaClinica(db, cfg(estado), { agora: estado.agora, enviar: envio });
+  estado.agora = '2026-09-01 20:00:00';
+  const c = await worker.umaClinica(db, cfg(estado), { agora: estado.agora, enviar: envio });
+
+  assert.deepStrictEqual([a.enviados, b.enviados, c.enviados], [1, 1, 1]);
+  assert.strictEqual(saiu.length, 3, 'tres mensagens, e tres textos diferentes');
+  assert.strictEqual(new Set(saiu).size, 3);
+  assert.match(saiu[1], /profissional reservada/i);
+  assert.match(saiu[2], /cancelado/i);
+
+  assert.strictEqual(linhas[0].status, 'CANCELADO');
+  assert.strictEqual(linhas[0].reminder_stage, 3);
+  assert.strictEqual(c.cancelados, 1);
+});
+
+test('quem responde no meio nao e cobrado nem cancelado', async function () {
+  const estado = { ativo: true };
+  const linhas = [compromisso()];
+  const db = fakeEscopo(linhas, estado);
+  const saiu = [];
+  const envio = async (t, m) => { saiu.push(m); };
+
+  estado.agora = '2026-09-01 14:00:00';
+  await worker.umaClinica(db, cfg(estado), { agora: estado.agora, enviar: envio });
+
+  // A paciente escreve qualquer coisa: o webhook carimba a coluna.
+  linhas[0].reminder_reply_at = '2026-09-01 14:40:00';
+
+  for (const agora of ['2026-09-01 16:00:00', '2026-09-01 20:00:00']) {
+    estado.agora = agora;
+    const r = await worker.umaClinica(db, cfg(estado), { agora: agora, enviar: envio });
+    assert.strictEqual(r.enviados, 0, agora);
+  }
+  assert.strictEqual(saiu.length, 1, 'so o lembrete saiu');
+  assert.strictEqual(linhas[0].status, 'AGENDADO', 'o horario continua de pe');
+});
+
+test('se o cancelamento nao pegar, a mensagem de cancelamento NAO sai', async function () {
+  /* A corrida real: a paciente responde entre a consulta e o UPDATE. O UPDATE
+     tem `reminder_reply_at IS NULL` na condicao, entao ele nao afeta linha
+     nenhuma -- e o worker tem de DESISTIR do envio. Mandar assim mesmo diria a
+     alguem que acabou de confirmar que o horario dela foi desmarcado. */
+  const estado = { ativo: true };
+  const linhas = [compromisso({ reminder_stage: 2, reminder_sent_at: '2026-09-01 14:00:00',
+                                reminder_last_at: '2026-09-01 16:00:00' })];
+  const db = fakeEscopo(linhas, estado);
+
+  // A resposta chega "durante a passada": o fake recusa o UPDATE por causa dela.
+  linhas[0].reminder_reply_at = null;
+  const dbEspiao = Object.assign({}, db, {
+    async q(sql, params) {
+      if (/UPDATE appointments SET status = 'CANCELADO'/.test(String(sql).replace(/\s+/g, ' '))) {
+        linhas[0].reminder_reply_at = '2026-09-01 19:59:59';
+      }
+      return db.q(sql, params);
+    }
+  });
+
+  const saiu = [];
+  const r = await worker.umaClinica(dbEspiao, cfg(estado),
+    { agora: '2026-09-01 20:00:00', enviar: async (t, m) => saiu.push(m) });
+
+  assert.strictEqual(saiu.length, 0, 'nenhuma mensagem de cancelamento saiu');
+  assert.strictEqual(r.enviados, 0);
+  assert.strictEqual(r.cancelados, 0);
+  assert.strictEqual(linhas[0].status, 'AGENDADO');
+  assert.match(r.itens[0].motivo, /respondeu durante a passada/);
+});
+
+test('a previa mostra a etapa de cada linha sem enviar nada', async function () {
+  const estado = { ativo: true };
+  const linhas = [compromisso({ reminder_stage: 1, reminder_sent_at: '2026-09-01 14:00:00',
+                                reminder_last_at: '2026-09-01 14:00:00' })];
+  const r = await worker.umaClinica(fakeEscopo(linhas, estado), cfg(estado),
+    { agora: '2026-09-01 16:00:00', simular: true });
+
+  assert.strictEqual(r.enviados, 0);
+  assert.strictEqual(r.itens[0].simulado, true);
+  assert.strictEqual(r.itens[0].etapa, 2);
+  assert.strictEqual(r.itens[0].etapaFeita, 1);
+  assert.strictEqual(r.itens[0].cancela, false);
+  assert.strictEqual(linhas[0].status, 'AGENDADO', 'previa nao cancela nada');
 });

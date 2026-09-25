@@ -74,7 +74,6 @@ async function clinicaDaInstancia(instancia) {
  *  sintoma seria a agenda de um consultório mudando sozinha. */
 async function responderLembrete(db, phone, texto) {
   const intencao = lembretes.interpretarResposta(texto);
-  if (!intencao) return null;
 
   const digitos = String(phone || '').replace(/\D/g, '');
   if (!digitos) return null;
@@ -91,6 +90,7 @@ async function responderLembrete(db, phone, texto) {
          AND a.kind = 'ATENDIMENTO'
          AND a.status IN ('AGENDADO','CONFIRMADO')
          AND a.reminder_sent_at IS NOT NULL
+         AND a.reminder_reply_at IS NULL
          AND a.starts_at > NOW()
          AND a.starts_at < DATE_ADD(NOW(), INTERVAL 48 HOUR)
        ORDER BY a.starts_at
@@ -99,6 +99,35 @@ async function responderLembrete(db, phone, texto) {
 
     if (!r.length) return null;
     const c = r[0];
+
+    /* ============================ QUALQUER TEXTO PARA A RÉGUA (M6.7)
+     *
+     * Antes desta linha a função saía logo no começo quando a resposta não era
+     * exatamente "1" ou "2". Com um lembrete só isso não tinha consequência: a
+     * mensagem já estava gravada e uma pessoa leria.
+     *
+     * Com a régua de três disparos tem, e é grave: "posso chegar 10 minutos
+     * depois?" não é "1" nem "2", então a paciente seguiria como quem não
+     * respondeu — receberia a cobrança e, quatro horas depois, o cancelamento
+     * do horário que ela acabou de tratar de manter. O sistema teria por
+     * escrito que ela não deu notícia, com a notícia dela no banco, dois campos
+     * ao lado.
+     *
+     * `reminder_reply_at` é carimbado ANTES de qualquer interpretação: o que
+     * para a régua é a paciente ter falado, não ela ter falado a palavra certa.
+     * Texto que o sistema não entende continua sendo trabalho de gente — só que
+     * agora o horário fica de pé esperando essa pessoa. */
+    await db.q(
+      'UPDATE appointments SET reminder_reply_at = NOW()' +
+      ' WHERE clinica_id = :clinica AND id = ? AND reminder_reply_at IS NULL',
+      [c.id]);
+
+    if (!intencao) {
+      await logs.registrar(db, 'AGENDA',
+        c.client_name + ' respondeu sobre "' + c.title + '" pelo WhatsApp; ' +
+        'a regua de confirmacao parou e o horario aguarda atendimento humano.');
+      return { compromisso: c.id, acao: 'RESPOSTA_LIVRE' };
+    }
 
     if (intencao === 'CONFIRMAR') {
       await db.q(

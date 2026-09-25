@@ -80,6 +80,21 @@ router.put('/api/appointments/reminders/settings', async function (req, res) {
     if (!t) return res.status(400).json({ error: 'O texto do lembrete nao pode ficar vazio.' });
     novos.lembrete_template = t;
   }
+  /* AS DUAS MENSAGENS DA RÉGUA (M6.7). Vazio é recusado pelo mesmo motivo do
+   * texto acima: uma clínica que apaga o campo acharia que desligou aquela
+   * etapa, e o que aconteceria é a etapa sair com o texto padrão — que ela
+   * acabou de decidir que não queria. Desligar etapa é outro pedido; quando
+   * vier, é uma chave, não um campo em branco. */
+  if (b.templateCobranca !== undefined) {
+    const t = String(b.templateCobranca).trim();
+    if (!t) return res.status(400).json({ error: 'O texto da 2a mensagem nao pode ficar vazio.' });
+    novos.lembrete_template_2 = t;
+  }
+  if (b.templateCancelamento !== undefined) {
+    const t = String(b.templateCancelamento).trim();
+    if (!t) return res.status(400).json({ error: 'O texto da 3a mensagem (cancelamento) nao pode ficar vazio.' });
+    novos.lembrete_template_3 = t;
+  }
   try {
     // LIGAR SEM INSTANCIA E RECUSADO, e nao aceito-e-ignorado.
     //
