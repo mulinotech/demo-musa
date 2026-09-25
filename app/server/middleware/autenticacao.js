@@ -39,7 +39,7 @@ function ehRotaPublica(metodo, caminho) {
 }
 
 async function porteiro(req, res, next) {
-  res.set('X-Trava-Musa', 'v71');
+  res.set('X-Trava-Musa', 'v72');
   const caminho = req.originalUrl.split('?')[0];
   if (ehRotaPublica(req.method, caminho)) return next();
 

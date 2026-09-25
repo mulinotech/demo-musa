@@ -69,7 +69,18 @@ export default function ProdutoModal({ produto, categorias, aoFechar, aoSalvar }
         category: form.category.trim() || null,
         unit: form.unit,
         minStock: form.minStock === "" ? 0 : Number(form.minStock),
-        unitCost: form.unitCost === "" ? 0 : Number(form.unitCost),
+        /* O CUSTO SÓ VAI NA CRIAÇÃO (M6.6b).
+         *
+         * Ao EDITAR, o servidor ignora `unitCost` de propósito (R3): ele é o
+         * custo médio das entradas de estoque, e digitá-lo à mão criaria um
+         * custo que não corresponde a nenhuma compra -- a precificação, que usa
+         * este número, passaria a mentir com cara de calculada.
+         *
+         * O que estava errado era a TELA: ela oferecia o campo, mandava o valor,
+         * fechava dizendo "salvo" e nada mudava. Mandar um campo que se sabe
+         * ignorado é pedir para o sistema parecer quebrado. Na edição o campo
+         * fica travado, com a frase que diz onde se corrige de verdade. */
+        ...(editando ? {} : { unitCost: form.unitCost === "" ? 0 : Number(form.unitCost) }),
         // Vazio vira `null`, e não zero: "não tem preço de venda" e "vende por
         // R$ 0,00" são coisas diferentes, e o servidor distingue as duas.
         salePrice: form.salePrice === "" ? null : Number(form.salePrice),
@@ -186,16 +197,26 @@ export default function ProdutoModal({ produto, categorias, aoFechar, aoSalvar }
               />
             </div>
             <div>
-              <label className={rotulo}>Custo (R$)</label>
+              <label className={rotulo}>
+                {editando ? "Custo médio (R$)" : "Custo inicial (R$)"}
+              </label>
               <input
-                className={campo}
+                className={campo + (editando ? " bg-brand-beige/60 text-brand-brown/70" : "")}
                 type="number"
                 min={0}
                 step="0.01"
                 value={form.unitCost}
+                disabled={editando}
                 onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                 placeholder="0,00"
               />
+              {editando && (
+                <p className="text-[10px] text-brand-brown/55 mt-1 leading-relaxed">
+                  Vem do custo médio das entradas de estoque. Para mudá-lo, lance a compra em{" "}
+                  <strong>Entrada</strong> com o preço pago — a média se ajusta sozinha e a
+                  precificação acompanha.
+                </p>
+              )}
             </div>
             <div>
               <label className={rotulo}>Venda (R$)</label>
