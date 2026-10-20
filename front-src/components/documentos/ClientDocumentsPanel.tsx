@@ -16,6 +16,7 @@ import SignaturePad from "./SignaturePad";
 import AlertasClinicos from "./AlertasClinicos";
 import { Documento, Modelo, ESTILO_STATUS_DOC, ROTULO_TIPO, dataHoraBR } from "./comum";
 import { abrirDaApi, baixarDaApi } from "../../lib/api";
+import { confirmar, pedirTexto } from "../../lib/dialogo";
 
 export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPaciente?: string }) {
   const [docs, setDocs] = useState<Documento[]>([]);
@@ -121,7 +122,7 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
 
   const gerar = async () => {
     if (!aberto) return;
-    if (!window.confirm(
+    if (!(await confirmar(
       ehEmitido
         ? "Emitir o documento?\n\n" +
           "A partir daqui o conteúdo fica IMUTÁVEL. Quem assina receita e atestado é a " +
@@ -130,7 +131,7 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
         : "Gerar para assinatura?\n\n" +
           "A partir daqui o conteúdo do documento fica IMUTÁVEL — é isso que dá valor à assinatura. " +
           "Para corrigir depois será preciso emitir um documento novo.",
-    )) return;
+    ))) return;
     setOcupado(true);
     try {
       // SALVA ANTES DE GERAR. O `finalize` valida e renderiza as respostas
@@ -202,7 +203,7 @@ export default function ClientDocumentsPanel(p: { clientId: string; nomeDoPacien
   };
 
   const cancelar = async (doc: Documento) => {
-    const motivo = window.prompt("Motivo do cancelamento (obrigatório):\n\nO documento não é apagado — fica no histórico marcado como cancelado.");
+    const motivo = (await pedirTexto("Motivo do cancelamento (obrigatório):\n\nO documento não é apagado — fica no histórico marcado como cancelado."));
     if (!motivo || !motivo.trim()) return;
     const r = await fetch("/api/documents/" + doc.id + "/cancel", {
       method: "POST",

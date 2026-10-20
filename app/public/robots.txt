@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /crm
+Disallow: /login
+Disallow: /api/
+
+Sitemap: https://demo-musa.mulinotech.com/sitemap.xml

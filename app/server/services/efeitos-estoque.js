@@ -92,6 +92,20 @@ async function baixarInsumosDoAtendimento(ap, tx, ctx) {
   const movimentos = [];
   let custoTotal = 0;
 
+  /* QA de 15/10, BUG-23: a movimentacao dizia so "Atendimento: Ultraformer MPT"
+   * e mostrava quem estava LOGADO -- o atendimento do Pedro aparecia como do
+   * Rodrigo, e tres saidas nem diziam de qual paciente eram. O motivo passa a
+   * levar a paciente e quem ATENDEU; `created_by` continua sendo quem registrou. */
+  let quemAtendeu = '';
+  if (ap.professional_id) {
+    const [pr] = await tx.q('SELECT name FROM users WHERE clinica_id = :clinica AND id = ? LIMIT 1',
+      [ap.professional_id]);
+    quemAtendeu = (pr[0] && pr[0].name) || '';
+  }
+  const motivo = ('Atendimento: ' + (ap.title || ap.id) +
+    (ctx.nomeDoCliente ? ' — ' + ctx.nomeDoCliente : '') +
+    (quemAtendeu ? ' · atendeu: ' + quemAtendeu : '')).slice(0, 255);
+
   for (const item of ficha) {
     const lotes = await lotesDoProduto(tx, item.product_id);
     const plano = est.escolherLotes(lotes, item.quantity, { hoje: ctx.hoje });
@@ -119,7 +133,7 @@ async function baixarInsumosDoAtendimento(ap, tx, ctx) {
           (id, product_id, batch_id, type, quantity, unit_cost, reason, source, source_id, created_by, clinica_id)
          VALUES (?,?,?,'SAIDA',?,?,?, 'APPOINTMENT', ?, ?, :clinica)`,
         [novoId('mov'), item.product_id, c.batchId, c.quantidade, c.unitCost,
-         'Atendimento: ' + (ap.title || ap.id), chave, ctx.usuarioId || null]
+         motivo, chave, ctx.usuarioId || null]
       );
       movimentos.push({ produto: item.name, batchId: c.batchId, quantidade: c.quantidade });
     }

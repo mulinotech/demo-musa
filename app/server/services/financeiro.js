@@ -26,6 +26,32 @@
 
 const BASES = ['competencia', 'caixa'];
 
+/* ============================== ESTORNO ABATE RECEITA (QA de 15/10, BUG-07)
+ *
+ * O estorno de um atendimento é gravado como linha nova, `type = 'DESPESA'`,
+ * `source = 'REVERSAL'` (efeitos-financeiro.js: "estorno é lançamento novo,
+ * nunca DELETE" -- e continua assim). O erro estava aqui, na SOMA: a linha
+ * entrava como despesa. Realizado → Desfazer → Realizado de um atendimento de
+ * R$ 280 aparecia como receita R$ 560 e despesa R$ 280; o resultado batia, mas
+ * faturamento, ticket médio e margem ficavam inflados, e os R$ 280 ainda
+ * apareciam em "contas a pagar, sem vencimento".
+ *
+ * Estorno é o desfazer de uma receita. Ele SUBTRAI da receita, não soma na
+ * despesa, e não é conta a pagar. `amount` continua positivo, como manda a
+ * regra de cima. */
+function ehEstorno(l) {
+  return !!l && l.source === 'REVERSAL' && l.type === 'DESPESA';
+}
+
+/** O quanto a linha mexe na receita e na despesa. */
+function efeito(l) {
+  const v = Number(l.amount) || 0;
+  if (ehEstorno(l)) return { receita: -v, despesa: 0 };
+  if (l.type === 'RECEITA') return { receita: v, despesa: 0 };
+  if (l.type === 'DESPESA') return { receita: 0, despesa: v };
+  return { receita: 0, despesa: 0 };
+}
+
 function centavos(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
@@ -56,10 +82,12 @@ function dentro(data, de, ate) {
 function porCategoria(linhas, tipo) {
   const mapa = new Map();
   for (const l of linhas) {
-    if (l.type !== tipo) continue;
+    const e = efeito(l);
+    const valor = tipo === 'RECEITA' ? e.receita : e.despesa;
+    if (!valor) continue;
     const chave = l.category_id || '__sem__';
     const atual = mapa.get(chave) || { categoryId: l.category_id || null, categoria: l.category_name || 'Sem categoria', total: 0, quantidade: 0 };
-    atual.total += Number(l.amount);
+    atual.total += valor;
     atual.quantidade += 1;
     mapa.set(chave, atual);
   }
@@ -84,14 +112,15 @@ function resumo(linhas, opcoes) {
 
   let receita = 0, despesa = 0;
   for (const l of noPeriodo) {
-    if (l.type === 'RECEITA') receita += Number(l.amount);
-    else if (l.type === 'DESPESA') despesa += Number(l.amount);
+    const e = efeito(l);
+    receita += e.receita;
+    despesa += e.despesa;
   }
   const resultado = receita - despesa;
 
   // Contas a pagar não dependem do período nem da base: é o que está em aberto
   // agora. Filtrar por período aqui esconderia justamente a conta atrasada.
-  const emAberto = (linhas || []).filter((l) => l.type === 'DESPESA' && !dia(l.paid_at));
+  const emAberto = (linhas || []).filter((l) => l.type === 'DESPESA' && !ehEstorno(l) && !dia(l.paid_at));
   const limite7 = somarDias(hoje, 7);
   let aPagarTotal = 0, vencido = 0, aVencer = 0, semVencimento = 0;
   for (const l of emAberto) {
@@ -162,8 +191,9 @@ function fluxo(linhas, opcoes) {
     if (!dentro(d, de, ate)) continue;
     const chave = balde(d);
     const atual = mapa.get(chave) || { periodo: chave, receita: 0, despesa: 0 };
-    if (l.type === 'RECEITA') atual.receita += Number(l.amount);
-    else atual.despesa += Number(l.amount);
+    const e = efeito(l);
+    atual.receita += e.receita;
+    atual.despesa += e.despesa;
     mapa.set(chave, atual);
   }
 
@@ -260,6 +290,7 @@ function janelaDeGeracao(p) {
 }
 
 module.exports = {
+  ehEstorno, efeito,
   resumo,
   janelaDeGeracao,
   comparativo,

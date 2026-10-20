@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { TREATMENTS, Lead } from "../data";
 import { comDdi, temNumero, DDI_PADRAO } from "../lib/telefone.mjs";
+import { useSite, linkWhatsApp, enviarLead, nomeDoCatalogo } from "../lib/site";
 import { MapPin, Phone, Mail, Clock, Calendar, Check, Send, AlertCircle } from "lucide-react";
 
 interface ContactFormProps {
@@ -21,69 +22,76 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
 
-  const [catalogTreatments, setCatalogTreatments] = useState<{ id: string; name: string }[]>([]);
+  // Falha do envio: a tela diz que NAO foi e oferece o WhatsApp (BUG-01).
+  const [falhaEnvio, setFalhaEnvio] = useState<string>("");
+  const site = useSite();
 
-  useEffect(() => {
-    fetch('/api/treatment-catalog')
-      .then(res => {
-        if (res.ok) return res.json();
-        throw new Error('Failed to load treatments');
-      })
-      .then(data => {
-        setCatalogTreatments(data);
-      })
-      .catch(err => {
-        console.error('Error fetching treatment catalog:', err);
-      });
-  }, []);
-
+  /* BUG-15: o procedimento oferecido aqui é o do CATÁLOGO da clínica — o mesmo
+     nome que a Agenda, os planos e o Financeiro reconhecem. A lista da vitrine
+     (data.ts) só entra quando o catálogo não carregou. */
   const allTreatments = useMemo(() => {
-    const list = [...TREATMENTS.map(t => t.name)];
-    catalogTreatments.forEach(t => {
-      if (!list.includes(t.name)) {
-        list.push(t.name);
-      }
-    });
-    // Sort alphabetically
-    return list.sort((a, b) => a.localeCompare(b));
-  }, [catalogTreatments]);
+    const doCatalogo = site && site.procedimentos.length ? site.procedimentos.map(p => p.nome) : [];
+    const list = doCatalogo.length ? doCatalogo : TREATMENTS.map(t => t.name);
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
+  }, [site]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // O procedimento escolhido na vitrine chega com o nome dela; aqui vira o do catálogo.
+  useEffect(() => {
+    if (treatment && allTreatments.indexOf(treatment) === -1) {
+      const doCatalogo = nomeDoCatalogo(site, treatment);
+      if (allTreatments.indexOf(doCatalogo) !== -1) setTreatment(doCatalogo);
+    }
+  }, [site, treatment, allTreatments]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setFalhaEnvio("");
 
     /* `whatsapp` ja nasce com "+55 ": `.trim()` seria sempre verdadeiro e
        deixaria entrar lead sem telefone. */
-    if (!name.trim() || !temNumero(whatsapp) || !treatment) {
+    if (!name.trim() || !treatment) {
       setErrorMsg("Por favor, preencha todos os campos obrigatórios (*).");
+      return;
+    }
+    // BUG-21: "123" passava pelo navegador e o botão parecia não fazer nada.
+    if (!temNumero(whatsapp)) {
+      setErrorMsg("Informe um WhatsApp válido, com DDD — por exemplo (11) 98888-7777.");
       return;
     }
 
     setIsSubmitting(true);
 
-    const newLead: Lead = {
-      id: Math.random().toString(36).substring(2, 9),
+    const lead = {
       name: name.trim(),
       whatsapp: whatsapp.replace(/\D/g, ""), // only numbers
+      // BUG-21: o e-mail digitado ficava de fora do envio.
+      email: email.trim() || undefined,
       treatment,
       message: message.trim() || `Interesse em agendamento para o procedimento de ${treatment}.`,
-      date: new Date().toISOString(),
-      status: "novo"
     };
 
-    setTimeout(() => {
-      onLeadCaptured(newLead);
-      setIsSubmitting(false);
-      setSubmitted(true);
-      
-      // Reset form variables
-      setName("");
-      setEmail("");
-      setWhatsapp(DDI_PADRAO);
-      setTreatment("");
-      setMessage("");
-      if (onClearSelectedTreatment) onClearSelectedTreatment();
-    }, 1200);
+    // Sucesso só com a gravação confirmada pelo servidor (201).
+    const r = await enviarLead(lead);
+    setIsSubmitting(false);
+    if (!r.ok) {
+      setFalhaEnvio(r.erro || "Não foi possível enviar agora.");
+      return;
+    }
+
+    onLeadCaptured({
+      id: "", name: lead.name, whatsapp: lead.whatsapp, treatment, message: lead.message,
+      date: new Date().toISOString(), status: "novo"
+    } as Lead);
+    setSubmitted(true);
+
+    // Reset form variables
+    setName("");
+    setEmail("");
+    setWhatsapp(DDI_PADRAO);
+    setTreatment("");
+    setMessage("");
+    if (onClearSelectedTreatment) onClearSelectedTreatment();
   };
 
   return (
@@ -155,7 +163,11 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
                   <div>
                     <p className="font-bold text-neutral uppercase tracking-wider text-[10px]">Central de Agendamento</p>
                     <p className="font-semibold mt-1 text-primary">
-                      (11) 90000-0000 (Concierge Clínica)
+                      {site && site.telefone && site.whatsapp ? (
+                        <a href={linkWhatsApp(site, "Olá! Gostaria de agendar uma avaliação.")} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                          {site.telefone} (Concierge Clínica)
+                        </a>
+                      ) : "Atendimento pelo formulário ao lado"}
                     </p>
                   </div>
                 </div>
@@ -214,7 +226,7 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
                   <div className="pt-4 space-y-2">
                     <p className="text-[10px] uppercase text-neutral-muted tracking-wider font-bold">Deseja atendimento imediato?</p>
                     <a
-                      href={`https://wa.me/5511900000000?text=${encodeURIComponent("Olá! Enviei meus dados no formulário estético e gostaria de antecipar o retorno da minha consulta VIP.")}`}
+                      href={linkWhatsApp(site, "Olá! Enviei meus dados no formulário estético e gostaria de antecipar o retorno da minha consulta VIP.")}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center space-x-2 bg-primary hover:bg-primary-light text-white font-black uppercase text-xs tracking-widest px-6 py-3 rounded shadow-sm cursor-pointer"
@@ -242,8 +254,27 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
                     </p>
                   </div>
 
+                  {falhaEnvio && (
+                    <div className="bg-red-500/10 border border-red-500/20 text-red-600 p-3.5 rounded text-xs space-y-2" role="alert">
+                      <div className="flex items-center space-x-2">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span><strong>Sua mensagem não foi enviada.</strong> {falhaEnvio}</span>
+                      </div>
+                      {site && site.whatsapp && (
+                        <a
+                          href={linkWhatsApp(site, `Olá! Tentei enviar o formulário do site e não consegui. Meu nome é ${name.trim()} e tenho interesse em ${treatment || "uma avaliação"}.`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block font-bold underline"
+                        >
+                          Falar agora pelo WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  )}
+
                   {errorMsg && (
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3.5 rounded text-xs flex items-center space-x-2">
+                    <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-500 p-3.5 rounded text-xs flex items-center space-x-2">
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />
                       <span>{errorMsg}</span>
                     </div>
@@ -357,7 +388,7 @@ export default function ContactForm({ onLeadCaptured, selectedTreatmentName, onC
                     </button>
                     
                     <a
-                      href={`https://wa.me/5511900000000?text=${encodeURIComponent("Olá! Gostaria de falar com a concierge sobre agendamentos na Dra. Musa Estética de Elite.")}`}
+                      href={linkWhatsApp(site, "Olá! Gostaria de falar com a concierge sobre agendamentos na Dra. Musa Estética de Elite.")}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-center bg-transparent border border-emerald-600/45 hover:bg-emerald-600/5 text-emerald-600 text-xs font-bold uppercase tracking-widest px-6 py-4 rounded-sm transition-all flex items-center justify-center space-x-2 cursor-pointer"

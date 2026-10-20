@@ -27,7 +27,10 @@ const logs = require('../services/logs');
 const conversao = require('../services/conversao-de-lead');
 const funil = require('../services/funil-do-whatsapp');
 
-const primeiroNome = (nome) => (nome || '').trim().split(' ')[0] || nome;
+/* QA de 15/10, BUG-22: a trilha guardava so a PRIMEIRA palavra do nome ("QA",
+   "TESTE", "Maria") -- e duas Marias viravam o mesmo registro. O nome vai
+   inteiro (limitado), que e o que torna a auditoria auditavel. */
+const primeiroNome = (nome) => String(nome || '').trim().slice(0, 80) || nome;
 
 /** O lead, se for desta clínica. `null` vira 404 em quem chamou.
  *
@@ -169,7 +172,8 @@ router.post('/api/leads/manual', async function (req, res) {
       `INSERT INTO leads (id, name, whatsapp, email, treatment, message, salesperson_id,
                           source, date, status, clinica_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :clinica)`,
-      [leadId, name, whatsapp, email || null, treatment, message || '',
+      // um formato so de telefone em todas as portas (QA de 15/10, BUG-12)
+      [leadId, name, conversao.telefoneParaGravar(whatsapp) || whatsapp, email || null, treatment, message || '',
        salespersonId || null, source || 'manual', new Date(), status || 'novo']);
 
     await logs.registrar(db, 'LEAD_CREATE',
@@ -317,7 +321,7 @@ router.put('/api/leads/:id', async function (req, res) {
 
     const campos = [], valores = [];
     if (status !== undefined) { campos.push('status = ?'); valores.push(status); }
-    if (whatsapp !== undefined) { campos.push('whatsapp = ?'); valores.push(whatsapp); }
+    if (whatsapp !== undefined) { campos.push('whatsapp = ?'); valores.push(conversao.telefoneParaGravar(whatsapp) || whatsapp); }
     if (email !== undefined) { campos.push('email = ?'); valores.push(email); }
     if (salesNotes !== undefined) { campos.push('sales_notes = ?'); valores.push(salesNotes); }
     if (qualified !== undefined) { campos.push('qualified = ?'); valores.push(qualified ? 1 : 0); }

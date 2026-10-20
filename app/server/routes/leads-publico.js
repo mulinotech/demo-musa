@@ -53,6 +53,7 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const escopo = require('../db/escopo');
 const logs = require('../services/logs');
+const conversao = require('../services/conversao-de-lead');
 
 const MOTIVO = 'captacao publica de lead: nao ha sessao de onde tirar a clinica -- ' +
                'ela vem da chave de captacao na URL, ou da unica clinica que existir';
@@ -163,12 +164,14 @@ router.post('/api/leads', limite, async function (req, res) {
       `INSERT INTO leads (id, name, whatsapp, email, treatment, message, score_result,
                           salesperson_id, source, date, status, clinica_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :clinica)`,
-      [leadId, name, whatsapp, email || null, treatment, message || '', scoreResult || null,
+      [leadId, name, conversao.telefoneParaGravar(whatsapp) || whatsapp, email || null, treatment, message || '', scoreResult || null,
        salespersonId || null, source || 'site',
-       date ? new Date(date) : new Date(), status || 'novo']
+       // A data do lead e a do SERVIDOR: o navegador do visitante pode estar com
+       // o relogio errado, e a porta e publica (QA de 15/10, BUG-01).
+       new Date(), status || 'novo']
     );
 
-    const primeiroNome = (name || '').trim().split(' ')[0] || name;
+    const primeiroNome = String(name || '').trim().slice(0, 80) || name; // nome inteiro (QA BUG-22)
     await logs.registrar(db, 'LEAD_CREATE',
       'Novo lead pelo site: "' + primeiroNome + '" (' + whatsapp + ') - Interesse: ' + treatment);
 

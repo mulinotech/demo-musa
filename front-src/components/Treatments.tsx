@@ -1,66 +1,33 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { TREATMENTS, Treatment } from "../data";
 import { Calendar, Layers, Shield, Sparkles, Clock, RefreshCw, X } from "lucide-react";
+import { useSite, linkWhatsApp, nomeDoCatalogo } from "../lib/site";
 
 interface TreatmentsProps {
   onSelectTreatment: (treatmentName: string) => void;
 }
 
 export default function Treatments({ onSelectTreatment }: TreatmentsProps) {
+  // BUG-02: o numero vem do cadastro da clinica, nao do codigo.
+  const site = useSite();
   const [selectedCategory, setSelectedCategory] = useState<string>("todos");
   const [activeModal, setActiveModal] = useState<Treatment | null>(null);
-  const [catalogTreatments, setCatalogTreatments] = useState<any[]>([]);
 
-  useEffect(() => {
-    fetch('/api/treatment-catalog')
-      .then(res => {
-        if (res.ok) return res.json();
-        throw new Error('Failed to load catalog');
-      })
-      .then(data => {
-        setCatalogTreatments(data);
-      })
-      .catch(err => {
-        console.error('Error fetching treatment catalog:', err);
-      });
-  }, []);
-
-  const inferCategory = (name: string): "facial" | "corporal" | "tecnologia" | "spa" => {
-    const n = name.toLowerCase();
-    if (n.includes("corpo") || n.includes("corporal") || n.includes("bumbum") || n.includes("glúteo") || n.includes("drenagem") || n.includes("linfatica") || n.includes("modeladora")) {
-      return "corporal";
-    }
-    if (n.includes("massagem") || n.includes("relaxante") || n.includes("spa") || n.includes("limpeza de pele")) {
-      return "spa";
-    }
-    if (n.includes("laser") || n.includes("tulium") || n.includes("ultraformer") || n.includes("tecnologia")) {
-      return "tecnologia";
-    }
-    return "facial";
-  };
-
+  /* Relatório de QA de 15/10, BUG-25 e BUG-15.
+     Antes, todo item do catálogo que não estivesse na vitrine entrava aqui com
+     texto genérico, a mesma foto e a categoria "Injetável facial" — foi assim
+     que "TESTE 2109" e "Tratamento de Teste do Rodrigo" chegaram ao site
+     público. E o site anunciava procedimentos que a clínica não tem no
+     catálogo.
+     Agora a vitrine mostra só o conteúdo escrito para ela (data.ts), e só dos
+     procedimentos que existem no catálogo da clínica. Sem catálogo carregado,
+     mostra a vitrine inteira — melhor que uma página vazia. */
   const allTreatments = useMemo(() => {
-    const list: Treatment[] = [...TREATMENTS];
-    catalogTreatments.forEach((ct: any) => {
-      const nameLower = ct.name.trim().toLowerCase();
-      const exists = list.some(t => t.name.trim().toLowerCase() === nameLower);
-      if (!exists) {
-        list.push({
-          id: ct.id,
-          name: ct.name,
-          category: inferCategory(ct.name),
-          tagline: ct.description ? (ct.description.substring(0, 60) + "...") : "Procedimento estético exclusivo",
-          description: ct.description || "Agende uma avaliação personalizada para saber mais sobre os benefícios deste tratamento.",
-          benefits: ct.restrictions ? ["Restrições: " + ct.restrictions] : ["Resultados duradouros e altamente naturais", "Estímulo de colágeno e rejuvenescimento"],
-          duration: ct.duration ? `${ct.duration} minutos` : "Consultar duração",
-          recovery: "Imediato (sem repouso)",
-          highlights: false,
-          image: "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&q=80&w=800"
-        });
-      }
-    });
-    return list;
-  }, [catalogTreatments]);
+    if (!site || !site.procedimentos.length) return TREATMENTS;
+    const nomes = new Set(site.procedimentos.map((p) => p.nome));
+    const vendidos = TREATMENTS.filter((t) => nomes.has(nomeDoCatalogo(site, t.name)));
+    return vendidos.length ? vendidos : TREATMENTS;
+  }, [site]);
 
   const categories = [
     { id: "todos", label: "Todos" },
@@ -289,7 +256,7 @@ export default function Treatments({ onSelectTreatment }: TreatmentsProps) {
                     Simular Orçamento
                   </button>
                   <a
-                    href={`https://wa.me/5511900000000?text=${encodeURIComponent(`Olá! Gostaria de tirar dúvidas e saber valores para o tratamento de ${activeModal.name} com a Dra. Musa.`)}`}
+                    href={linkWhatsApp(site, `Olá! Gostaria de tirar dúvidas e saber valores para o tratamento de ${activeModal.name} com a Dra. Musa.`)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex-1 sm:flex-initial flex items-center justify-center space-x-2 text-xs uppercase tracking-widest font-bold text-white bg-primary hover:bg-primary-light px-6 py-3 rounded-sm transition-all text-nowrap cursor-pointer"

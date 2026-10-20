@@ -7,6 +7,7 @@ import { papelDoToken } from '../lib/api';
 import { Salesperson, TreatmentCatalog } from '../types';
 import { TREATMENTS } from '../data';
 import { ehGestao } from '../lib/papeis.mjs';
+import { confirmar } from "../lib/dialogo";
 
 /** Minutos viram frase de gente. A REGRA de LER a duração vive no servidor
  *  (`server/services/duracao.js`, com testes); aqui é só apresentação. */
@@ -173,7 +174,7 @@ export default function CrmSettings() {
   };
 
   const handleDeleteSalesperson = async (id: string) => {
-    if(!window.confirm('Excluir vendedor?')) return;
+    if(!(await confirmar('Excluir vendedor?'))) return;
     try {
       const authHeaders = {
         'x-user-role': localStorage.getItem('userRole') || '',
@@ -186,7 +187,7 @@ export default function CrmSettings() {
   };
 
   const handleDeleteTreatment = async (id: string) => {
-    if(!window.confirm('Excluir tratamento?')) return;
+    if(!(await confirmar('Excluir tratamento?'))) return;
     try {
       await fetch(`/api/treatment-catalog/${id}`, { method: 'DELETE' });
       await loadSettingsData();

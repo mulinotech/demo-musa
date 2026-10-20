@@ -17,6 +17,11 @@ import { Client, Lead, Interaction, Treatment, TreatmentCatalog, TreatmentPlan, 
  */
 
 /** Rota -> nome de aba que a rota /api/reports/generate ja conhece. */
+const MOTIVOS_DE_PERDA = [
+  'Preço', 'Sem retorno da paciente', 'Escolheu outra clínica', 'Sem horário compatível',
+  'Contraindicação / não indicada', 'Só pesquisando', 'Outro'
+];
+
 const ABA_DO_RELATORIO: Record<string, { aba: string; titulo: string }> = {
   "/crm": { aba: "dashboard", titulo: "Painel de Visao Geral" },
   "/crm/funil": { aba: "pipeline", titulo: "Funil & Gestao de Leads" },
@@ -69,6 +74,8 @@ export default function CrmDashboard({
 
   // Active Lead Details Drawer inside CRM
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  /** O lead como esta gravado (o `selectedLead` e o rascunho da ficha). */
+  const leadOriginal = (id: string) => localLeads.find((l) => l.id === id);
   const [chatView, setChatView] = useState<'crm' | 'evolution'>('crm');
 
   // Aviso não bloqueante (substitui os window.alert que travavam o envio)
@@ -87,6 +94,8 @@ export default function CrmDashboard({
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [isSavingLead, setIsSavingLead] = useState(false);
+  // BUG-24: lead perdido sem motivo nao ensina nada ao comercial.
+  const [motivoPerda, setMotivoPerda] = useState("");
 
   useEffect(() => {
     if (selectedLead) {
@@ -109,7 +118,14 @@ export default function CrmDashboard({
       setIsEditingPhone(false);
       setIsEditingEmail(false);
     }
-  }, [selectedLead]);
+    setMotivoPerda("");
+    /* QA de 15/10, BUG-10: a dependencia era o OBJETO `selectedLead`. Clicar num
+       estagio troca o objeto (para pintar o botao), o efeito rodava de novo e
+       relia tudo do lead original -- o "qualificado" recem-ligado voltava a
+       desligado, e o PUT ia com qualified:false. A ficha so recarrega quando
+       troca de LEAD. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLead?.id]);
 
   // Helper para enviar cabeçalhos de autenticação nas requisições do CRM
   const getAuthHeaders = () => {
@@ -302,14 +318,20 @@ export default function CrmDashboard({
         email: data.email,
         treatment: data.interest,
         status: mapaStatus[data.status] || data.status || "novo",
-        source: data.source || "site",
+        source: data.source || "manual",
+        // QA de 15/10, BUG-11: o vendedor escolhido no formulario nao ia no envio.
+        salespersonId: data.salespersonId || undefined,
         message: "Paciente inserido manualmente pelo Kanban comercial.",
       }),
     });
     await fetchCrmData();
   };
 
-  const handleAddClient = async (clientData: Omit<Client, "id" | "createdAt" | "updatedAt">) => {
+  /* Devolve o que aconteceu: a tela precisa saber da ficha que ja tem o mesmo
+     WhatsApp (QA de 15/10, BUG-12) para perguntar antes de duplicar. */
+  const handleAddClient = async (
+    clientData: Omit<Client, "id" | "createdAt" | "updatedAt"> & { confirmarMesmoTelefone?: boolean }
+  ): Promise<{ ok: boolean; error?: string; duplicadas?: { id: string; nome: string; telefone: string }[] }> => {
     try {
       const response = await fetch("/api/clients", {
         method: "POST",
@@ -318,9 +340,13 @@ export default function CrmDashboard({
       });
       if (response.ok) {
         await fetchCrmData(true);
+        return { ok: true };
       }
+      const corpo = await response.json().catch(() => ({} as any));
+      return { ok: false, error: corpo.error || `erro ${response.status}`, duplicadas: corpo.duplicadas };
     } catch (e) {
       console.error(e);
+      return { ok: false, error: "Sem conexão com o servidor." };
     }
   };
 
@@ -333,9 +359,13 @@ export default function CrmDashboard({
       });
       if (response.ok) {
         await fetchCrmData(true);
+        return;
       }
+      const corpo = await response.json().catch(() => ({} as any));
+      throw new Error(corpo.error || `erro ${response.status}`);
     } catch (e) {
       console.error(e);
+      throw e;
     }
   };
 
@@ -445,9 +475,16 @@ export default function CrmDashboard({
       });
       if (response.ok) {
         await fetchCrmData(true);
+        return;
       }
+      // A recusa (contraindicacao anotada, QA BUG-17) volta para a tela do plano.
+      const corpo = await response.json().catch(() => ({} as any));
+      throw Object.assign(new Error(corpo.error || `erro ${response.status}`), {
+        contraindicacoes: corpo.contraindicacoes || null
+      });
     } catch (e) {
       console.error(e);
+      throw e;
     }
   };
 
@@ -488,9 +525,15 @@ export default function CrmDashboard({
       });
       if (response.ok) {
         await fetchCrmData(true);
+        return;
       }
+      // A recusa tem de chegar a tela (sessao futura, estoque sem saldo...):
+      // engolida aqui, a ficha fechava como se tivesse salvo.
+      const corpo = await response.json().catch(() => ({} as any));
+      throw new Error(corpo.error || `erro ${response.status}`);
     } catch (e) {
       console.error(e);
+      throw e;
     }
   };
 
@@ -1135,9 +1178,11 @@ export default function CrmDashboard({
                     <div className="p-3 rounded-xl bg-brand-beige/50 border border-brand-gold/20 text-xs text-brand-brown font-medium flex items-center gap-2">
                       <span className="text-brand-gold">👤</span>
                       <span>
-                        {selectedLead.lastEditedBy 
-                          ? `Última edição por: ${selectedLead.lastEditedBy}` 
-                          : 'Lead Cadastrado pelo site'}
+                        {selectedLead.lastEditedBy
+                          ? `Última edição por: ${selectedLead.lastEditedBy}`
+                          : (String(selectedLead.source || 'site') === 'site'
+                              ? 'Lead cadastrado pelo site'
+                              : 'Sem edições desde o cadastro')}
                       </span>
                     </div>
                   </div>
@@ -1171,6 +1216,20 @@ export default function CrmDashboard({
                     </div>
                   </div>
 
+                  {selectedLead.status === 'perdido' && leadOriginal(selectedLead.id)?.status !== 'perdido' && (
+                    <div className="space-y-2">
+                      <h4 className="text-[9px] font-mono font-bold text-red-600 uppercase tracking-wider">Motivo da perda *</h4>
+                      <select
+                        value={motivoPerda}
+                        onChange={(e) => setMotivoPerda(e.target.value)}
+                        className="w-full p-2.5 border border-red-200 rounded-xl text-xs text-brand-brown bg-white focus:outline-none focus:ring-2 focus:ring-red-300"
+                      >
+                        <option value="">Selecione o motivo…</option>
+                        {MOTIVOS_DE_PERDA.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  )}
+
                   {/* Campo Comentários vendas */}
                   <div className="space-y-2 pt-2">
                     <h4 className="text-[9px] font-mono font-bold text-brand-gold uppercase tracking-wider">Comentários vendas</h4>
@@ -1188,8 +1247,16 @@ export default function CrmDashboard({
                       disabled={isSavingLead}
                       onClick={async () => {
                         if (!selectedLead) return;
+                        const virouPerdido = selectedLead.status === 'perdido' && leadOriginal(selectedLead.id)?.status !== 'perdido';
+                        if (virouPerdido && !motivoPerda) {
+                          showToast('warn', 'Informe o motivo da perda antes de salvar.');
+                          return;
+                        }
+                        const notas = virouPerdido
+                          ? `[Perdido em ${new Date().toLocaleDateString('pt-BR')}] Motivo: ${motivoPerda}` + (editSalesNotes ? '\n' + editSalesNotes : '')
+                          : editSalesNotes;
                         setIsSavingLead(true);
-                        const ok = await handleUpdateLeadStatus(selectedLead.id, selectedLead.status as any, editPhone, editEmail, editSalesNotes, editQualified, editInterest);
+                        const ok = await handleUpdateLeadStatus(selectedLead.id, selectedLead.status as any, editPhone, editEmail, notas, editQualified, editInterest);
                         setIsSavingLead(false);
                         if (ok) {
                           showToast('ok', 'Lead atualizado com sucesso.');

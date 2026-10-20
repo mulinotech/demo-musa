@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { X, Send, AlertTriangle, Check, Clock } from "lucide-react";
 import { motion } from "motion/react";
 import { hora, dataBR } from "./comum";
+import { confirmar } from "../../lib/dialogo";
 
 interface ItemPrevia {
   id: string;
@@ -128,10 +129,10 @@ export default function LembretesPainel(p: { aoFechar: () => void; aoMudar: () =
 
   const enviarAgora = async () => {
     const quantos = fila.length;
-    if (!window.confirm(
+    if (!(await confirmar(
       "Enviar " + quantos + " lembrete(s) por WhatsApp agora?\n\n" +
       "As mensagens vão para os telefones cadastrados. Não há como desfazer.",
-    )) return;
+    ))) return;
     setOcupado(true);
     try {
       const r = await fetch("/api/appointments/reminders/run", { method: "POST" });

@@ -118,31 +118,12 @@ export default function PaginaSite() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  /* A gravação acontece no próprio formulário/quiz (src/lib/site.ts), que só
+     chama isto DEPOIS do 201. Antes, este ponto postava sem a chave de captação,
+     ignorava a resposta, e a tela já tinha dito "enviado" (BUG-01). */
   const handleLeadCapture = (newLead: Lead) => {
-    // 1. Atualiza o estado visual imediatamente (Optimistic UI)
     const updated = [newLead, ...leads];
     setLeads(updated);
-    localStorage.setItem("musa_leads_v2", JSON.stringify(updated));
-
-    // 2. Persiste no banco de dados via API
-    fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: newLead.id,
-        name: newLead.name,
-        whatsapp: newLead.whatsapp,
-        treatment: newLead.treatment,
-        message: newLead.message,
-        scoreResult: newLead.scoreResult,
-        date: newLead.date,
-        status: newLead.status
-      })
-    })
-    .then(res => {
-      if (!res.ok) console.error("Erro ao sincronizar novo lead com o backend.");
-    })
-    .catch(err => console.error("Falha ao conectar com o backend:", err));
   };
 
   const handleUpdateLeadStatus = (leadId: string, newStatus: Lead["status"], phone?: string, email?: string) => {

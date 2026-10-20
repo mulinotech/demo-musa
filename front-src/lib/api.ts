@@ -114,6 +114,8 @@ export async function baixarDaApi(url: string, nomeArquivo: string): Promise<str
 
 let instalado = false;
 
+const LIMITE_DE_LEITURA_MS = 20000;
+
 export function instalarInterceptador(): void {
   if (instalado) return;
   instalado = true;
@@ -140,7 +142,30 @@ export function instalarInterceptador(): void {
       }
     }
 
-    const resposta = await originalFetch(entrada as RequestInfo, init);
+    /* QA de 15/10, BUG-18: uma leitura que nunca respondia (a mesma rota que,
+       chamada de novo, voltava em 170 ms) deixava a tela mais de 52 s em
+       "Atualizando base CRM…", sem erro e sem saída. LEITURA da API agora tem
+       tempo limite e uma segunda tentativa; se as duas falharem, o erro chega
+       a quem chamou, que já sabe mostrar falha. Gravação não é repetida: POST
+       repetido por engano é lançamento em dobro. */
+    const metodo = String((init && init.method) || (entrada instanceof Request ? entrada.method : 'GET')).toUpperCase();
+    const repetivel = ehApi && metodo === 'GET' && !(init && init.signal);
+    let resposta: Response;
+    if (repetivel) {
+      const tentar = () => {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), LIMITE_DE_LEITURA_MS);
+        return originalFetch(entrada as RequestInfo, Object.assign({}, init, { signal: ctl.signal }))
+          .finally(() => clearTimeout(t));
+      };
+      try {
+        resposta = await tentar();
+      } catch {
+        resposta = await tentar();
+      }
+    } else {
+      resposta = await originalFetch(entrada as RequestInfo, init);
+    }
 
     // Token expirado ou revogado: derruba a sessão em vez de deixar a tela vazia sem explicação.
     if (resposta.status === 401 && ehApi && !ehLogin) {

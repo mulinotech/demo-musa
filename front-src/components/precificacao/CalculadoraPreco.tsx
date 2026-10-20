@@ -15,6 +15,7 @@ import { Calculator, TrendingUp, AlertTriangle, Check, ClipboardList, X } from "
 import { reais, pct, Parametros, ResultadoCalculo, Comparacao, ServicoCatalogo } from "./comum";
 import FichaTecnicaPanel from "../estoque/FichaTecnicaPanel";
 import { Produto } from "../estoque/comum";
+import { confirmar } from "../../lib/dialogo";
 
 interface Props {
   parametros: Parametros | null;
@@ -183,7 +184,7 @@ export default function CalculadoraPreco({ parametros, servicos, servicoInicial,
     const texto = servicoEscolhido
       ? 'Alterar o preço de "' + alvo + '" de ' + reais(Number(e.currentPrice)) + " para " + reais(resultado.precoSugerido) + "?"
       : "Guardar esta simulação no histórico?";
-    if (!window.confirm(texto)) return;
+    if (!(await confirmar(texto))) return;
 
     setAplicando(true);
     try {

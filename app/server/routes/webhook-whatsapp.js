@@ -35,6 +35,7 @@
  */
 const express = require('express');
 const router = express.Router();
+const { procedimentoDaMensagem } = require('../services/procedimento-da-mensagem');
 const escopo = require('../db/escopo');
 const { sendWhatsappText } = require('../services/evolution');
 const lembretes = require('../services/lembretes');
@@ -260,10 +261,20 @@ router.post('/api/webhook/whatsapp', async function (req, res) {
       // voltasse a ser obrigatoria -- e falharia calada, porque o `catch` existe
       // justamente para o webhook nao derrubar a entrega.
       targetId = 'l_' + Math.random().toString(36).substring(2, 9);
+
+      /* QA de 15/10, BUG-03: o lead nascia sem `source` -- e a coluna tem
+       * DEFAULT 'site'. Todo contato do WhatsApp aparecia no funil como vindo
+       * do site, e o custo por canal da Visao Geral ficava inutil. E o
+       * procedimento era sempre "Geral", mesmo com a paciente dizendo qual
+       * queria: agora, se a mensagem cita um item do catalogo, ele entra. */
+      const [catalogo] = await db.q(
+        'SELECT name FROM treatment_catalog WHERE clinica_id = :clinica');
+      const citado = procedimentoDaMensagem(content, catalogo.map(function (c) { return c.name; }));
+
       await db.q(
-        'INSERT INTO leads (id, name, whatsapp, treatment, status, clinica_id)' +
-        " VALUES (?, ?, ?, 'Geral', 'novo', :clinica)",
-        [targetId, contactName, phone]);
+        'INSERT INTO leads (id, name, whatsapp, treatment, status, source, message, clinica_id)' +
+        " VALUES (?, ?, ?, ?, 'novo', 'whatsapp', ?, :clinica)",
+        [targetId, contactName, phone, citado || 'Geral', String(content || '').slice(0, 1000)]);
 
       const welcome = 'Seja muito bem-vinda! ✨\n\nRecebemos sua mensagem por aqui e nossa ' +
         'equipe ja esta ciente do seu contato. Como podemos ajudar? 🌸';
@@ -275,9 +286,12 @@ router.post('/api/webhook/whatsapp', async function (req, res) {
         console.error('[Webhook] Falha ao enviar saudacao automatica:', welcomeErr.message);
       }
 
+      // A saudacao RESPONDE a mensagem, entao vem depois dela na conversa. As duas
+      // eram gravadas no mesmo segundo, e a tela (que ordena por created_at)
+      // mostrava a boas-vindas ACIMA do que a paciente escreveu (QA, BUG-16).
       await db.q(
-        'INSERT INTO interactions (id, client_id, type, content, direction, clinica_id)' +
-        " VALUES (?, ?, 'whatsapp', ?, 'out', :clinica)",
+        'INSERT INTO interactions (id, client_id, type, content, direction, created_at, clinica_id)' +
+        " VALUES (?, ?, 'whatsapp', ?, 'out', DATE_ADD(NOW(), INTERVAL 1 SECOND), :clinica)",
         ['i_' + Math.random().toString(36).substring(2, 9), targetId, welcome]);
     }
 

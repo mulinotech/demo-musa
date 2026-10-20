@@ -195,6 +195,8 @@ function investimentoDetalhado(razao, de, ate, categoriasMarcadas, base) {
   let total = 0, n = 0;
   for (const l of (razao || [])) {
     if (l.type !== 'DESPESA') continue;
+    // estorno de atendimento desfaz receita; nao e gasto com captacao (BUG-07)
+    if (l.source === 'REVERSAL') continue;
     const quando = (base === 'caixa') ? dia(l.paid_at) : dia(l.entry_date);
     if (!dentro(quando, de, ate)) continue;
     if (alvo.has(l.category_id)) { total += Number(l.amount); n += 1; }

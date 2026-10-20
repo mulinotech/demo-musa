@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SeletorUnico, SeletorMultiplo } from './CamposDeSelecao';
+import { diaLocal } from "../lib/data-local";
+import { avisar, confirmar } from "../lib/dialogo";
 
 interface TreatmentJourneyProps {
   plans: TreatmentPlan[];
@@ -50,7 +52,11 @@ export default function TreatmentJourney({
   const [newPlanObjective, setNewPlanObjective] = useState('');
   const [newPlanSessions, setNewPlanSessions] = useState('3');
   const [newPlanPeriodicity, setNewPlanPeriodicity] = useState('Quinzenal');
-  const [newPlanStartDate, setNewPlanStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newPlanStartDate, setNewPlanStartDate] = useState(diaLocal());
+  // QA BUG-17: contraindicacao anotada na ficha para o plano ate alguem justificar.
+  const [avisoRisco, setAvisoRisco] = useState('');
+  const [justificativaRisco, setJustificativaRisco] = useState('');
+  const [erroPlano, setErroPlano] = useState('');
 
   const [selectedCatalogItem, setSelectedCatalogItem] = useState('');
   const [sessionPrice, setSessionPrice] = useState('');
@@ -81,6 +87,7 @@ export default function TreatmentJourney({
   const [evolutionNotes, setEvolutionNotes] = useState('');
   const [sessionStatus, setSessionStatus] = useState<TreatmentSession['status']>('PENDENTE');
   const [sessionDate, setSessionDate] = useState('');
+  const [erroSessao, setErroSessao] = useState('');
   const [sessionType, setSessionType] = useState<TreatmentSession['sessionType']>('SESSAO_TRATAMENTO');
   const [equipments, setEquipments] = useState('');
   const [supplies, setSupplies] = useState('');
@@ -145,7 +152,9 @@ export default function TreatmentJourney({
   const [profissionais, setProfissionais] = useState<{ id: string; name: string; funcao?: string }[]>([]);
   const [ageHora, setAgeHora] = useState('09:00');
   const [ageProf, setAgeProf] = useState('');
-  const [ageDuracao, setAgeDuracao] = useState('60');
+  // Vazio = a duracao do catalogo (QA de 15/10, BUG-14: o padrao fixo de 60 min
+  // marcava o Lavien, de 40, com 60 na agenda).
+  const [ageDuracao, setAgeDuracao] = useState('');
   const [ageOcupado, setAgeOcupado] = useState(false);
   const [ageResposta, setAgeResposta] = useState<{ ok: boolean; texto: string } | null>(null);
 
@@ -229,7 +238,7 @@ export default function TreatmentJourney({
     setProgramando(plan);
     setAgeResposta(null);
     setProgInicio(plan.startDate ? String(plan.startDate).split('T')[0]
-      : new Date().toISOString().split('T')[0]);
+      : diaLocal());
     const conhecida = ['Semanal', 'Quinzenal', 'Mensal'].includes(plan.periodicity || '');
     setProgPeriodo(conhecida ? (plan.periodicity as string) : 'Customizado');
     setProgResposta(null);
@@ -282,7 +291,14 @@ export default function TreatmentJourney({
     
     const parsedPrice = sessionPrice ? Number(sessionPrice.replace(',', '.')) : undefined;
 
+    setErroPlano('');
+    if (avisoRisco && !justificativaRisco.trim()) {
+      setErroPlano('Escreva a justificativa para criar o plano mesmo com a contraindicação anotada.');
+      return;
+    }
+    try {
     await onAddPlan({
+      ...(avisoRisco ? { justificativaContraindicacao: justificativaRisco.trim() } : {}),
       clientId,
       title: newPlanTitle,
       clinicalObjective: newPlanObjective,
@@ -292,7 +308,18 @@ export default function TreatmentJourney({
       startDate: newPlanStartDate,
       estimatedEndDate: undefined,
       sessionPrice: isNaN(parsedPrice as number) ? undefined : parsedPrice
-    });
+    } as any);
+    } catch (err) {
+      const e = err as Error & { contraindicacoes?: { rotulo: string }[] | null };
+      if (e.contraindicacoes && e.contraindicacoes.length) {
+        setAvisoRisco(e.contraindicacoes.map((c) => c.rotulo).join(', '));
+      } else {
+        setErroPlano(e.message || 'Não foi possível criar o plano.');
+      }
+      return;
+    }
+    setAvisoRisco('');
+    setJustificativaRisco('');
     setNewPlanTitle('');
     setNewPlanObjective('');
     setNewPlanSessions('3');
@@ -311,6 +338,8 @@ export default function TreatmentJourney({
 
     const parsedPrice = price ? Number(price.replace(',', '.')) : undefined;
 
+    setErroSessao('');
+    try {
     await onUpdateSession(editingSession.id, {
       status: sessionStatus,
       clinicalEvolution: evolutionNotes,
@@ -321,6 +350,11 @@ export default function TreatmentJourney({
       professionalInCharge: professional,
       price: isNaN(parsedPrice as number) ? undefined : parsedPrice
     });
+    } catch (err) {
+      // A ficha fica aberta com o que foi digitado, e diz por que nao salvou.
+      setErroSessao((err as Error).message || 'Nao foi possivel salvar a sessao.');
+      return;
+    }
 
     // Check if this was the last session in the plan, and is being marked as REALIZADA
     const sortedSessions = [...(parentPlan.sessions || [])].sort((a,b) => a.sessionNumber - b.sessionNumber);
@@ -333,7 +367,7 @@ export default function TreatmentJourney({
         setMaintenancePlan(parentPlan);
         const defaultDate = new Date();
         defaultDate.setMonth(defaultDate.getMonth() + 6); // default to 6 months return
-        setMaintenanceDate(defaultDate.toISOString().split('T')[0]);
+        setMaintenanceDate(diaLocal(defaultDate));
       }, 500);
     }
   };
@@ -344,7 +378,7 @@ export default function TreatmentJourney({
     await onUpdatePlan(maintenancePlan.id, { status: 'CONCLUIDO' });
     
     // 2. Alert the user that follow-up is scheduled
-    alert(`✅ Plano "${maintenancePlan.title}" Concluído! \nRetorno de manutenção agendado para o dia ${new Date(maintenanceDate).toLocaleDateString('pt-BR')}.`);
+    avisar(`✅ Plano "${maintenancePlan.title}" Concluído! \nRetorno de manutenção agendado para o dia ${new Date(maintenanceDate).toLocaleDateString('pt-BR')}.`);
     
     setMaintenancePlan(null);
   };
@@ -373,6 +407,13 @@ export default function TreatmentJourney({
             setNewPlanTitle('');
             setNewPlanObjective('');
             setNewPlanSessions('3');
+            // QA de 15/10, BUG-26: periodicidade e data vinham do plano anterior
+            // (de outra paciente), e o plano nascia "Semanal" sem ninguém escolher.
+            setNewPlanPeriodicity('Quinzenal');
+            setNewPlanStartDate(diaLocal());
+            setAvisoRisco('');
+            setJustificativaRisco('');
+            setErroPlano('');
             setSelectedCatalogItem('');
             setSessionPrice('');
             setIsTitleManual(false);
@@ -444,7 +485,7 @@ export default function TreatmentJourney({
                     </button>
                     <button
                       onClick={async () => {
-                        if (confirm('Deseja excluir permanentemente este plano e todas as suas sessões?')) {
+                        if ((await confirmar('Deseja excluir permanentemente este plano e todas as suas sessões?'))) {
                           await onDeletePlan(plan.id);
                         }
                       }}
@@ -707,6 +748,24 @@ export default function TreatmentJourney({
                 />
               </div>
 
+              {avisoRisco && (
+                <div role="alert" className="rounded-xl border-2 border-red-300 bg-red-50 p-3 space-y-2">
+                  <p className="text-[11px] text-red-800 font-semibold">
+                    Possível contraindicação anotada na ficha: {avisoRisco}.
+                  </p>
+                  <p className="text-[10px] text-red-700">
+                    Confirme com a paciente antes de planejar. Para criar o plano assim mesmo, registre o motivo — ele fica na trilha de auditoria.
+                  </p>
+                  <textarea
+                    rows={2}
+                    value={justificativaRisco}
+                    onChange={(e) => setJustificativaRisco(e.target.value)}
+                    placeholder="Ex.: liberado pelo médico da paciente em 14/10; procedimento só após o parto"
+                    className="w-full p-2 rounded-lg border border-red-200 bg-white text-xs text-brand-brown"
+                  />
+                </div>
+              )}
+              {erroPlano && <p role="alert" className="text-[11px] text-red-600">{erroPlano}</p>}
               <div className="flex justify-end space-x-3 pt-2">
                 <button
                   type="button"
@@ -829,10 +888,15 @@ export default function TreatmentJourney({
                 />
               </div>
 
+              {erroSessao && (
+                <p role="alert" className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {erroSessao}
+                </p>
+              )}
               <div className="flex justify-end space-x-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditingSession(null)}
+                  onClick={() => { setEditingSession(null); setErroSessao(''); }}
                   className="px-4 py-2 text-xs font-medium text-brand-brown/70"
                 >
                   Cancelar
@@ -957,6 +1021,7 @@ export default function TreatmentJourney({
                     min="5"
                     max="600"
                     value={ageDuracao}
+                    placeholder="do catálogo"
                     onChange={(e) => setAgeDuracao(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-brand-gold/30 bg-white text-[11px] text-brand-brown font-mono focus:outline-none focus:ring-2 focus:ring-brand-gold"
                   />

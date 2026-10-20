@@ -100,6 +100,24 @@ function chaveDeTelefone(t) {
   return ddd + numero;
 }
 
+/** O telefone como ele é GRAVADO: só dígitos, com o DDI 55 (QA de 15/10, BUG-12).
+ *
+ *  O mesmo número entrava como "+55 00911110002", "5500911110022" e
+ *  "00911110023", conforme a porta de entrada -- e salvar a ficha do lead
+ *  reescrevia o formato. Além de feio, o webhook procura a paciente por
+ *  `REPLACE(phone, "+", "") = <dígitos do WhatsApp>`: "+55 11 9..." (com espaço)
+ *  nunca casava, e a mensagem de quem já é paciente abria um lead novo.
+ *
+ *  Número que não tem cara de telefone brasileiro fica só com os dígitos — não
+ *  se inventa DDI para o que não se entende. */
+function telefoneParaGravar(t) {
+  const d = somenteDigitos(t);
+  if (!d) return '';
+  if (d.length >= 12 && d.slice(0, 2) === '55') return d;
+  if (d.length === 10 || d.length === 11) return '55' + d;
+  return d;
+}
+
 /** Os dois telefones são da mesma pessoa?
  *
  *  Telefone que não vira chave não casa NEM COM ELE MESMO. Parece estranho
@@ -183,4 +201,4 @@ function escolherFicha(lead, pacientes) {
   };
 }
 
-module.exports = { somenteDigitos, chaveDeTelefone, mesmoTelefone, escolherFicha };
+module.exports = { somenteDigitos, chaveDeTelefone, mesmoTelefone, escolherFicha, telefoneParaGravar };

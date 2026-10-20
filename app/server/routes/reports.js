@@ -46,7 +46,7 @@ const fin = require('../services/financeiro');
 /** O razão da clínica — a mesma leitura de `routes/dashboard.js`. */
 async function lerRazao(db) {
   const [r] = await db.q(
-    'SELECT id, type, amount, entry_date, paid_at, due_date, category_id' +
+    'SELECT id, type, source, amount, entry_date, paid_at, due_date, category_id' +
     ' FROM cash_entries WHERE clinica_id = :clinica');
   return r;
 }

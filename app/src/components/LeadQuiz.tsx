@@ -2,6 +2,7 @@ import { useState, FormEvent } from "react";
 import { Sparkles, Calendar, ChevronRight, CheckCircle2, User, Phone, ArrowRight, RotateCcw } from "lucide-react";
 import { Lead } from "../data";
 import { comDdi, temNumero, DDI_PADRAO } from "../lib/telefone.mjs";
+import { useSite, linkWhatsApp, enviarLead, nomeDoCatalogo } from "../lib/site";
 
 interface LeadQuizProps {
   onLeadCaptured: (newLead: Lead) => void;
@@ -20,6 +21,10 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
   const [whatsapp, setWhatsapp] = useState<string>(DDI_PADRAO);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showResult, setShowResult] = useState<boolean>(false);
+  // O lead NAO chegou ao CRM: o resultado aparece, mas com o aviso (BUG-01).
+  const [falhaEnvio, setFalhaEnvio] = useState<string>("");
+  const [erroTelefone, setErroTelefone] = useState<string>("");
+  const site = useSite();
   const [recommendedProtocol, setRecommendedProtocol] = useState<{
     title: string;
     description: string;
@@ -46,70 +51,98 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
     }
   };
 
+  /* Relatório de QA de 15/10, BUG-15. Três defeitos aqui:
+     - a comparação diferenciava maiúscula ("Bumbum" contra "bumbum"), então a
+       queixa de bumbum NUNCA casava e caía no Ultraformer facial;
+     - recomendava "Protocolo Pós-Mounjaro & Ozempic", que não existe no catálogo;
+     - os nomes ("Ultraformer MPT - Lifting 3D", "Lavien BB Laser Premium") não
+       eram os do catálogo, e o lead chegava ao funil com procedimento que a
+       Agenda não reconhece.
+     Os títulos agora são os do catálogo; o que muda é a explicação. */
   const calculateResult = () => {
-    // Basic recommendation rules
-    if (concern.includes("Bumbum") || area.includes("Glúteos")) {
+    const q = concern.toLowerCase();
+    const r = area.toLowerCase();
+    const facial = r.includes("rosto");
+    const corpoOuMaos = r.includes("pescoço") || r.includes("mãos") || r.includes("colo");
+
+    if (q.includes("bumbum") || r.includes("glúte") || r.includes("bumbum")) {
       return {
-        title: "Protocolo Bumbum Max",
+        title: "Bumbum Max",
         tagline: "Harmonização glútea integral, sustentação e clareamento",
-        description: "A melhor resposta estética para projetar, preencher depressões trocantéricas laterais e extinguir celulite profunda combinando bioestimuladores importados com ácido hialurônico corporal de alta densidade.",
-        benefits: ["Projeção glútea imediata", "Eliminação de ondulações da celulite", "Sustentação e elasticidade duradouras"]
+        description: "A melhor resposta estética para projetar, preencher depressões trocantéricas laterais e suavizar a celulite, combinando bioestimuladores com ácido hialurônico corporal de alta densidade.",
+        benefits: ["Projeção glútea", "Suavização das ondulações da celulite", "Sustentação e elasticidade duradouras"]
       };
     }
-    if (concern.includes("Mounjaro") || concern.includes("emagrecimento")) {
+    if (q.includes("mounjaro") || q.includes("emagrecimento")) {
       return {
-        title: "Protocolo Pós-Mounjaro & Ozempic",
-        tagline: "Restauração dérmica e volumetria celular integrativa",
-        description: "Reversão personalizada do esvaziamento orbital/facial e da flacidez abdominal acelerados. Une preenchedores estruturais com Ultraformer MPT corporal e bioestimuladores de longa duração.",
-        benefits: ["Sustentação facial recuperada", "Recolagem da pele flácida no músculo", "Preenchimento de áreas que perderam gordura"]
+        title: "Ultraformer MPT",
+        tagline: facial ? "Firmeza do rosto depois do emagrecimento rápido" : "Firmeza da pele depois do emagrecimento rápido",
+        description: "Ultrassom micro e macrofocado para a flacidez que aparece quando o peso cai rápido: estimula colágeno novo e devolve sustentação à pele" + (facial ? " do rosto e da papada." : " do abdômen, coxas e braços.") + " O plano completo é definido na avaliação presencial.",
+        benefits: ["Pele mais firme", "Estímulo de colágeno", "Sem tempo de recuperação"]
       };
     }
-    if (concern.includes("Manchas") || concern.includes("Melasma") || recovery.includes("textura")) {
+    if (q.includes("manchas") || q.includes("melasma") || recovery.toLowerCase().includes("textura")) {
       return {
-        title: "Lavien BB Laser Premium",
-        tagline: "Renovação celular instantânea e controle de manchas",
-        description: "Laser de Tulium que cria um filme natural sobre o rosto. Trata poros abertos, hiperpigmentações do melasma juvenil e senil, devolvendo um brilho constante e uniforme, 'lavado com água de rosas'.",
-        benefits: ["Melasma sob controle e suavizado", "Fechamento radical de poros", "Efeito de maquiagem BB Cream definitivo"]
+        title: "Lavien BB Laser",
+        tagline: "Renovação da pele e controle de manchas",
+        description: "Laser de Túlio que uniformiza o tom e a textura" + (corpoOuMaos ? " do pescoço, do colo e das mãos" : " do rosto") + ": trata poros abertos e hiperpigmentações, devolvendo um brilho constante e uniforme.",
+        benefits: ["Manchas suavizadas", "Poros mais fechados", "Pele com aspecto uniforme"]
       };
     }
-    // Default or facial sagging
+    // Flacidez facial (ou resposta que não casou com nenhuma queixa)
     return {
-      title: "Ultraformer MPT - Lifting 3D",
+      title: "Ultraformer MPT",
       tagline: "Combate profundo à flacidez muscular e envelhecimento",
-      description: "Ultrassom micro e macrofocado completo. Atua contra a gravidade promovendo o recolamento das fáscias musculares enfraquecidas e forçando a regeneração e multiplicação das fibras de colágeno.",
-      benefits: ["Lifting na mandíbula e pálpebras", "Redução visível da papada na 1ª sessão", "Estímulo de colágeno natural por até 6 meses"]
+      description: "Ultrassom micro e macrofocado. Atua contra a gravidade promovendo o recolamento das fáscias musculares enfraquecidas e estimulando a regeneração das fibras de colágeno.",
+      benefits: ["Contorno da mandíbula", "Melhora da papada", "Estímulo de colágeno natural"]
     };
   };
 
-  const handleFormSubmit = (e: FormEvent) => {
+  /* Respostas que não combinam (queixa de bumbum, região rosto) não viram outro
+     protocolo calado: a equipe fica sabendo no próprio lead. */
+  const respostasDivergentes = () => {
+    const q = concern.toLowerCase();
+    const r = area.toLowerCase();
+    if (q.includes("bumbum") && !(r.includes("glúte") || r.includes("bumbum") || r.includes("corporal"))) return true;
+    if (q.includes("rosto") && (r.includes("glúte") || r.includes("corporal"))) return true;
+    return false;
+  };
+
+  const handleFormSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    // idem ContactForm: "+55 " sozinho nao e telefone.
-    if (!name.trim() || !temNumero(whatsapp)) return;
+    setErroTelefone("");
+    setFalhaEnvio("");
+    if (!name.trim()) return;
+    // idem ContactForm: "+55 " sozinho nao e telefone -- e agora a tela diz isso.
+    if (!temNumero(whatsapp)) {
+      setErroTelefone("Informe um WhatsApp válido, com DDD — por exemplo (11) 98888-7777.");
+      return;
+    }
 
     setIsSubmitting(true);
 
     const recommendation = calculateResult();
     setRecommendedProtocol(recommendation);
+    const treatment = nomeDoCatalogo(site, recommendation.title);
 
-    // Build the lead item
-    const newLead: Lead = {
-      id: Math.random().toString(36).substring(2, 9),
+    const lead = {
       name: name.trim(),
       whatsapp: whatsapp.replace(/\D/g, ""), // only digits
-      treatment: recommendation.title,
-      message: `Simulação de Avaliação de Pele: Queixa de ${concern}, região ${area}, preferência ${recovery}.`,
-      scoreResult: `${recommendation.title}: ${recommendation.tagline}`,
-      date: new Date().toISOString(),
-      status: "novo"
+      treatment,
+      message: `Quiz do site: queixa de ${concern}, região ${area}, preferência ${recovery}.` +
+        (respostasDivergentes() ? " ATENÇÃO: respostas divergentes entre queixa e região — confirmar na avaliação." : ""),
+      scoreResult: `${treatment}: ${recommendation.tagline}`,
     };
 
-    // Simulate saving delay
-    setTimeout(() => {
-      onLeadCaptured(newLead);
-      setIsSubmitting(false);
-      setShowResult(true);
-      if (onClearPresetName) onClearPresetName();
-    }, 1200);
+    const r = await enviarLead(lead);
+    setIsSubmitting(false);
+    if (r.ok) {
+      onLeadCaptured({ id: "", ...lead, date: new Date().toISOString(), status: "novo" } as Lead);
+    } else {
+      setFalhaEnvio(r.erro || "Não foi possível enviar agora.");
+    }
+    setShowResult(true);
+    if (onClearPresetName) onClearPresetName();
   };
 
   const handleRestartQuiz = () => {
@@ -120,6 +153,8 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
     setName("");
     setWhatsapp(DDI_PADRAO);
     setShowResult(false);
+    setFalhaEnvio("");
+    setErroTelefone("");
     setRecommendedProtocol(null);
   };
 
@@ -374,6 +409,9 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
                       className="w-full bg-bg-luxe border border-primary/15 focus:border-primary rounded px-4 py-3 pl-11 text-sm text-neutral font-light focus:outline-none transition-colors animate-fade-in"
                     />
                   </div>
+                  {erroTelefone && (
+                    <p role="alert" className="text-[11px] text-red-600 font-medium">{erroTelefone}</p>
+                  )}
                 </div>
 
                 {/* Marketing check informational */}
@@ -413,8 +451,13 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
               
               <div className="text-center space-y-2">
                 <div className="inline-flex items-center justify-center bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-xs uppercase tracking-widest font-black px-4 py-1.5 rounded-full">
-                  ★ Diagnóstico Concluído com Sucesso
+                  ★ Diagnóstico Concluído
                 </div>
+                {falhaEnvio && (
+                  <div role="alert" className="max-w-xl mx-auto mt-3 bg-red-500/10 border border-red-500/20 text-red-600 p-3 rounded text-xs">
+                    <strong>Seus dados não chegaram à clínica.</strong> {falhaEnvio} Use o botão do WhatsApp abaixo para garantir o seu benefício.
+                  </div>
+                )}
                 <h3 className="text-2xl sm:text-3.5xl font-serif text-neutral tracking-wide">
                   Seu Protocolo Mapeado: <span className="text-gold-gradient block sm:inline">{recommendedProtocol.title}</span>
                 </h3>
@@ -466,7 +509,7 @@ export default function LeadQuiz({ onLeadCaptured, presetTreatmentName, onClearP
                 </button>
                 
                 <a
-                  href={`https://wa.me/5511900000000?text=${encodeURIComponent(`Olá! Sou ${name} e completei o Quiz de Beleza da Dra. Musa Estética de Elite. Meu resultado recomendado foi o ${recommendedProtocol.title}. Gostaria de resgatar meu benefício VIP e marcar uma consulta com a Dra. Musa!`)}`}
+                  href={linkWhatsApp(site, `Olá! Sou ${name} e completei o Quiz de Beleza da Dra. Musa Estética de Elite. Meu resultado recomendado foi o ${recommendedProtocol.title}. Gostaria de resgatar meu benefício VIP e marcar uma consulta com a Dra. Musa!`)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full sm:w-auto flex items-center justify-center space-x-2 bg-primary hover:bg-primary-light text-white font-extrabold uppercase text-xs tracking-widest px-8 py-4 rounded-sm shadow-md hover:scale-102 transition-all order-1 sm:order-2 cursor-pointer"

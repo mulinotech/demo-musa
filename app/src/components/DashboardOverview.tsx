@@ -38,6 +38,7 @@
  *    já tem em Financeiro e Precificação.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { diaLocal } from "../lib/data-local";
 import { motion } from 'motion/react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -74,12 +75,23 @@ type Faixa = '7days' | '30days' | 'month' | 'custom';
 
 /* ------------------------------------------------------------------ formato */
 
-const hojeIso = () => new Date().toISOString().slice(0, 10);
+const hojeIso = () => diaLocal();
 
 function somarDias(iso: string, n: number) {
   const d = new Date(iso + 'T12:00:00');
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return diaLocal(d);
+}
+
+function periodoDaUrl(): { de: string; ate: string } | null {
+  try {
+    const u = new URL(window.location.href);
+    const de = u.searchParams.get('de') || '';
+    const ate = u.searchParams.get('ate') || '';
+    const ok = /^\d{4}-\d{2}-\d{2}$/;
+    if (ok.test(de) && ok.test(ate) && de <= ate) return { de, ate };
+  } catch { /* sem URL utilizavel */ }
+  return null;
 }
 
 /** "Últimos 7 dias" é hoje e os 6 anteriores — foi assim que o time comercial
@@ -174,9 +186,13 @@ function CartaoKpi({ c, idx }: { c: Cartao; idx: number }) {
 export default function DashboardOverview() {
   const veDinheiro = podeVerDinheiro(papelDoToken());
 
-  const [filterRange, setFilterRange] = useState<Faixa>('7days');
-  const [startDate, setStartDate] = useState<string>(somarDias(hojeIso(), -6));
-  const [endDate, setEndDate] = useState<string>(hojeIso());
+  /* QA de 15/10, BUG-06: o link com ?de=09/10&ate=15/10 abria com o periodo
+     da faixa padrao, e o efeito abaixo reescrevia a URL por cima. O periodo
+     que veio no link vale na abertura. */
+  const doLink = periodoDaUrl();
+  const [filterRange, setFilterRange] = useState<Faixa>(doLink ? 'custom' : '7days');
+  const [startDate, setStartDate] = useState<string>(doLink ? doLink.de : somarDias(hojeIso(), -6));
+  const [endDate, setEndDate] = useState<string>(doLink ? doLink.ate : hojeIso());
 
   const [painel, setPainel] = useState<Painel | null>(null);
   const [caixa, setCaixa] = useState<Dinheiro | null>(null);

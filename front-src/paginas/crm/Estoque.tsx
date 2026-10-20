@@ -16,6 +16,7 @@ import EntradaModal from "../../components/estoque/EntradaModal";
 import FichaTecnicaPanel from "../../components/estoque/FichaTecnicaPanel";
 import ProdutoModal from "../../components/estoque/ProdutoModal";
 import { Produto, Movimento, Alertas, reais, qtd, dataBR, dataHoraBR, ESTILO_MOV } from "../../components/estoque/comum";
+import { pedirTexto } from "../../lib/dialogo";
 
 type Aba = "saldo" | "movimentos" | "fichas";
 
@@ -80,10 +81,10 @@ export default function Estoque() {
   /** Perda pede motivo e não tem desfazer — mas é lançamento novo, então o
    *  histórico continua mostrando que o produto existiu e como saiu. */
   const darPerda = async (batchId: string, produto: string, quantidade: number) => {
-    const motivo = window.prompt(
+    const motivo = (await pedirTexto(
       'Dar baixa de perda em "' + produto + '" (' + qtd(quantidade) + ")?\n\nMotivo:",
-      "Lote vencido",
-    );
+      { valor: "Lote vencido", ok: "Dar baixa" },
+    ));
     if (!motivo || !motivo.trim()) return;
     const r = await fetch("/api/stock/adjust", {
       method: "POST",
@@ -271,7 +272,7 @@ export default function Estoque() {
                   </p>
                   <p className="text-[10px] text-brand-brown/55 truncate">
                     {m.origem || "—"}
-                    {m.autor && " · " + m.autor}
+                    {m.autor && " · registrado por " + m.autor}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">

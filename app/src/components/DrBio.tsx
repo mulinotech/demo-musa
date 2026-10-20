@@ -1,7 +1,10 @@
 import { Mail, ShieldCheck, Award, Heart, CheckCircle2, ChevronRight } from "lucide-react";
 import draMusa from "../assets/dra_musa.jpg";
+import { useSite, linkWhatsApp } from "../lib/site";
 
 export default function DrBio() {
+  // BUG-02: o numero vem do cadastro da clinica, nao do codigo.
+  const site = useSite();
   const pillars = [
     {
       title: "Individualidade Relevante",
@@ -101,7 +104,7 @@ export default function DrBio() {
             {/* Quote Action button */}
             <div className="pt-6">
               <a
-                href={`https://wa.me/5511900000000?text=${encodeURIComponent("Olá! Gostaria de agendar uma consulta de avaliação especial com a Dra. Musa.")}`}
+                href={linkWhatsApp(site, "Olá! Gostaria de agendar uma consulta de avaliação especial com a Dra. Musa.")}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center space-x-2 text-[10px] tracking-[0.2em] uppercase font-bold text-primary hover:text-primary-light border-b border-primary/30 hover:border-primary pb-1.5 transition-colors cursor-pointer"

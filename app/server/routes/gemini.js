@@ -26,8 +26,19 @@
 const express = require('express');
 const router = express.Router();
 const escopo = require('../db/escopo');
-const path = require('path');
-const https = require('https');
+const logs = require('../services/logs');
+const ia = require('../services/ia-gemini');
+const laudo = require('../services/laudo-ia');
+
+/** Nome da clínica e nomes do catálogo -- o que a IA pode citar. */
+async function identidade(db) {
+  const c = await db.minhaClinica();
+  const [cat] = await db.q('SELECT name FROM treatment_catalog WHERE clinica_id = :clinica ORDER BY name');
+  return {
+    clinica: (c && c.nome) || 'a clínica',
+    catalogo: cat.map(function (t) { return t.name; })
+  };
+}
 
 router.post('/api/gemini/analyze-skin', async function(req, res) {
   const { anamneseText, imageBase64, clientName } = req.body;
@@ -68,75 +79,47 @@ router.post('/api/gemini/analyze-skin', async function(req, res) {
     });
   }
 
+  /* QA de 15/10, BUG-04: ver server/services/laudo-ia.js. */
+  if (!laudo.entradaSuficiente(anamneseText, !!imageBase64)) {
+    return res.status(422).json({
+      error: 'Dados insuficientes para a pré-avaliação.',
+      details: 'Descreva a queixa, a região e o histórico relevante (pelo menos algumas frases) ' +
+        'ou envie a foto. Com uma anotação curta como "teste", a IA só poderia inventar.'
+    });
+  }
+
   try {
-    const prompt = `Você é um Dermatologista e Especialista em Estética Avançada atuando em uma clínica premium.
-Paciente: ${clientName || 'Paciente'}
-Data: ${new Date().toLocaleDateString('pt-BR')}
-
-Baseado nas seguintes anotações de anamnese do paciente: "${anamneseText}"
-(E na foto fornecida, se houver).
-
-Elabore um LAUDO DE AVALIAÇÃO FACIAL DIGITAL premium. 
-O laudo deve conter:
-1. ANÁLISE DERMATOLÓGICA TÉCNICA (use termos técnicos adequados)
-2. PLANO DE TRATAMENTO SUGERIDO (ex: Lavien, Ultraformer MPT, Bioestimulador)
-3. RECOMENDAÇÕES HOME CARE
-
-Responda apenas com o texto do laudo, bem formatado e profissional.`;
-
-    const parts = [{ text: prompt }];
+    const db = escopo(req);
+    const quem = await identidade(db);
+    const parts = [{
+      text: 'Paciente: ' + (clientName || 'Paciente') + '\n' +
+            'Data: ' + new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + '\n' +
+            'Foto enviada: ' + (imageBase64 ? 'sim' : 'NÃO — não descreva nada visual') + '\n\n' +
+            'Anotações da profissional (única fonte de informação):\n<<' + String(anamneseText || '') + '>>'
+    }];
 
     if (imageBase64) {
       const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
       if (matches && matches.length === 3) {
-        parts.push({
-          inline_data: {
-            mime_type: matches[1],
-            data: matches[2]
-          }
-        });
+        parts.push({ inline_data: { mime_type: matches[1], data: matches[2] } });
       }
     }
 
-    const payload = JSON.stringify({ contents: [{ parts }] });
-    const u = new URL(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`);
-
-    const options = {
-      hostname: u.hostname,
-      path: u.pathname + u.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload)
-      }
-    };
-
-    const reqGemini = https.request(options, (resGemini) => {
-      let responseBody = '';
-      resGemini.on('data', (chunk) => responseBody += chunk);
-      resGemini.on('end', () => {
-        try {
-          const data = JSON.parse(responseBody);
-          if (data.error) {
-            return res.status(500).json({ error: 'Erro ao gerar o laudo via IA', details: data.error.message });
-          }
-          const report = data.candidates?.[0]?.content?.parts?.[0]?.text || "Não foi possível gerar a resposta.";
-          res.json({ report });
-        } catch (e) {
-          res.status(500).json({ error: 'Erro ao gerar o laudo via IA', details: e.message });
-        }
-      });
-    });
-
-    reqGemini.on('error', (e) => {
-      res.status(500).json({ error: 'Erro ao gerar o laudo via IA', details: e.message });
-    });
-
-    reqGemini.write(payload);
-    reqGemini.end();
-
+    const texto = await ia.gerar(apiKey, parts, laudo.instrucao(quem.clinica, quem.catalogo), { temperatura: 0.2 });
+    const report = laudo.limparLaudo(texto);
+    if (!report) {
+      return res.status(502).json({ error: 'A IA não devolveu texto.', details: 'Tente de novo ou escreva o laudo manualmente.' });
+    }
+    // QA de 15/10, BUG-22: o uso da IA sobre dado de saude nao deixava rastro.
+    await logs.registrar(db, 'IA_LAUDO',
+      'Pre-avaliacao por IA gerada (rascunho, nao salvo) para "' + String(clientName || 'paciente').slice(0, 80) + '".')
+      .catch(function () {});
+    res.json({ report: report });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao gerar o laudo via IA', details: error.message });
+    res.status(500).json({
+      error: 'Não foi possível gerar a pré-avaliação.',
+      details: (error instanceof ia.ErroDaIA) ? error.message : 'Tente de novo em instantes; se continuar, escreva o laudo manualmente.'
+    });
   }
 });
 
@@ -160,66 +143,43 @@ router.post('/api/gemini/suggest-reply', async function(req, res) {
       [clientId, clientId]);
     if (!dono.length) return res.status(404).json({ error: 'Contato nao encontrado.' });
 
-    const [interactions] = await db.q(
-      'SELECT content, direction FROM interactions' +
-      ' WHERE clinica_id = :clinica AND client_id = ? ORDER BY created_at ASC LIMIT 10',
+    /* QA de 15/10, BUG-16. A consulta pegava as 10 PRIMEIRAS mensagens da
+     * conversa (ORDER BY ASC LIMIT 10): numa conversa longa, a IA nunca via o
+     * que a paciente acabou de dizer, e respondia sobre "queda capilar", um
+     * assunto de semanas atras. Agora sao as 15 MAIS RECENTES, em ordem, e a
+     * ultima mensagem da paciente vai destacada; o catalogo vai junto para a
+     * IA nao oferecer o que a clinica nao faz. */
+    const [recentes] = await db.q(
+      'SELECT content, direction, created_at FROM interactions' +
+      ' WHERE clinica_id = :clinica AND client_id = ? ORDER BY created_at DESC, id DESC LIMIT 15',
       [clientId]);
-    let historicoTexto = interactions.map(i => `${i.direction === 'in' ? 'Cliente' : 'Clínica'}: ${i.content}`).join('\n');
-    if (!historicoTexto) historicoTexto = "(Nenhum histórico de mensagens ainda)";
+    const interactions = recentes.slice().reverse();
+    let historicoTexto = interactions.map(i => `${i.direction === 'in' ? 'Paciente' : 'Clínica'}: ${i.content}`).join('\n');
+    if (!historicoTexto) historicoTexto = '(Nenhum histórico de mensagens ainda)';
+    const ultimaDaPaciente = recentes.find(i => i.direction === 'in');
 
-    const prompt = `Você é um Concierge de uma Clínica de Estética Premium chamada Dra. Musa Estética de Elite.
-Seu objetivo é sugerir uma ÚNICA mensagem de resposta (curta, humana, persuasiva e elegante) para enviar ao cliente no WhatsApp.
-O foco é acolher o cliente e tentar agendar uma avaliação estética presencial.
+    const quem = await identidade(db);
+    const instrucao = [
+      'Você é a concierge da clínica de estética "' + quem.clinica + '" e sugere UMA mensagem de WhatsApp',
+      'para a equipe enviar. Curta, humana, elegante, em português do Brasil.',
+      'REGRAS: responda diretamente à ÚLTIMA mensagem da paciente — é ela que importa; o histórico é só contexto.',
+      'Se ela pediu para falar com alguém, confirme que vai encaminhar. Se perguntou preço, diga que o valor',
+      'depende da avaliação e ofereça horário, sem inventar números. Ofereça apenas procedimentos deste',
+      'catálogo: ' + (quem.catalogo.join('; ') || '(catálogo vazio — não cite procedimentos)') + '.',
+      'Não prometa resultado. Escreva só a mensagem, sem aspas. Emojis com moderação (✨, 🤍).'
+    ].join('\n');
+    const pedido = 'Conversa (da mais antiga para a mais recente):\n' + historicoTexto + '\n\n' +
+      'ÚLTIMA MENSAGEM DA PACIENTE, a que deve ser respondida: ' +
+      (ultimaDaPaciente ? '"' + ultimaDaPaciente.content + '"' : '(ela ainda não escreveu — faça uma abordagem de boas-vindas)');
 
-Histórico da conversa:
-${historicoTexto}
-
-Escreva apenas a mensagem sugerida. Evite ser robótico. Use emojis se apropriado (✨, 🤍, etc).`;
-
-    const payload = JSON.stringify({
-      contents: [{
-        parts: [{ text: prompt }]
-      }]
-    });
-
-    const u = new URL(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`);
-    
-    const options = {
-      hostname: u.hostname,
-      path: u.pathname + u.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload)
-      }
-    };
-
-    const reqGemini = https.request(options, (resGemini) => {
-      let responseBody = '';
-      resGemini.on('data', (chunk) => responseBody += chunk);
-      resGemini.on('end', () => {
-        try {
-          const data = JSON.parse(responseBody);
-          if (data.error) {
-            return res.status(500).json({ error: 'Erro na IA', details: data.error.message });
-          }
-          const suggestedMessage = data.candidates?.[0]?.content?.parts?.[0]?.text || "Olá! Como posso ajudar?";
-          res.json({ suggestion: suggestedMessage.trim() });
-        } catch (e) {
-          res.status(500).json({ error: 'Erro ao gerar resposta', details: e.message });
-        }
-      });
-    });
-
-    reqGemini.on('error', (e) => {
-      res.status(500).json({ error: 'Erro de conexao com a IA', details: e.message });
-    });
-
-    reqGemini.write(payload);
-    reqGemini.end();
-
+    try {
+      const sugestao = await ia.gerar(apiKey, [{ text: pedido }], instrucao, { temperatura: 0.6 });
+      res.json({ suggestion: laudo.limparLaudo(sugestao).replace(/^["“]|["”]$/g, '') || 'Olá! Como posso ajudar?' });
+    } catch (e) {
+      res.status(500).json({ error: 'Erro na IA', details: (e instanceof ia.ErroDaIA) ? e.message : 'Tente de novo em instantes.' });
+    }
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao gerar sugestão via IA', details: error.message });
+    res.status(500).json({ error: 'Erro ao gerar sugestão via IA', details: 'Tente de novo em instantes.' });
   }
 });
 

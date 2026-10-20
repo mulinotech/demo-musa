@@ -93,6 +93,7 @@ app.use(require('./routes/logs'));
 app.use(require('./routes/plataforma'));
 app.use(require('./routes/suporte'));
 app.use(require('./routes/leads-publico'));
+app.use(require('./routes/site-publico'));
 app.use(require('./routes/leads'));
 app.use(require('./routes/salespeople'));
 app.use(require('./routes/catalog'));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Client, Treatment, TreatmentCatalog, TreatmentPlan, TreatmentSession } from '../types';
 import TreatmentJourney from './TreatmentJourney';
 import { 
@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { comDdi, temNumero, DDI_PADRAO } from '../lib/telefone.mjs';
+import { diaLocal } from "../lib/data-local";
+import { avisar, confirmar } from "../lib/dialogo";
 
 const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -36,7 +38,8 @@ const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
 interface ClientDirectoryProps {
   clients: Client[];
   treatments: Treatment[];
-  onAddClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onAddClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'> & { confirmarMesmoTelefone?: boolean }) =>
+    Promise<{ ok: boolean; error?: string; duplicadas?: { id: string; nome: string; telefone: string }[] }> | void;
   onAddTreatment: (treatment: Omit<Treatment, 'id'>) => Promise<void>;
   isAiConfigured: boolean;
   onUpdateClientData?: () => void;
@@ -97,6 +100,18 @@ export default function ClientDirectory({
       (c.name || '').toLowerCase().includes(t) ||
       (digitos && (c.phone || '').replace(/\D/g, '').includes(digitos)));
   })();
+
+  /* QA de 15/10, UX-05: a busca filtrava a lista e o painel da direita
+     continuava mostrando uma paciente que nem estava mais nela. Quando a busca
+     deixa de fora a ficha aberta, abre a primeira que sobrou. */
+  const idsVisiveis = clientesVisiveis.map((c) => c.id).join(',');
+  useEffect(() => {
+    if (!buscaPaciente.trim() || !clientesVisiveis.length) return;
+    if (!selectedClient || !clientesVisiveis.some((c) => c.id === selectedClient.id)) {
+      setSelectedClient(clientesVisiveis[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buscaPaciente, idsVisiveis]);
   const [showAddTreatment, setShowAddTreatment] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditingLaudo, setIsEditingLaudo] = useState(false);
@@ -180,7 +195,7 @@ export default function ClientDirectory({
        de sessões" -- e era verdade: as chaves da migration 027 cascateavam
        documento assinado junto. Desde a M6.5 isso é recusado, e prometer o que
        não vai acontecer é a outra metade do mesmo defeito. */
-    if (!confirm(`Excluir a ficha de ${name}?\n\nSó fichas SEM histórico são apagadas. Se ela tiver documento, plano, sessão, compromisso, conversa ou lançamento, a exclusão é recusada e a tela diz o que existe.`)) return;
+    if (!(await confirmar(`Excluir a ficha de ${name}?\n\nSó fichas SEM histórico são apagadas. Se ela tiver documento, plano, sessão, compromisso, conversa ou lançamento, a exclusão é recusada e a tela diz o que existe.`))) return;
     if (!onDeleteClient) return;
     setRecusaExclusao('');
     const r = await onDeleteClient(id);
@@ -198,7 +213,7 @@ export default function ClientDirectory({
 
   // New Treatment Form
   const [procedure, setProcedure] = useState('Ultraformer MPT - Facial Completo');
-  const [sessionDate, setSessionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [sessionDate, setSessionDate] = useState(diaLocal());
   const [notes, setNotes] = useState('');
   const [nextSessionDate, setNextSessionDate] = useState('');
   const [price, setPrice] = useState('');
@@ -229,14 +244,28 @@ export default function ClientDirectory({
   // Removed the useEffect that auto-updated selectedClient when clients changed,
   // because it was overwriting the user's current edits in the form during fetch cycles.
 
+  /* QA de 15/10, UX-03: trocar de paciente com o laudo gerado e nao salvo jogava
+     fora 40 s de geracao, sem aviso. O rascunho agora fica guardado POR
+     PACIENTE enquanto a tela estiver aberta, e volta quando ela e reaberta. */
+  const rascunhos = useRef<Record<string, string>>({});
+  const ultimoCliente = useRef<string | null>(null);
+  const rascunhoAtual = useRef<{ texto: string | null; pendente: boolean }>({ texto: null, pendente: false });
+  rascunhoAtual.current = { texto: analysisResult, pendente: laudoNaoSalvo };
+
   useEffect(() => {
+    const anterior = ultimoCliente.current;
+    if (anterior && rascunhoAtual.current.pendente && rascunhoAtual.current.texto) {
+      rascunhos.current[anterior] = rascunhoAtual.current.texto;
+    }
+    ultimoCliente.current = selectedClient ? selectedClient.id : null;
     // Reset AI form when changing selected client
     if (selectedClient) {
+      const guardado = rascunhos.current[selectedClient.id];
       setAnamneseText(selectedClient.anamnese || '');
       setAnalysisImage(selectedClient.imageBase64 || null);
-      setAnalysisResult(selectedClient.laudo || null);
+      setAnalysisResult(guardado || selectedClient.laudo || null);
       setIsEditingLaudo(false);
-      setLaudoNaoSalvo(false);
+      setLaudoNaoSalvo(!!guardado);
       setErroLaudo('');
       setEditingTreatmentId(null);
     } else {
@@ -265,11 +294,30 @@ export default function ClientDirectory({
     window.open(`https://wa.me/${clean}?text=${encodeURIComponent(defaultTemplate)}`, "_blank");
   };
 
-  const handleCreateClient = (e: React.FormEvent) => {
-    e.preventDefault();
+  const [cadastroDuplicado, setCadastroDuplicado] = useState<{ texto: string; ids: string[] } | null>(null);
+  const [erroCadastro, setErroCadastro] = useState('');
+
+  const handleCreateClient = async (e: React.FormEvent | null, confirmar = false) => {
+    if (e) e.preventDefault();
+    setErroCadastro('');
     /* `clientPhone` ja nasce com "+55 ": string nao-vazia nao prova telefone. */
-    if (!clientName || !temNumero(clientPhone)) return;
-    onAddClient({ name: clientName, phone: clientPhone, email: clientEmail });
+    if (!clientName || !temNumero(clientPhone)) {
+      setErroCadastro('Informe o nome e um WhatsApp válido, com DDD.');
+      return;
+    }
+    const r = await onAddClient({
+      name: clientName, phone: clientPhone, email: clientEmail,
+      ...(confirmar ? { confirmarMesmoTelefone: true } : {})
+    });
+    if (r && !r.ok) {
+      if (r.duplicadas && r.duplicadas.length) {
+        setCadastroDuplicado({ texto: r.error || 'Já existe ficha com este WhatsApp.', ids: r.duplicadas.map((d) => d.id) });
+      } else {
+        setErroCadastro(r.error || 'Não foi possível cadastrar.');
+      }
+      return;
+    }
+    setCadastroDuplicado(null);
     setClientName('');
     setClientPhone(DDI_PADRAO);
     setClientEmail('');
@@ -279,7 +327,7 @@ export default function ClientDirectory({
   const handleCreateTreatment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClient || !procedure || !sessionDate) {
-      alert('Por favor, preencha o procedimento e a data.');
+      avisar('Por favor, preencha o procedimento e a data.');
       return;
     }
     
@@ -308,9 +356,9 @@ export default function ClientDirectory({
       setShowAddTreatment(false);
 
       // Provide visual feedback
-      alert('✅ Sessão registrada com sucesso no Prontuário!');
+      avisar('✅ Sessão registrada com sucesso no Prontuário!');
     } catch (e) {
-      alert('❌ Erro ao registrar sessão: ' + (e as Error).message);
+      avisar('❌ Erro ao registrar sessão: ' + (e as Error).message);
     } finally {
       setIsSubmitting(false);
     }
@@ -680,7 +728,7 @@ export default function ClientDirectory({
                     selectedClient.imageBase64 = analysisImage || undefined;
                     if (analysisResult) selectedClient.laudo = analysisResult;
                     if (onUpdateClientData) onUpdateClientData();
-                    alert('Dados do prontuário salvos com sucesso no histórico!');
+                    avisar('Dados do prontuário salvos com sucesso no histórico!');
                   }}
                   className="flex items-center space-x-2 bg-brand-gold/10 hover:bg-brand-gold/20 border border-brand-gold/30 text-brand-brown px-5 py-3 rounded-xl text-xs font-semibold transition-all shadow-sm font-serif"
                 >
@@ -759,6 +807,7 @@ export default function ClientDirectory({
                           onClick={async () => {
                             setIsEditingLaudo(false);
                             setLaudoNaoSalvo(false);
+                            if (selectedClient) delete rascunhos.current[selectedClient.id];
                             await fetch(`/api/clients/${selectedClient.id}`, {
                               method: 'PATCH',
                               headers: { 'Content-Type': 'application/json' },
@@ -878,10 +927,40 @@ export default function ClientDirectory({
                 />
               </div>
 
+              {erroCadastro && (
+                <p role="alert" className="text-[11px] text-red-600">{erroCadastro}</p>
+              )}
+              {cadastroDuplicado && (
+                <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-[11px] text-amber-800 space-y-2">
+                  <p><strong>{cadastroDuplicado.texto}</strong> Pode ser a mesma pessoa — ou alguém que usa o mesmo número.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existente = clients.find((c) => c.id === cadastroDuplicado.ids[0]);
+                        if (existente) setSelectedClient(existente);
+                        setCadastroDuplicado(null);
+                        setShowAddClient(false);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 font-semibold"
+                    >
+                      Abrir a ficha existente
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCreateClient(null, true)}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-semibold"
+                    >
+                      Cadastrar mesmo assim
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowAddClient(false)}
+                  onClick={() => { setShowAddClient(false); setCadastroDuplicado(null); setErroCadastro(''); }}
                   className="px-4 py-2 text-xs font-medium text-brand-brown/70"
                 >
                   Cancelar

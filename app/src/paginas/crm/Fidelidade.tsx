@@ -16,6 +16,7 @@ import RecompensasPanel from "../../components/fidelidade/RecompensasPanel";
 import ClienteFidelidadeCard from "../../components/fidelidade/ClienteFidelidadeCard";
 import { ConfigFidelidade, reais, pts } from "../../components/fidelidade/comum";
 import { papelDoToken } from "../../lib/api";
+import { diaLocal } from "../../lib/data-local";
 
 type Aba = "programa" | "recompensas" | "pacientes" | "relatorio";
 
@@ -65,8 +66,8 @@ export default function Fidelidade() {
   useEffect(() => {
     if (aba !== "relatorio") return;
     const hoje = new Date();
-    const de = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().slice(0, 10);
-    fetch("/api/loyalty/report?from=" + de + "&to=" + hoje.toISOString().slice(0, 10))
+    const de = diaLocal(new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1));
+    fetch("/api/loyalty/report?from=" + de + "&to=" + diaLocal(hoje))
       .then((r) => r.json())
       .then((d) => (d.error ? setErro(d.error) : setRel(d)))
       .catch(() => setErro("Não foi possível montar o relatório."));

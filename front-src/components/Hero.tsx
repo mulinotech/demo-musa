@@ -1,5 +1,6 @@
 import { Calendar, ChevronRight, Play, ShieldCheck, Award, Star } from "lucide-react";
 import clinicaLuxo from "../assets/clinica_luxo.png";
+import { useSite, linkWhatsApp } from "../lib/site";
 
 interface HeroProps {
   onStartQuiz: () => void;
@@ -7,6 +8,8 @@ interface HeroProps {
 }
 
 export default function Hero({ onStartQuiz, onNavigateToTreatments }: HeroProps) {
+  // BUG-02: o numero vem do cadastro da clinica, nao do codigo.
+  const site = useSite();
   return (
     <section
       id="inicio"
@@ -68,7 +71,7 @@ export default function Hero({ onStartQuiz, onNavigateToTreatments }: HeroProps)
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
               <a
-                href={`https://wa.me/5511900000000?text=${encodeURIComponent("Olá! Gostaria de agendar uma consulta de avaliação com a Dra. Musa.")}`}
+                href={linkWhatsApp(site, "Olá! Gostaria de agendar uma consulta de avaliação com a Dra. Musa.")}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center space-x-2 text-xs uppercase tracking-widest font-bold text-white bg-primary hover:bg-primary-light px-8 py-4 rounded-sm transition-all duration-300 shadow-sm transform hover:-translate-y-0.5 cursor-pointer text-center"

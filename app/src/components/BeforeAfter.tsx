@@ -1,8 +1,11 @@
 import { useState, useRef, MouseEvent, TouchEvent } from "react";
 import { BEFORE_AFTERS, BeforeAfterItem } from "../data";
 import { HelpCircle, Sparkles, Check, ArrowRight } from "lucide-react";
+import { useSite, linkWhatsApp } from "../lib/site";
 
 export default function BeforeAfter() {
+  // BUG-02: o numero vem do cadastro da clinica, nao do codigo.
+  const site = useSite();
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [sliderPosition, setSliderPosition] = useState<number>(50); // 0 to 100
   const isDragging = useRef<boolean>(false);
@@ -198,7 +201,7 @@ export default function BeforeAfter() {
             {/* Micro Conversion anchor link */}
             <div className="pt-2">
               <a
-                href={`https://wa.me/5511900000000?text=${encodeURIComponent(`Olá! Gostaria de conversar sobre o tratamento de ${activeItem.title} com a Dra. Musa.`)}`}
+                href={linkWhatsApp(site, `Olá! Gostaria de conversar sobre o tratamento de ${activeItem.title} com a Dra. Musa.`)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center space-x-2 bg-primary hover:bg-primary-light text-white font-semibold text-xs tracking-widest uppercase px-6 py-3.5 rounded-sm w-fit shadow-sm transition-all duration-300 cursor-pointer"

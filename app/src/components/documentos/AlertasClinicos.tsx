@@ -55,6 +55,11 @@ export default function AlertasClinicos(p: { clientId: string; compacto?: boolea
                 </li>
               ))}
             </ul>
+            {(d as any).daFicha && (
+              <p className="text-[10px] text-red-700/70 mt-1.5">
+                Encontrado no texto das notas da ficha — confirme com a paciente e registre na anamnese.
+              </p>
+            )}
             {d.origem && (
               <p className="text-[10px] text-red-700/70 mt-1.5">
                 Da anamnese "{d.origem.titulo}", de {d.origem.quando}

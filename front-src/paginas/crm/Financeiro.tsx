@@ -55,7 +55,10 @@ export default function Financeiro() {
       }
       setAviso(
         d.criados === 0
-          ? `Nada novo: as ${d.jaExistiam} sessões realizadas já estavam no razão.`
+          /* QA de 15/10: "as 12 sessões realizadas" contava COMPROMISSOS da
+             Agenda com valor -- e quem tinha sessões de plano realizadas lia que
+             elas estavam no razão, quando não estavam. */
+          ? `Nada novo: os ${d.jaExistiam} atendimentos concluídos na Agenda com valor já estavam no razão.`
           : `${d.criados} atendimento(s) importado(s) como receita.` +
               (d.jaExistiam ? ` Outros ${d.jaExistiam} já estavam lá.` : ""),
       );

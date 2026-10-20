@@ -127,9 +127,27 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
   const [newLeadPhone, setNewLeadPhone] = useState(DDI_PADRAO);
   const [newLeadEmail, setNewLeadEmail] = useState('');
   const [newLeadInterest, setNewLeadInterest] = useState('Ultraformer MPT');
-  const [newLeadSource, setNewLeadSource] = useState<string>('site');
+  // Quem cadastra pelo CRM nao e o site; a origem certa se escolhe no seletor.
+  const [newLeadSource, setNewLeadSource] = useState<string>('manual');
   const [newLeadSalespersonId, setNewLeadSalespersonId] = useState('');
   const [salespeople, setSalespeople] = useState<any[]>([]);
+  /* QA de 15/10, BUG-15: a lista de procedimentos era fixa no código e oferecia
+     "Toxina Botulínica", "Bioestimulador Elleva" e "Lifting Integrativo", que não
+     existem no catálogo — o lead nascia com um procedimento que a Agenda não
+     reconhece. Agora vem do catálogo da clínica. */
+  const [procedimentos, setProcedimentos] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch('/api/treatment-catalog')
+      .then(r => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        const nomes = data.map((t: any) => String(t.name || '')).filter(Boolean);
+        setProcedimentos(nomes);
+        setNewLeadInterest((atual) => (nomes.indexOf(atual) !== -1 ? atual : (nomes[0] || 'Avaliação')));
+      })
+      .catch(console.error);
+  }, []);
 
   useEffect(() => {
     fetch('/api/salespeople')
@@ -162,8 +180,8 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
     setNewLeadName('');
     setNewLeadPhone(DDI_PADRAO);
     setNewLeadEmail('');
-    setNewLeadInterest('Ultraformer MPT');
-    setNewLeadSource('site');
+    setNewLeadInterest(procedimentos[0] || 'Avaliação');
+    setNewLeadSource('manual');
     setNewLeadSalespersonId('');
     setShowAddModal(false);
   };
@@ -332,11 +350,23 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              /* QA de 15/10, UX-01: "Contatar" so mudava o status;
+                                 a vendedora ainda tinha de ir atras do numero. Agora
+                                 abre o WhatsApp do lead e move o card. */
+                              const numero = String(lead.phone || '').replace(/\D/g, '');
+                              if (numero.length >= 10) {
+                                const comDdi = numero.length <= 11 ? '55' + numero : numero;
+                                const primeiro = String(lead.name || '').trim().split(' ')[0];
+                                window.open('https://wa.me/' + comDdi + '?text=' +
+                                  encodeURIComponent('Olá' + (primeiro ? ', ' + primeiro : '') + '! Tudo bem? Recebemos seu contato e vou te ajudar com ' + (lead.interest || 'o seu atendimento') + '.'),
+                                  '_blank', 'noopener,noreferrer');
+                              }
                               onUpdateLeadStatus(lead.id, 'contatado');
                             }}
+                            title="Abre o WhatsApp do lead e move para Pré-Agendamento"
                             className="flex items-center space-x-1 bg-brand-gold/10 hover:bg-brand-gold hover:text-white text-brand-brown text-xxs px-2 py-1 rounded-md transition-all font-medium"
                           >
-                            <span>Contatar</span>
+                            <span>Contatar no WhatsApp</span>
                             <ArrowRight className="h-3 w-3" />
                           </button>
                         )}
@@ -523,11 +553,10 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                     onChange={(e) => setNewLeadInterest(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl border border-brand-gold/30 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold text-brand-brown"
                   >
-                    <option value="Ultraformer MPT">Ultraformer MPT</option>
-                    <option value="Lavien BB Laser">Lavien BB Laser</option>
-                    <option value="Toxina Botulínica">Toxina Botulínica</option>
-                    <option value="Bioestimulador Elleva">Bioestimulador Elleva</option>
-                    <option value="Lifting Integrativo">Lifting Integrativo</option>
+                    {procedimentos.length === 0 && <option value="Avaliação">Avaliação</option>}
+                    {procedimentos.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
                   </select>
                 </div>
 

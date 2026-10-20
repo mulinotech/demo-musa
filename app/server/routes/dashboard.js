@@ -73,7 +73,7 @@ async function lerLeads(db) {
  *  lançamento sem categoria sumindo do razão. */
 async function lerRazao(db) {
   const [r] = await db.q(
-    'SELECT id, type, amount, entry_date, paid_at, category_id' +
+    'SELECT id, type, source, amount, entry_date, paid_at, category_id' +
     ' FROM cash_entries WHERE clinica_id = :clinica');
   return r;
 }

@@ -3,19 +3,91 @@
   <head>
     <!--
       Google Tag Manager / Meta Pixel: removidos de propósito nesta cópia demo.
-      Os IDs originais pertenciam às contas de anúncios/analytics da Nathi Estética
-      e não podem ser reaproveitados (misturaria dados de tráfego do demo Musa CRM
-      nas contas reais da Nathi). Quando o Musa CRM tiver um GTM/Pixel próprio,
-      insira os containers aqui no mesmo formato.
+      Os IDs do projeto de origem pertencem às contas de anúncios/analytics de
+      outra clínica e não podem ser reaproveitados. Quando o Musa CRM tiver um
+      GTM/Pixel próprio, insira os containers aqui.
     -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dra. Musa | Estética de Elite em São Paulo/SP — A Clínica que Fatura Horrores</title>
     <meta name="description" content="Clínica de estética de alto padrão, referência em tecnologia e resultados naturais. Sob coordenação da Dra. Musa Valentina. Agende sua avaliação VIP." />
+
+    <!-- QA de 15/10, BUG-19: base técnica de SEO/GEO. O conteúdo da página ainda
+         é montado por JavaScript (sem pré-renderização); estes metadados e o
+         bloco <noscript> são o que um buscador ou uma IA lê sem executá-lo. -->
+    <link rel="canonical" href="https://demo-musa.mulinotech.com/" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#0F1E33" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="Dra. Musa Estética de Elite" />
+    <meta property="og:title" content="Dra. Musa | Estética de Elite em São Paulo/SP" />
+    <meta property="og:description" content="Clínica de estética de alto padrão: Ultraformer MPT, Lavien BB Laser, Bumbum Max e protocolos personalizados. Agende sua avaliação." />
+    <meta property="og:url" content="https://demo-musa.mulinotech.com/" />
+    <meta property="og:image" content="https://demo-musa.mulinotech.com/og-musa.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BeautySalon",
+          "@id": "https://demo-musa.mulinotech.com/#clinica",
+          "name": "Dra. Musa Estética de Elite",
+          "description": "Clínica de estética de alto padrão em São Paulo, com tecnologias como Ultraformer MPT e Lavien BB Laser.",
+          "url": "https://demo-musa.mulinotech.com/",
+          "image": "https://demo-musa.mulinotech.com/og-musa.png",
+          "address": {
+            "@type": "PostalAddress",
+            "streetAddress": "Av. das Musas, 900 — Jardim Paulista",
+            "addressLocality": "São Paulo",
+            "addressRegion": "SP",
+            "postalCode": "01400-000",
+            "addressCountry": "BR"
+          },
+          "openingHoursSpecification": [
+            { "@type": "OpeningHoursSpecification", "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], "opens": "09:00", "closes": "20:00" },
+            { "@type": "OpeningHoursSpecification", "dayOfWeek": "Saturday", "opens": "08:00", "closes": "13:00" }
+          ],
+          "priceRange": "$$$"
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Como agendar uma avaliação na Dra. Musa Estética de Elite?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Pelo formulário de pré-agendamento do site ou pelo WhatsApp da clínica. A equipe confirma o horário da avaliação." }
+            },
+            {
+              "@type": "Question",
+              "name": "Quais procedimentos a clínica oferece?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Entre outros, Ultraformer MPT para flacidez, Lavien BB Laser para manchas e textura da pele e Bumbum Max para harmonização glútea. O protocolo é definido na avaliação presencial." }
+            },
+            {
+              "@type": "Question",
+              "name": "O quiz do site substitui a avaliação?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Não. O quiz sugere um ponto de partida; a indicação do procedimento é feita pela profissional na avaliação presencial." }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <h1>Dra. Musa Estética de Elite — clínica de estética em São Paulo/SP</h1>
+      <p>Clínica de estética de alto padrão, referência em tecnologia e resultados naturais: Ultraformer MPT,
+        Lavien BB Laser, Bumbum Max e protocolos personalizados definidos em avaliação presencial.</p>
+      <p>Av. das Musas, 900 — Jardim Paulista — São Paulo/SP. Segunda a sexta, 9h às 20h; sábado, 8h às 13h.</p>
+      <p>Para agendar, ative o JavaScript para usar o formulário de pré-agendamento.</p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

@@ -161,7 +161,7 @@ router.post('/api/finance/categories', async function (req, res) {
     const id = novoId('cat');
     await db.q('INSERT INTO finance_categories (id, name, type, clinica_id) VALUES (?, ?, ?, :clinica)',
       [id, nome, b.type]);
-    await logs.registrar(db, 'FINANCE',
+    await logs.registrar(db, 'FINANCEIRO',
       'Categoria financeira criada: "' + nome + '" (' + b.type + ').');
     res.status(201).json({ id: id, name: nome, type: b.type, contaNoCpl: false, ativa: true });
   } catch (e) {

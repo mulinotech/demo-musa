@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Award, Clock, AlertTriangle, Plus, Minus } from "lucide-react";
 import { SaldoCliente, reais, pts, dataBR, dataHoraBR, ESTILO_PONTOS } from "./comum";
+import { pedirTexto } from "../../lib/dialogo";
 
 export default function ClienteFidelidadeCard(p: {
   clientId: string;
@@ -37,13 +38,13 @@ export default function ClienteFidelidadeCard(p: {
   }, [carregar]);
 
   const ajustar = async (sinal: number) => {
-    const qtd = window.prompt(
+    const qtd = (await pedirTexto(
       (sinal > 0 ? "Creditar" : "Retirar") + " quantos pontos?" +
       (sinal > 0 ? "\n\nO ajuste manual segue a validade configurada." : ""),
-    );
+    ));
     const n = Math.abs(Math.round(Number(qtd)));
     if (!n) return;
-    const motivo = window.prompt("Motivo do ajuste (obrigatório):");
+    const motivo = (await pedirTexto("Motivo do ajuste (obrigatório):"));
     if (!motivo || !motivo.trim()) return;
     const r = await fetch("/api/clients/" + p.clientId + "/loyalty/adjust", {
       method: "POST",

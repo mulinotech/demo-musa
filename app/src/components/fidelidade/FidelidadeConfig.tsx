@@ -37,8 +37,12 @@ export default function FidelidadeConfig(p: { podeEditar: boolean; aoMudar?: () 
     carregar();
   }, []);
 
-  const salvar = async (mudanca: Partial<ConfigFidelidade>) => {
+  // Regra que devolve mais de 20% pede confirmação (QA de 15/10, BUG-08).
+  const [confirmar, setConfirmar] = useState<Partial<ConfigFidelidade> | null>(null);
+
+  const salvar = async (mudanca: Partial<ConfigFidelidade> & { confirmarRetornoAlto?: boolean }) => {
     setOcupado(true);
+    setConfirmar(null);
     try {
       const r = await fetch("/api/loyalty/settings", {
         method: "PUT",
@@ -46,7 +50,10 @@ export default function FidelidadeConfig(p: { podeEditar: boolean; aoMudar?: () 
         body: JSON.stringify(mudanca),
       });
       const d = await r.json();
-      if (!r.ok) return setErro(d.error || "Não foi possível salvar.");
+      if (!r.ok) {
+        if (r.status === 409 && d.retornoAlto) setConfirmar(mudanca);
+        return setErro(d.error || "Não foi possível salvar.");
+      }
       setCfg(d.config);
       setExemplo(d.exemplo);
       setErro("");
@@ -99,7 +106,17 @@ export default function FidelidadeConfig(p: { podeEditar: boolean; aoMudar?: () 
       {erro && (
         <div className="rounded-2xl px-4 py-3 text-xs border bg-red-50 border-red-200 text-red-700 flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-          <p>{erro}</p>
+          <div className="space-y-2">
+            <p>{erro}</p>
+            {confirmar && (
+              <button
+                onClick={() => salvar({ ...confirmar, confirmarRetornoAlto: true })}
+                className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-[11px] font-semibold cursor-pointer"
+              >
+                Salvar assim mesmo
+              </button>
+            )}
+          </div>
         </div>
       )}
 

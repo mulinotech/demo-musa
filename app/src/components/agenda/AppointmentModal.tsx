@@ -19,6 +19,7 @@ import ResgateModal from "../fidelidade/ResgateModal";
 import ClienteFidelidadeCard from "../fidelidade/ClienteFidelidadeCard";
 import AlertasClinicos from "../documentos/AlertasClinicos";
 import { podeEstornar as podeEstornarLancamento } from "../../lib/papeis.mjs";
+import { confirmar, pedirTexto } from "../../lib/dialogo";
 
 interface Servico {
   id: string;
@@ -111,6 +112,23 @@ export default function AppointmentModal(p: Props) {
     });
   };
 
+  /** QA de 15/10, BUG-13: o fim só era calculado ao escolher o serviço. Mudar
+   *  o início de 09:00 para 07:00 depois disso gravava 07:00–09:45, prendendo
+   *  a agenda da profissional por 2h45 num procedimento de 45 min. Agora o fim
+   *  anda junto com o início, mantendo a duração. */
+  const mudarInicio = (novo: string) => {
+    const min = (h: string) => { const [a, b] = h.split(":").map(Number); return a * 60 + b; };
+    if (!/^\d{2}:\d{2}$/.test(novo)) return setF({ ...f, inicio: novo });
+    let dur = /^\d{2}:\d{2}$/.test(f.fim) && /^\d{2}:\d{2}$/.test(f.inicio) ? min(f.fim) - min(f.inicio) : 0;
+    if (dur <= 0) {
+      const s = p.servicos.find((x) => x.id === f.catalogId);
+      dur = (s && s.duration_min) || 60;
+    }
+    const t = Math.min(min(novo) + dur, 23 * 60 + 59);
+    const fim = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+    setF({ ...f, inicio: novo, fim });
+  };
+
   const corpo = () => ({
     kind: f.kind,
     clientId: f.kind === "BLOQUEIO" ? null : f.clientId || null,
@@ -191,7 +209,7 @@ export default function AppointmentModal(p: Props) {
   const mudarStatus = async (status: StatusAgenda) => {
     let reason: string | null = null;
     if (status === "CANCELADO") {
-      reason = window.prompt("Motivo do cancelamento (opcional):") || null;
+      reason = (await pedirTexto("Motivo do cancelamento (opcional):")) || null;
     }
     const r = await fetch("/api/appointments/" + p.compromisso!.id + "/status", {
       method: "PATCH",
@@ -218,10 +236,10 @@ export default function AppointmentModal(p: Props) {
    *  lançamento novo — o erro continua visível no histórico, ao lado da
    *  correção. É isso que permite auditar uma divergência de saldo depois. */
   const desfazerConclusao = async () => {
-    const motivo = window.prompt(
+    const motivo = (await pedirTexto(
       "Por que esta conclusão está sendo desfeita?\n\n" +
         "A receita lançada será estornada com um lançamento de correção.",
-    );
+    ));
     if (!motivo || !motivo.trim()) return;
     const r = await fetch("/api/appointments/" + p.compromisso!.id + "/reopen", {
       method: "POST",
@@ -240,7 +258,7 @@ export default function AppointmentModal(p: Props) {
   };
 
   const apagar = async () => {
-    if (!window.confirm("Remover este bloqueio da agenda?")) return;
+    if (!(await confirmar("Remover este bloqueio da agenda?"))) return;
     const r = await fetch("/api/appointments/" + p.compromisso!.id, { method: "DELETE" });
     if (await tratar(r)) {
       p.aoSalvar();
@@ -371,7 +389,7 @@ export default function AppointmentModal(p: Props) {
             </div>
             <div>
               <label className={rotulo}>Início</label>
-              <input type="time" step={900} className={campo} value={f.inicio} onChange={(e) => setF({ ...f, inicio: e.target.value })} />
+              <input type="time" step={900} className={campo} value={f.inicio} onChange={(e) => mudarInicio(e.target.value)} />
             </div>
             <div>
               <label className={rotulo}>Fim</label>
@@ -448,6 +466,10 @@ export default function AppointmentModal(p: Props) {
               {p.compromisso!.clientId && p.compromisso!.kind === "ATENDIMENTO" && (
                 <div className="space-y-2">
                   <ClienteFidelidadeCard
+                    /* QA de 15/10, BUG-27: o card lia o saldo uma vez, na
+                       abertura, e continuava "0" depois de concluir. A chave
+                       muda com a conclusao (e com o desfazer), e o card le de novo. */
+                    key={p.compromisso!.clientId + "-" + (p.compromisso!.completedAt || "aberto")}
                     clientId={p.compromisso!.clientId!}
                     nomeDoPaciente={p.compromisso!.clientName || undefined}
                     podeAjustar={false}

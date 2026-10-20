@@ -23,6 +23,7 @@ import { motion } from 'motion/react';
 import { comDdi, DDI_PADRAO } from '../lib/telefone.mjs';
 import FichaRapida from './FichaRapida';
 import type { Treatment, TreatmentPlan } from '../types';
+import { avisar, confirmar } from "../lib/dialogo";
 
 interface ChatConsoleProps {
   clients: Client[];
@@ -250,10 +251,10 @@ export default function ChatConsole({
       if (response.ok) {
         setAiSuggestion(data.suggestion);
       } else {
-        alert(data.error || 'Erro ao obter sugestão de IA');
+        avisar(data.error || 'Erro ao obter sugestão de IA');
       }
     } catch (e) {
-      alert('Não foi possível conectar ao assistente de IA.');
+      avisar('Não foi possível conectar ao assistente de IA.');
     } finally {
       setSuggestingReply(false);
     }
@@ -340,9 +341,9 @@ export default function ChatConsole({
 
                   {/* Delete/Archive lead button */}
                   <button
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      if (confirm(`Deseja excluir permanentemente a conversa e o lead de "${contact.name}"?`)) {
+                      if ((await confirmar(`Deseja excluir permanentemente a conversa e o lead de "${contact.name}"?`))) {
                         onDeleteLead?.(contact.id);
                       }
                     }}

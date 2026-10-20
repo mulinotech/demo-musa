@@ -29,6 +29,7 @@ const ROTAS_PUBLICAS = [
   { metodo: 'POST', caminho: '/api/auth/login' },
   { metodo: 'POST', caminho: '/api/plataforma/login' },
   { metodo: 'GET',  caminho: '/api/config' },
+  { metodo: 'GET',  caminho: '/api/site' },
   { metodo: 'POST', caminho: '/api/webhook/whatsapp' }
 ];
 
@@ -39,7 +40,7 @@ function ehRotaPublica(metodo, caminho) {
 }
 
 async function porteiro(req, res, next) {
-  res.set('X-Trava-Musa', 'v74');
+  res.set('X-Trava-Musa', 'v75');
   const caminho = req.originalUrl.split('?')[0];
   if (ehRotaPublica(req.method, caminho)) return next();
 

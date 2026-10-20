@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Power, Play } from "lucide-react";
 import { reais, dataBR, Categoria } from "./comum";
+import { diaLocal } from "../../lib/data-local";
 
 interface Recorrente {
   id: string;
@@ -32,7 +33,7 @@ export default function Recorrentes({ categorias, aoMudar }: { categorias: Categ
   const [abrirNovo, setAbrirNovo] = useState(false);
   const [gerando, setGerando] = useState(false);
 
-  const vazio = { description: "", amount: "", dayOfMonth: "5", categoryId: "", startDate: new Date().toISOString().slice(0, 10) };
+  const vazio = { description: "", amount: "", dayOfMonth: "5", categoryId: "", startDate: diaLocal() };
   const [novo, setNovo] = useState(vazio);
 
   const mostrar = (tipo: "ok" | "erro", texto: string) => {

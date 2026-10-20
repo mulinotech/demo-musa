@@ -29,6 +29,7 @@ async function ehDestaClinica(db, tabela, id) {
   return r.length > 0;
 }
 const escopo = require('../db/escopo');
+const sinais = require('../services/sinais-de-risco');
 const doc = require('../services/documentos');
 const logs = require('../services/logs');
 
@@ -540,12 +541,23 @@ router.get('/api/clients/:id/alerts', async function (req, res) {
       }
     }
 
+    /* QA de 15/10, BUG-17: o que foi ESCRITO nas notas da ficha (o campo de
+     * anamnese da Skin AI) tambem conta. "Gestante 20 semanas, usa
+     * isotretinoina" estava ali e nenhuma tela avisava. */
+    const [ficha] = await db.q(
+      'SELECT anamnese FROM clients WHERE clinica_id = :clinica AND id = ?', [req.params.id]);
+    const daFicha = sinais.sinaisDeRisco(ficha[0] && ficha[0].anamnese);
+    for (const s of daFicha) {
+      achados.push({ campo: 'nota_' + s.trecho, rotulo: s.rotulo, valor: '— anotado nas notas da ficha', detalhe: '' });
+    }
+
     // Anamnese antiga em texto livre nao tem estrutura para avaliar. Dizer isso
     // e melhor do que devolver "nenhum alerta" -- que sugere que alguem checou.
     const soTextoLivre = !origem && docs.some((d) => !d.template_id);
     res.json({
       clientId: req.params.id,
       alertas: achados,
+      daFicha: daFicha.length > 0,
       origem: origem,
       semAnamnese: docs.length === 0,
       apenasTextoLivre: soTextoLivre

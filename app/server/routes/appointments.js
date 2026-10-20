@@ -27,6 +27,7 @@ const router = express.Router();
 const escopo = require('../db/escopo');
 const ag = require('../services/agenda');
 const concluido = require('../services/atendimento-concluido');
+const registro = require('../services/registro-de-atendimento');
 const fidelidade = require('../services/fidelidade');
 const efeitosFidelidade = require('../services/efeitos-fidelidade');
 const logs = require('../services/logs');
@@ -397,6 +398,13 @@ router.patch('/api/appointments/:id/status', async function (req, res) {
     // efeito nenhum por conta propria -- se aplicasse, existiriam dois caminhos
     // para concluir um atendimento, e um deles esqueceria um efeito.
     if (b.status === 'REALIZADO') {
+      // QA de 15/10, BUG-14: em 15/10 o sistema aceitou concluir o atendimento
+      // de 15/11 -- receita e baixa de estoque de algo que nao aconteceu.
+      if (!r[0].completed_at && registro.ehFuturo(r[0].starts_at)) {
+        return res.status(409).json({
+          error: 'Este atendimento ainda nao aconteceu. Ele so pode ser marcado como realizado no dia dele ou depois.'
+        });
+      }
       const saida = await concluido.concluirAtendimento(db, req.params.id, {
         usuarioId: req.usuario && req.usuario.sub
       });

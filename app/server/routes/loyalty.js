@@ -106,6 +106,8 @@ router.get('/api/loyalty/settings', async function (req, res) {
   }
 });
 
+const TETO_DE_VOLTA_PCT = 20;
+
 router.put('/api/loyalty/settings', async function (req, res) {
   if (!soAdmin(req, res)) return;
   const db = escopo(req);
@@ -139,6 +141,26 @@ router.put('/api/loyalty/settings', async function (req, res) {
 
   try {
     const atual = await lerConfig(db);
+
+    /* QA de 15/10, BUG-08: o demo estava com 10 pontos por real e ponto valendo
+     * R$ 10 -- cada R$ 1 faturado devolvia R$ 100. R$ 280 viraram "R$ 28.000 em
+     * desconto", e o passivo do programa dobrou com tres atendimentos de teste.
+     * A tela ja mostrava "10000% de volta", mas deixava salvar. Acima de 20% de
+     * volta, a gravacao so acontece com a confirmacao explicita de quem salva. */
+    const ppr = b.pointsPerReal !== undefined ? Number(b.pointsPerReal) : Number(atual.cfg.pointsPerReal);
+    const vdp = b.redemptionValue !== undefined ? Number(b.redemptionValue) : Number(atual.cfg.redemptionValue);
+    const pctDeVolta = Math.round(ppr * vdp * 1000) / 10;
+    if ((b.pointsPerReal !== undefined || b.redemptionValue !== undefined) &&
+        pctDeVolta > TETO_DE_VOLTA_PCT && !b.confirmarRetornoAlto) {
+      return res.status(409).json({
+        error: 'Com ' + ppr + ' ponto(s) por real e o ponto valendo R$ ' + vdp.toFixed(2).replace('.', ',') +
+          ', o programa devolve ' + String(pctDeVolta).replace('.', ',') + '% do valor gasto. ' +
+          'O comum fica entre 3% e 10%. Confirme se é isso mesmo.',
+        retornoAlto: true,
+        percentualDeVolta: pctDeVolta
+      });
+    }
+
     if (!atual.proprio) {
       // Sem linha propria, o UPDATE filtrado nao acha nada e nao grava -- e a
       // tela diria "salvo" sem ter salvado. Recusar alto e dizer por que.

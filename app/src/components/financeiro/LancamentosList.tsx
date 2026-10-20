@@ -8,6 +8,8 @@
 import { useEffect, useState } from "react";
 import { Plus, Check, Undo2, Trash2, RefreshCw } from "lucide-react";
 import { reais, dataBR, Base, Categoria, Lancamento } from "./comum";
+import { diaLocal } from "../../lib/data-local";
+import { confirmar } from "../../lib/dialogo";
 
 interface Props {
   de: string;
@@ -34,7 +36,7 @@ export default function LancamentosList({ de, ate, base, categorias, aoMudar, ve
     description: "",
     amount: "",
     categoryId: "",
-    entryDate: new Date().toISOString().slice(0, 10),
+    entryDate: diaLocal(),
     dueDate: "",
     paidAt: "",
     paymentMethod: "",
@@ -105,7 +107,7 @@ export default function LancamentosList({ de, ate, base, categorias, aoMudar, ve
     const r = await fetch("/api/finance/entries/" + l.id + "/pay", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(l.paidAt ? { paidAt: null } : { paidAt: new Date().toISOString().slice(0, 10) }),
+      body: JSON.stringify(l.paidAt ? { paidAt: null } : { paidAt: diaLocal() }),
     });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
@@ -116,7 +118,7 @@ export default function LancamentosList({ de, ate, base, categorias, aoMudar, ve
   };
 
   const remover = async (l: Lancamento) => {
-    if (!window.confirm('Remover "' + l.description + '" do razão?')) return;
+    if (!(await confirmar('Remover "' + l.description + '" do razão?'))) return;
     const r = await fetch("/api/finance/entries/" + l.id, { method: "DELETE" });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));

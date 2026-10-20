@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2, Power, RefreshCw, Info } from "lucide-react";
 import { reais } from "./comum";
+import { avisar, confirmar } from "../../lib/dialogo";
 
 interface CustoFixo {
   id: string;
@@ -127,7 +128,7 @@ export default function CustosFixosPanel({ aoMudar }: { aoMudar?: () => void }) 
   };
 
   const remover = async (c: CustoFixo) => {
-    if (!window.confirm('Remover "' + c.name + '" dos custos fixos?')) return;
+    if (!(await confirmar('Remover "' + c.name + '" dos custos fixos?'))) return;
     await fetch("/api/fixed-costs/" + c.id, { method: "DELETE" });
     avisar();
   };

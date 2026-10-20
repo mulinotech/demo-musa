@@ -4,6 +4,7 @@ const router = express.Router();
 const escopo = require('../db/escopo');
 const logs = require('../services/logs');
 const exclusao = require('../services/exclusao-de-paciente');
+const conversao = require('../services/conversao-de-lead');
 
 router.get('/api/clients', async function(req, res) {
   const userRole = req.usuario ? req.usuario.papel : '';
@@ -80,13 +81,31 @@ router.get('/api/clients', async function(req, res) {
  * próprio escopo — não há como passar o autor de outra pessoa.
  */
 router.post('/api/clients', async function(req, res) {
-  const { name, email, phone } = req.body;
+  const { name, email } = req.body;
+  let phone = req.body.phone;
   if (!name || !phone) {
     return res.status(400).json({ error: 'Nome e telefone sao obrigatorios.' });
   }
   const id = 'c_' + Math.random().toString(36).substring(2, 9);
   const db = escopo(req);
   try {
+    /* QA de 15/10, BUG-12: o cadastro manual aceitava a segunda ficha com o
+     * mesmo WhatsApp sem dizer nada -- e foi assim que o lembrete da "Maria"
+     * chegou no WhatsApp da "Silvia". Duas fichas no mesmo numero PODEM ser
+     * legitimas (a mae que marca pela filha; ver conversao-de-lead.js), entao
+     * isto nao proibe: avisa, mostra quem ja tem o numero, e so grava com a
+     * confirmacao explicita de quem esta cadastrando. */
+    if (!req.body.confirmarMesmoTelefone) {
+      const [todas] = await db.q('SELECT id, name, phone FROM clients WHERE clinica_id = :clinica');
+      const mesmas = todas.filter(function (c) { return conversao.mesmoTelefone(c.phone, phone); });
+      if (mesmas.length) {
+        return res.status(409).json({
+          error: 'Ja existe ficha com este WhatsApp: ' + mesmas.map(function (c) { return c.name; }).join(', ') + '.',
+          duplicadas: mesmas.map(function (c) { return { id: c.id, nome: c.name, telefone: c.phone }; })
+        });
+      }
+    }
+    phone = conversao.telefoneParaGravar(phone) || phone;
     await db.q(
       'INSERT INTO clients (id, name, email, phone, clinica_id) VALUES (?, ?, ?, ?, :clinica)',
       [id, name, email || '', phone]);

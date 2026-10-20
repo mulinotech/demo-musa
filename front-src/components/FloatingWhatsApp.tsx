@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
 import { Phone, X, MessageSquare, ArrowRight, CircleDot } from "lucide-react";
+import { useSite, linkWhatsApp } from "../lib/site";
 
 export default function FloatingWhatsApp() {
+  // BUG-02: o numero vem do cadastro da clinica, nao do codigo.
+  const site = useSite();
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [showTooltip, setShowTooltip] = useState<boolean>(false);
 
@@ -68,7 +71,7 @@ export default function FloatingWhatsApp() {
               {options.map((opt, idx) => (
                 <a
                   key={idx}
-                  href={`https://wa.me/5511900000000?text=${encodeURIComponent(opt.pref)}`}
+                  href={linkWhatsApp(site, opt.pref)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between w-full p-2.5 bg-white hover:bg-primary/5 text-[11px] text-neutral-muted hover:text-neutral font-semibold rounded border border-primary/10 hover:border-primary/20 transition-all cursor-pointer"

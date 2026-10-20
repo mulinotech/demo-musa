@@ -27,6 +27,7 @@
 import { useEffect, useState } from "react";
 import { X, Phone, Mail, CalendarClock, ClipboardList, ExternalLink } from "lucide-react";
 import type { Client, Treatment, TreatmentPlan } from "../types";
+import { diaLocal } from "../lib/data-local";
 
 interface Compromisso {
   id: string;
@@ -65,7 +66,7 @@ export default function FichaRapida({
     /* O filtro de data é do SERVIDOR (`from`), e não do navegador: a agenda de
        uma clínica com dois anos de uso tem milhares de linhas, e trazer tudo
        para descartar no `filter` é o tipo de lentidão que só aparece depois. */
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = diaLocal();
     fetch("/api/appointments?clientId=" + encodeURIComponent(cliente.id) + "&from=" + hoje)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => setFuturos(Array.isArray(d) ? d.slice(0, 4) : []))

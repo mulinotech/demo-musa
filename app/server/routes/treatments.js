@@ -16,6 +16,9 @@
  */
 const express = require('express');
 const router = express.Router();
+// QA de 15/10, BUG-06: dia vai ao banco como texto, nunca como `new Date(...)`.
+const { dataPura } = require('../services/data-pura');
+const registro = require('../services/registro-de-atendimento');
 const escopo = require('../db/escopo');
 
 router.get('/api/treatments', async function(req, res) {
@@ -81,10 +84,27 @@ router.post('/api/treatments', async function(req, res) {
       'SELECT id FROM clients WHERE clinica_id = :clinica AND id = ?', [clientId]);
     if (!dono.length) return res.status(404).json({ error: 'Paciente nao encontrado.' });
 
+    /* A "NOVA SESSAO" E UM ATENDIMENTO REALIZADO (QA de 15/10, BUG-05). Ela
+     * gravava so aqui, numa tabela que o financeiro, o estoque e a fidelidade
+     * nao leem: R$ 280 de sessao, zero de receita. Agora ela passa pelo mesmo
+     * servico do "Realizado" da Agenda -- e PRIMEIRO, para que uma recusa (data
+     * futura, estoque sem saldo) nao deixe o historico dizendo que houve sessao. */
+    const feito = await registro.registrarAtendimentoRealizado(db, {
+      clientId: clientId,
+      profissional: req.body.professionalId || null,
+      titulo: procedure,
+      nomeDoProcedimento: procedure,
+      dia: sessionDate,
+      price: price,
+      notes: 'Sessao avulsa registrada pelo prontuario.' + (notes ? ' ' + String(notes).slice(0, 500) : '')
+    }, req.usuario && req.usuario.sub);
+    if (!feito.ok) return res.status(feito.status).json({ error: feito.error });
+
     await db.q('INSERT INTO treatments (id, client_id, procedure_name, session_date, notes, next_session_date, price, total_sessions, completed_sessions, clinica_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, :clinica)', [
-      id, clientId, procedure, new Date(sessionDate), notes || '', nextSessionDate ? new Date(nextSessionDate) : null, price !== undefined ? price : null, totalSessions || 1, completedSessions || 1
+      id, clientId, procedure, dataPura(sessionDate), notes || '', dataPura(nextSessionDate), price !== undefined ? price : null, totalSessions || 1, completedSessions || 1
     ]);
-    res.status(201).json({ id, clientId, procedure, sessionDate, notes, nextSessionDate, price, totalSessions: totalSessions || 1, completedSessions: completedSessions || 1 });
+    res.status(201).json({ id, clientId, procedure, sessionDate, notes, nextSessionDate, price, totalSessions: totalSessions || 1, completedSessions: completedSessions || 1,
+      appointmentId: feito.appointmentId, efeitos: feito.efeitos });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao registrar tratamento', details: error.message });
   }
@@ -97,7 +117,7 @@ router.patch('/api/treatments/:id', async function(req, res) {
   const { id } = req.params;
   const { procedure, sessionDate, notes, price, totalSessions, completedSessions } = req.body;
   try {
-    const [r] = await db.q('UPDATE treatments SET procedure_name = COALESCE(?, procedure_name), session_date = COALESCE(?, session_date), notes = COALESCE(?, notes), price = COALESCE(?, price), total_sessions = COALESCE(?, total_sessions), completed_sessions = COALESCE(?, completed_sessions) WHERE clinica_id = :clinica AND id = ?', [procedure, sessionDate ? new Date(sessionDate) : null, notes, price !== undefined ? price : null, totalSessions, completedSessions, id]);
+    const [r] = await db.q('UPDATE treatments SET procedure_name = COALESCE(?, procedure_name), session_date = COALESCE(?, session_date), notes = COALESCE(?, notes), price = COALESCE(?, price), total_sessions = COALESCE(?, total_sessions), completed_sessions = COALESCE(?, completed_sessions) WHERE clinica_id = :clinica AND id = ?', [procedure, dataPura(sessionDate), notes, price !== undefined ? price : null, totalSessions, completedSessions, id]);
     if (!r || r.affectedRows === 0) {
       return res.status(404).json({ error: 'Tratamento nao encontrado.' });
     }

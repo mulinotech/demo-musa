@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Menu, X, Phone, Calendar, Heart, Shield } from "lucide-react";
 import logoMusa from "../assets/simbolo-musa.png";
+import { useSite, linkWhatsApp } from "../lib/site";
 
 interface HeaderProps {
   onNavigate: (sectionId: string) => void;
@@ -9,6 +10,8 @@ interface HeaderProps {
 }
 
 export default function Header({ onNavigate, activeSection, onOpenDashboard }: HeaderProps) {
+  // BUG-02: o numero vem do cadastro da clinica, nao do codigo.
+  const site = useSite();
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -131,7 +134,7 @@ export default function Header({ onNavigate, activeSection, onOpenDashboard }: H
               Login CRM
             </button>
             <a
-              href={`https://wa.me/5511900000000?text=${encodeURIComponent("Olá! Gostaria de agendar uma consulta de avaliação com a Dra. Musa.")}`}
+              href={linkWhatsApp(site, "Olá! Gostaria de agendar uma consulta de avaliação com a Dra. Musa.")}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center space-x-2 text-[13px] uppercase tracking-wider font-semibold text-white bg-primary px-4 py-2.5 rounded-sm hover:bg-primary-light transition-all duration-300 shadow-sm transform hover:-translate-y-0.5 cursor-pointer whitespace-nowrap"
@@ -178,7 +181,7 @@ export default function Header({ onNavigate, activeSection, onOpenDashboard }: H
               </button>
             ))}
             <a
-              href={`https://wa.me/5511900000000?text=${encodeURIComponent("Olá! Gostaria de agendar uma consulta de avaliação com a Dra. Musa.")}`}
+              href={linkWhatsApp(site, "Olá! Gostaria de agendar uma consulta de avaliação com a Dra. Musa.")}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center space-x-2 text-xs uppercase tracking-widest font-semibold text-white bg-primary py-3.5 rounded-sm shadow-sm mt-4 cursor-pointer"

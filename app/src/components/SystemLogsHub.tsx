@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ehGestao } from '../lib/papeis.mjs';
+import { diaLocal } from "../lib/data-local";
 
 export default function SystemLogsHub() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -76,7 +77,7 @@ export default function SystemLogsHub() {
 
     let matchesDate = true;
     if (startDate || endDate) {
-      const logDateStr = new Date(log.createdAt).toISOString().split('T')[0];
+      const logDateStr = diaLocal(new Date(log.createdAt));
       if (startDate && logDateStr < startDate) matchesDate = false;
       if (endDate && logDateStr > endDate) matchesDate = false;
     }
@@ -226,6 +227,16 @@ export default function SystemLogsHub() {
             { id: 'TREATMENT', label: 'Tratamentos' },
             { id: 'SALESPERSON', label: 'Equipe Vendas' },
             { id: 'AUTH', label: 'Autenticação' },
+            // QA de 15/10, BUG-22: so havia filtro para 5 dos modulos.
+            { id: 'AGENDA', label: 'Agenda' },
+            { id: 'PLANO', label: 'Planos' },
+            // "FINANCE" pega FINANCEIRO e os registros antigos gravados como FINANCE
+            { id: 'FINANCE', label: 'Financeiro' },
+            { id: 'ESTOQUE', label: 'Estoque' },
+            { id: 'FIDELIDADE', label: 'Fidelidade' },
+            { id: 'DOCUMENTOS', label: 'Documentos' },
+            { id: 'LGPD', label: 'LGPD' },
+            { id: 'IA', label: 'IA' },
           ].map((filter) => (
             <button
               key={filter.id}
