@@ -247,7 +247,12 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
       </div>
 
       {/* Kanban Board Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      {/* Cards compactos (20/10, pedido para o treinamento): o card tinha a
+          altura de meia tela -- nome quebrando em quatro linhas numa coluna
+          estreita, e a faixa dos botoes de acao ocupando espaco mesmo
+          invisivel. Agora: colunas com menos vao, nome numa linha so, e a
+          faixa de acao so abre ao passar o mouse. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
         {COLUMNS.map((col) => {
           const colLeads = filteredLeads.filter(l => l.status === col.id);
           return (
@@ -257,14 +262,14 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
               onDragOver={(e) => { e.preventDefault(); setColunaAlvo(col.id); }}
               onDragLeave={() => setColunaAlvo((c) => (c === col.id ? null : c))}
               onDrop={(e) => { e.preventDefault(); soltarEm(col.id); }}
-              className={`flex flex-col h-[calc(100vh-280px)] min-h-[500px] bg-white rounded-2xl border p-4 shadow-xs transition-colors ${
+              className={`flex flex-col h-[calc(100vh-280px)] min-h-[500px] bg-white rounded-2xl border p-3 shadow-xs transition-colors ${
                 colunaAlvo === col.id && arrastando
                   ? 'border-brand-gold border-2 bg-brand-cream/40'
                   : 'border-brand-gold/15'
               }`}
             >
               {/* Header */}
-              <div className="flex justify-between items-center pb-3 mb-4 border-b border-brand-beige">
+              <div className="flex justify-between items-center pb-2 mb-3 border-b border-brand-beige">
                 <div>
                   <h3 className="font-serif font-semibold text-brand-brown flex items-center space-x-2">
                     <span>{col.title}</span>
@@ -277,7 +282,7 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
               </div>
 
               {/* Cards Container */}
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                 {colLeads.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-40 border border-dashed border-brand-gold/20 rounded-xl p-4 text-center">
                     <p className="text-xs text-brand-brown/40">Nenhum paciente nesta etapa</p>
@@ -292,7 +297,7 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                       onDragEnd={() => { setArrastando(null); setColunaAlvo(null); }}
                       onClick={() => onSelectLead(lead)}
                       title="Arraste para mover de etapa"
-                      className={`bg-brand-cream/40 hover:bg-white border border-brand-gold/20 hover:border-brand-gold rounded-xl p-4 shadow-xs hover:shadow-md transition-all duration-300 cursor-grab active:cursor-grabbing group relative overflow-hidden ${
+                      className={`bg-brand-cream/40 hover:bg-white border border-brand-gold/20 hover:border-brand-gold rounded-xl px-3 py-2.5 shadow-xs hover:shadow-md transition-all duration-300 cursor-grab active:cursor-grabbing group relative overflow-hidden ${
                         arrastando === lead.id ? 'opacity-40' : ''
                       }`}
                     >
@@ -300,44 +305,47 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                       <div className="absolute top-0 left-0 w-1 h-full bg-brand-gold group-hover:bg-brand-brown transition-colors" />
 
                       {/* Header details */}
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-semibold text-brand-brown group-hover:text-brand-gold transition-colors font-serif">
+                      <div className="flex justify-between items-center gap-2 mb-1.5">
+                        <span
+                          title={lead.name}
+                          className="min-w-0 truncate text-xs font-semibold text-brand-brown group-hover:text-brand-gold transition-colors font-serif"
+                        >
                           {lead.name}
                         </span>
                         <div
                           title={'Origem: ' + rotuloDaOrigem(lead.source)}
-                          className="flex items-center space-x-1 bg-white px-2 py-0.5 rounded-full border border-brand-gold/10 shadow-xxs shrink-0 max-w-[55%]"
+                          aria-label={'Origem: ' + rotuloCurto(lead.source)}
+                          className="flex items-center justify-center bg-white h-6 w-6 rounded-full border border-brand-gold/15 shadow-xxs shrink-0"
                         >
+                          {/* So o icone: o nome da origem esta no title. Com o
+                              rotulo escrito, o nome da paciente virava "Mariana Alb…". */}
                           {getSourceIcon(lead.source)}
-                          <span className="text-xxs font-medium text-brand-brown/70 font-mono truncate">
-                            {rotuloCurto(lead.source)}
-                          </span>
                         </div>
                       </div>
 
                       {/* Interest Procedure */}
-                      <div className="mb-3 flex flex-wrap gap-2 items-center">
-                        <span className="inline-block bg-brand-brown/5 text-brand-brown text-xxs px-2.5 py-1 rounded-md font-medium tracking-wide">
+                      <div className="flex flex-wrap gap-1.5 items-center min-w-0">
+                        <span title={lead.interest} className="inline-block max-w-full truncate bg-brand-brown/5 text-brand-brown text-xxs px-2 py-0.5 rounded-md font-medium tracking-wide">
                           ✨ {lead.interest}
                         </span>
                         {lead.qualified && (
-                          <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[9px] px-2 py-1 rounded-md font-bold tracking-wide uppercase shadow-xs">
+                          <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold tracking-wide uppercase shadow-xs">
                             <CheckCircle className="h-2.5 w-2.5" />
                             Qualificado
                           </span>
                         )}
                         {lead.salespersonId && (
-                           <span className="inline-block bg-emerald-50 border border-emerald-100 text-emerald-700 text-[9px] px-2 py-1 rounded-md font-medium tracking-wide uppercase">
-                             Vendedor Atribuído
+                           <span className="inline-block bg-emerald-50 border border-emerald-100 text-emerald-700 text-[9px] px-1.5 py-0.5 rounded-md font-medium tracking-wide uppercase">
+                             Vendedor
                            </span>
                         )}
                       </div>
 
                       {/* Phone & Date details */}
-                      <div className="flex justify-between items-center w-full text-xxs text-brand-brown/60 font-mono mt-4 pt-3 border-t border-brand-gold/10 gap-4">
-                        <span className="flex items-center space-x-1 shrink-0">
-                          <Phone className="h-3 w-3 text-brand-gold/70" />
-                          <span>{lead.phone}</span>
+                      <div className="flex justify-between items-center w-full text-xxs text-brand-brown/60 font-mono mt-2 pt-1.5 border-t border-brand-gold/10 gap-2">
+                        <span className="flex items-center space-x-1 min-w-0">
+                          <Phone className="h-3 w-3 text-brand-gold/70 shrink-0" />
+                          <span className="truncate">{lead.phone}</span>
                         </span>
                         <span className="font-bold text-brand-brown tracking-wide shrink-0">
                           {new Date(lead.createdAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}
@@ -345,7 +353,7 @@ export default function PipelineKanban({ leads, onAddLead, onUpdateLeadStatus, o
                       </div>
 
                       {/* Quick Move Trigger Buttons */}
-                      <div className="flex justify-end space-x-1.5 mt-3 pt-2 border-t border-brand-gold/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex justify-end space-x-1.5 overflow-hidden max-h-0 opacity-0 group-hover:max-h-12 group-hover:opacity-100 group-hover:mt-2 group-hover:pt-1.5 group-hover:border-t border-brand-gold/10 transition-all">
                         {col.id === 'novo' && (
                           <button
                             onClick={(e) => {

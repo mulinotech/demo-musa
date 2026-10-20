@@ -9,24 +9,24 @@
  * faria o histórico exibir perguntas que aquela paciente nunca viu.
  */
 import { useEffect, useState } from "react";
-import { FileText, Search, AlertTriangle, Layers, ShieldCheck } from "lucide-react";
+import { FileText, AlertTriangle, Layers, ShieldCheck } from "lucide-react";
 import ClientDocumentsPanel from "../../components/documentos/ClientDocumentsPanel";
 import { Modelo, ROTULO_TIPO } from "../../components/documentos/comum";
+import SeletorDePaciente, { PacienteDaLista } from "../../components/SeletorDePaciente";
 
 type Aba = "pacientes" | "modelos";
 
 export default function Documentos() {
   const [aba, setAba] = useState<Aba>("pacientes");
-  const [pacientes, setPacientes] = useState<{ id: string; name: string }[]>([]);
+  const [pacientes, setPacientes] = useState<PacienteDaLista[]>([]);
   const [modelos, setModelos] = useState<Modelo[]>([]);
-  const [busca, setBusca] = useState("");
-  const [escolhido, setEscolhido] = useState<{ id: string; name: string } | null>(null);
+  const [escolhido, setEscolhido] = useState<PacienteDaLista | null>(null);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
     fetch("/api/clients")
       .then((r) => r.json())
-      .then((d) => setPacientes(Array.isArray(d) ? d.map((c: any) => ({ id: c.id, name: c.name })) : []))
+      .then((d) => setPacientes(Array.isArray(d) ? d.map((c: any) => ({ id: c.id, name: c.name, phone: c.phone || "" })) : []))
       .catch(() => setErro("Não foi possível carregar os pacientes."));
   }, []);
 
@@ -38,9 +38,6 @@ export default function Documentos() {
       .catch(() => setModelos([]));
   }, [aba, modelos.length]);
 
-  const filtrados = busca.trim()
-    ? pacientes.filter((c) => c.name.toLowerCase().includes(busca.trim().toLowerCase()))
-    : pacientes.slice(0, 12);
 
   const botao = "px-3 py-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer";
   const rotulo = "block text-[10px] uppercase tracking-widest text-brand-brown/60 font-bold mb-1";
@@ -86,34 +83,9 @@ export default function Documentos() {
         <div className="space-y-3">
           <div className="bg-white border border-brand-gold/15 rounded-2xl p-4">
             <label className={rotulo}>Paciente</label>
-            <div className="relative">
-              <Search className="h-3.5 w-3.5 text-brand-brown/40 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                className={campo + " pl-8"}
-                placeholder="Buscar por nome…"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {filtrados.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setEscolhido(c)}
-                  className={
-                    "px-2.5 py-1.5 rounded-lg text-[11px] border cursor-pointer transition-all " +
-                    (escolhido?.id === c.id
-                      ? "bg-brand-brown text-brand-beige border-brand-brown"
-                      : "bg-white border-brand-gold/25 text-brand-brown/80 hover:border-brand-brown")
-                  }
-                >
-                  {c.name}
-                </button>
-              ))}
-              {filtrados.length === 0 && (
-                <p className="text-[11px] text-brand-brown/50">Nenhum paciente encontrado.</p>
-              )}
-            </div>
+            {/* Lista suspensa no lugar da parede de botoes (20/10): com 1.000
+                pacientes, os botoes ocupariam a tela inteira. */}
+            <SeletorDePaciente pacientes={pacientes} escolhido={escolhido} aoEscolher={setEscolhido} />
           </div>
 
           {escolhido ? (

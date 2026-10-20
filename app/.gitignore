@@ -22,3 +22,6 @@ Thumbs.db
 
 # Token de servico do cron (migration 017). Segredo: nunca versionar.
 .musa-cron.conf
+
+# backups de dados de clinica (contem dados pessoais)
+backups/
