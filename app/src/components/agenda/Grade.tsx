@@ -32,11 +32,19 @@ interface Props {
   colunaDe: (c: Compromisso) => string;
   aoAbrir: (c: Compromisso) => void;
   aoClicarVazio: (data: string, hhmm: string, professionalId?: string) => void;
+  /** Largura mínima de cada coluna, em px. Abaixo disso a grade rola de lado
+   *  em vez de espremer o nome da profissional até virar "Pedro Cav". */
+  larguraMinimaColuna?: number;
 }
 
 const HORAS = Array.from({ length: HORA_FIM - HORA_INICIO + 1 }, (_, i) => HORA_INICIO + i);
 
-export default function Grade({ colunas, compromissos, colunaDe, aoAbrir, aoClicarVazio }: Props) {
+/** Largura da régua de horários (w-14). */
+const LARGURA_REGUA = 56;
+
+export default function Grade({
+  colunas, compromissos, colunaDe, aoAbrir, aoClicarVazio, larguraMinimaColuna = 128,
+}: Props) {
   /** Converte a posição do clique dentro da coluna em horário, arredondando
    *  para a grade de 15 minutos — ninguém marca às 09:07. */
   const horarioDoClique = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -50,14 +58,18 @@ export default function Grade({ colunas, compromissos, colunaDe, aoAbrir, aoClic
   return (
     <div className="bg-white border border-brand-gold/15 rounded-2xl overflow-hidden">
       <div className="overflow-x-auto">
-        <div className="min-w-[640px]">
+        <div style={{ minWidth: LARGURA_REGUA + colunas.length * larguraMinimaColuna }}>
           {/* cabeçalho das colunas */}
           <div className="flex border-b border-brand-gold/20 bg-brand-beige/60 sticky top-0 z-10">
-            <div className="w-14 shrink-0" />
+            {/* canto opaco: a régua fica presa à esquerda e o nome que rola por baixo não pode aparecer */}
+            <div className="w-14 shrink-0 sticky left-0 z-20 bg-white">
+              <div className="absolute inset-0 bg-brand-beige/60" />
+            </div>
             {colunas.map((c) => (
               <div
                 key={c.chave}
-                className={"flex-1 px-2 py-2.5 text-center border-l border-brand-gold/15 " + (c.destaque ? "bg-brand-gold/10" : "")}
+                title={c.titulo}
+                className={"flex-1 basis-0 min-w-0 px-2 py-2.5 text-center border-l border-brand-gold/15 " + (c.destaque ? "bg-brand-gold/10" : "")}
               >
                 <p className="text-[11px] font-bold text-brand-brown truncate">{c.titulo}</p>
                 {c.subtitulo && <p className="text-[10px] text-brand-brown/55">{c.subtitulo}</p>}
@@ -65,64 +77,68 @@ export default function Grade({ colunas, compromissos, colunaDe, aoAbrir, aoClic
             ))}
           </div>
 
-          <div className="flex relative" style={{ height: ALTURA_GRADE }}>
-            {/* régua */}
-            <div className="w-14 shrink-0 relative">
-              {HORAS.map((h) => (
-                <div
-                  key={h}
-                  className="absolute right-2 text-[10px] font-mono text-brand-brown/45 -translate-y-1/2"
-                  style={{ top: (h - HORA_INICIO) * 60 * PIXEL_POR_MINUTO }}
-                >
-                  {String(h).padStart(2, "0")}:00
-                </div>
-              ))}
+          {/* A folga em cima e embaixo é para o "07:00" e o "21:00", centralizados
+              na linha, não serem cortados pela borda do quadro. */}
+          <div className="py-3">
+            <div className="flex relative" style={{ height: ALTURA_GRADE }}>
+              {/* régua — presa à esquerda para o horário não sumir ao rolar de lado */}
+              <div className="w-14 shrink-0 sticky left-0 z-[5] bg-white">
+                {HORAS.map((h) => (
+                  <div
+                    key={h}
+                    className="absolute right-2 text-[10px] font-mono text-brand-brown/45 -translate-y-1/2"
+                    style={{ top: (h - HORA_INICIO) * 60 * PIXEL_POR_MINUTO }}
+                  >
+                    {String(h).padStart(2, "0")}:00
+                  </div>
+                ))}
+              </div>
+
+              {colunas.map((col) => {
+                const daColuna = compromissos.filter((c) => colunaDe(c) === col.chave);
+                return (
+                  <div
+                    key={col.chave}
+                    onClick={(e) => aoClicarVazio(col.data, horarioDoClique(e), col.professionalId)}
+                    className={"flex-1 basis-0 min-w-0 relative border-l border-brand-gold/15 cursor-copy " + (col.destaque ? "bg-brand-gold/[0.04]" : "")}
+                  >
+                    {/* linhas de hora */}
+                    {HORAS.map((h) => (
+                      <div
+                        key={h}
+                        className="absolute left-0 right-0 border-t border-brand-gold/10"
+                        style={{ top: (h - HORA_INICIO) * 60 * PIXEL_POR_MINUTO }}
+                      />
+                    ))}
+
+                    {daColuna.map((c) => {
+                      const estilo = ESTILO_STATUS[c.status];
+                      const bloqueio = c.kind === "BLOQUEIO";
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={(e) => { e.stopPropagation(); aoAbrir(c); }}
+                          title={`${hora(c.startsAt)}–${hora(c.endsAt)} · ${c.title}${c.clientName ? " · " + c.clientName : ""}`}
+                          className={
+                            "absolute left-1 right-1 rounded-md border px-1.5 py-1 text-left overflow-hidden cursor-pointer transition-shadow hover:shadow-md " +
+                            (bloqueio
+                              ? "bg-neutral-200/70 border-neutral-400 text-neutral-600 [background-image:repeating-linear-gradient(45deg,transparent,transparent_5px,rgba(0,0,0,0.05)_5px,rgba(0,0,0,0.05)_10px)]"
+                              : estilo.caixa + " " + estilo.texto)
+                          }
+                          style={{ top: topoDoBloco(c.startsAt), height: alturaDoBloco(c.startsAt, c.endsAt) }}
+                        >
+                          <span className="block text-[10px] font-mono opacity-75 leading-tight">{hora(c.startsAt)}</span>
+                          <span className="block text-[11px] font-semibold leading-tight truncate">{c.title}</span>
+                          {c.clientName && (
+                            <span className="block text-[10px] leading-tight truncate opacity-80">{c.clientName}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
-
-            {colunas.map((col) => {
-              const daColuna = compromissos.filter((c) => colunaDe(c) === col.chave);
-              return (
-                <div
-                  key={col.chave}
-                  onClick={(e) => aoClicarVazio(col.data, horarioDoClique(e), col.professionalId)}
-                  className={"flex-1 relative border-l border-brand-gold/15 cursor-copy " + (col.destaque ? "bg-brand-gold/[0.04]" : "")}
-                >
-                  {/* linhas de hora */}
-                  {HORAS.map((h) => (
-                    <div
-                      key={h}
-                      className="absolute left-0 right-0 border-t border-brand-gold/10"
-                      style={{ top: (h - HORA_INICIO) * 60 * PIXEL_POR_MINUTO }}
-                    />
-                  ))}
-
-                  {daColuna.map((c) => {
-                    const estilo = ESTILO_STATUS[c.status];
-                    const bloqueio = c.kind === "BLOQUEIO";
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={(e) => { e.stopPropagation(); aoAbrir(c); }}
-                        title={`${hora(c.startsAt)}–${hora(c.endsAt)} · ${c.title}${c.clientName ? " · " + c.clientName : ""}`}
-                        className={
-                          "absolute left-1 right-1 rounded-md border px-1.5 py-1 text-left overflow-hidden cursor-pointer transition-shadow hover:shadow-md " +
-                          (bloqueio
-                            ? "bg-neutral-200/70 border-neutral-400 text-neutral-600 [background-image:repeating-linear-gradient(45deg,transparent,transparent_5px,rgba(0,0,0,0.05)_5px,rgba(0,0,0,0.05)_10px)]"
-                            : estilo.caixa + " " + estilo.texto)
-                        }
-                        style={{ top: topoDoBloco(c.startsAt), height: alturaDoBloco(c.startsAt, c.endsAt) }}
-                      >
-                        <span className="block text-[10px] font-mono opacity-75 leading-tight">{hora(c.startsAt)}</span>
-                        <span className="block text-[11px] font-semibold leading-tight truncate">{c.title}</span>
-                        {c.clientName && (
-                          <span className="block text-[10px] leading-tight truncate opacity-80">{c.clientName}</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })}
           </div>
         </div>
       </div>

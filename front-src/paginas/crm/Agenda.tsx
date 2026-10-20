@@ -159,14 +159,14 @@ export default function Agenda() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-brand-gold/15 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="bg-white border border-brand-gold/15 rounded-2xl p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0">
           <button onClick={() => andar(-1)} className="p-2 rounded-lg text-brand-brown/60 hover:bg-brand-beige cursor-pointer">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <div className="min-w-[13rem]">
-            <h3 className="text-sm font-serif font-bold text-brand-brown capitalize">{titulo()}</h3>
-            <p className="text-[10px] text-brand-brown/60">
+          <div className="flex-1 min-w-0 text-center sm:text-left sm:flex-none sm:min-w-[13rem]">
+            <h3 className="text-sm font-serif font-bold text-brand-brown capitalize truncate">{titulo()}</h3>
+            <p className="text-[10px] text-brand-brown/60 truncate">
               {resumo.total} atendimento{resumo.total === 1 ? "" : "s"}
               {resumo.aConfirmar > 0 && ` · ${resumo.aConfirmar} a confirmar`}
             </p>
@@ -183,12 +183,15 @@ export default function Agenda() {
           {carregando && <RefreshCw className="h-3.5 w-3.5 text-brand-gold animate-spin" />}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* No celular os controles viram uma grade de duas colunas: filtro e
+            visões ocupam a linha inteira, Lembretes e Agendar dividem a última.
+            Em telas maiores voltam a ser uma fileira só. */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           {podeVerTodos && profissionais.length > 1 && (
             <select
               value={filtroProf}
               onChange={(e) => setFiltroProf(e.target.value)}
-              className="bg-white border border-brand-gold/30 rounded px-2.5 py-1.5 text-xs text-brand-brown focus:outline-none focus:border-brand-brown cursor-pointer"
+              className="col-span-2 bg-white border border-brand-gold/30 rounded-xl px-2.5 py-2 sm:py-1.5 text-xs text-brand-brown focus:outline-none focus:border-brand-brown cursor-pointer"
             >
               <option value="">Todos os profissionais</option>
               {profissionais.map((p) => (
@@ -197,13 +200,13 @@ export default function Agenda() {
             </select>
           )}
 
-          <div className="flex items-center gap-1 bg-brand-beige/60 p-1 rounded-xl">
+          <div className="col-span-2 flex items-center gap-1 bg-brand-beige/60 p-1 rounded-xl">
             {(["dia", "semana", "mes"] as Visao[]).map((v) => (
               <button
                 key={v}
                 onClick={() => setVisao(v)}
                 className={
-                  "px-3 py-1.5 rounded-lg text-[11px] font-bold capitalize transition-all cursor-pointer " +
+                  "flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-[11px] font-bold capitalize transition-all cursor-pointer " +
                   (visao === v ? "bg-brand-brown text-brand-beige shadow-sm" : "text-brand-brown/70 hover:bg-white")
                 }
               >
@@ -216,7 +219,7 @@ export default function Agenda() {
             <button
               onClick={() => setLembretes(true)}
               title="Lembrete automático por WhatsApp"
-              className="flex items-center gap-1.5 bg-white border border-brand-gold/30 hover:border-brand-brown text-brand-brown/80 px-3 py-2 rounded-xl text-[11px] font-semibold cursor-pointer"
+              className="flex items-center justify-center gap-1.5 bg-white border border-brand-gold/30 hover:border-brand-brown text-brand-brown/80 px-3 py-2 rounded-xl text-[11px] font-semibold cursor-pointer"
             >
               <MessageCircle className="h-3.5 w-3.5" />
               Lembretes
@@ -225,7 +228,7 @@ export default function Agenda() {
 
           <button
             onClick={() => setModal({ compromisso: null, data: iso(referencia), hora: "09:00" })}
-            className="flex items-center gap-1.5 bg-brand-brown hover:bg-brand-brown/95 text-brand-beige px-4 py-2 rounded-xl text-[11px] font-bold shadow-sm border border-brand-gold/20 cursor-pointer"
+            className={(podeVerTodos ? "" : "col-span-2 ") + "flex items-center justify-center gap-1.5 bg-brand-brown hover:bg-brand-brown/95 text-brand-beige px-4 py-2 rounded-xl text-[11px] font-bold shadow-sm border border-brand-gold/20 cursor-pointer"}
           >
             <Plus className="h-3.5 w-3.5 text-brand-gold" />
             Agendar
@@ -249,6 +252,7 @@ export default function Agenda() {
           colunas={colunas}
           compromissos={doPeriodo}
           colunaDe={(c) => (visao === "dia" ? c.professionalId : c.startsAt.slice(0, 10))}
+          larguraMinimaColuna={visao === "dia" ? 128 : 88}
           aoAbrir={(c) => setModal({ compromisso: c, data: c.startsAt.slice(0, 10) })}
           aoClicarVazio={(data, hhmm, professionalId) =>
             setModal({ compromisso: null, data, hora: hhmm, professionalId })
@@ -263,7 +267,7 @@ export default function Agenda() {
             {ESTILO_STATUS[s].rotulo}
           </span>
         ))}
-        <span className="flex items-center gap-1.5 text-[10px] text-brand-brown/60 ml-auto">
+        <span className="w-full sm:w-auto flex items-center gap-1.5 text-[10px] text-brand-brown/60 sm:ml-auto">
           <CalendarDays className="h-3 w-3" />
           Clique num espaço vazio da grade para agendar naquele horário
         </span>
